@@ -12,6 +12,7 @@ from unpacker import unpack_bundle as unpacker_main
 import spine_merger
 import resolver
 import local_bundle_indexer
+import catalog_indexer
 import json
 from pathlib import Path
 
@@ -91,6 +92,51 @@ def _refresh_character_data(output_dir, quality="HD", progress_callback=None):
         return False, error_message, None
 
 
+def get_bundle_meta(output_dir, quality="HD", progress_callback=None):
+    """取「bundle 名 -> [官方原版字节数, 内容哈希]」，供 Kotlin 做干净检测。
+
+    把这份 catalog 权威值与游戏本地 Shared/<name>/<hash>/__data 的目录名和实际大小
+    比对，即可客观判断某个 bundle 当前是干净原版还是装着 mod —— 不依赖 app 自己的
+    记账，因此也能发现旧版工具或手动装入造成的改动。
+
+    catalog 已按版本缓存在磁盘（download_catalog 会复用），提取结果另有 ~150KB 的
+    小缓存，所以常态下这个调用几乎不产生流量与耗时。
+
+    Returns: (success: Boolean, message: String, meta: dict or None)
+    """
+    def report_progress(message):
+        if progress_callback:
+            progress_callback(message)
+        print(message)
+
+    try:
+        # 归一化统一收在 cdn_downloader.normalize_quality 里做（FHD → HD）。
+        # 早先这里手写了一半：版本号映射了、传给 download_catalog 的 quality 没映射，
+        # 拼出 FHD/<HD 版本号> 直接 404 —— 于是选 FHD 的用户干净检测全空、卸不掉 mod。
+        quality = cdn_downloader.normalize_quality(quality)
+        version = cdn_downloader.get_cdn_version(quality)
+        if not version:
+            return False, "无法获取 CDN 版本号（可能离线），请检查网络后重试。", None
+
+        with catalog_cache_lock:
+            _prune_catalog_cache(version)
+
+        catalog_content, error = cdn_downloader.download_catalog(
+            output_dir, quality, version, catalog_cache, catalog_cache_lock, progress_callback
+        )
+        if error:
+            return False, error, None
+
+        meta = catalog_indexer.load_or_build_bundle_meta(output_dir, version, catalog_content)
+        report_progress(f"Bundle metadata ready: {len(meta)} bundles (version {version}).")
+        return True, version, meta
+    except Exception as e:
+        import traceback
+        error_message = traceback.format_exc()
+        report_progress(f"Error building bundle metadata: {error_message}")
+        return False, error_message, None
+
+
 def update_character_data(output_dir, quality="HD"):
     """
     Entry point for Kotlin to refresh character metadata (characters.json).
@@ -134,7 +180,7 @@ def update_character_data(output_dir, quality="HD"):
 #   mainScript.callAttr("finalize_scan", outputDir, callback)
 
 
-def check_scan_needed(output_dir, bundle_list_json, progress_callback=None):
+def check_scan_needed(output_dir, bundle_list_json, progress_callback=None, full_scan=False):
     """
     Step 1: Check which bundles need scanning.
 
@@ -145,6 +191,7 @@ def check_scan_needed(output_dir, bundle_list_json, progress_callback=None):
         output_dir: App-writable directory for the index cache
         bundle_list_json: JSON string of [{"name": "bundleName", "hash": "hashDir"}, ...]
         progress_callback: Optional progress reporting function
+        full_scan: True 时跳过 catalog 预筛，扫描全部 bundle
 
     Returns:
         JSON string of bundle names that need scanning: '["name1", "name2", ...]'
@@ -155,7 +202,8 @@ def check_scan_needed(output_dir, bundle_list_json, progress_callback=None):
         print(msg)
 
     try:
-        result = local_bundle_indexer.check_scan_needed(output_dir, bundle_list_json)
+        result = local_bundle_indexer.check_scan_needed(
+            output_dir, bundle_list_json, full_scan=full_scan)
         needs_scan = json.loads(result)
         report(f"Scan check complete: {len(needs_scan)} bundles need scanning.")
         return result
@@ -304,8 +352,10 @@ def download_bundle(hashed_name, quality, output_dir, cache_key, progress_callba
     """
     global current_cache_key
 
-    # FHD 選項在下載時仍使用 HD 資源（CDN 無獨立 FHD 路徑）
-    download_quality = "HD" if quality == "FHD" else quality
+    # FHD 選項在下載時仍使用 HD 資源（CDN 無獨立 FHD 路徑）。
+    # 归一化的唯一来源是 cdn_downloader.normalize_quality —— 别再在别处手写这个三元式，
+    # 上一次手写就漏掉了取 catalog 那条路。
+    download_quality = cdn_downloader.normalize_quality(quality)
 
     def report_progress(message):
         if progress_callback:
@@ -359,16 +409,20 @@ def download_bundle(hashed_name, quality, output_dir, cache_key, progress_callba
 # Unpacking, repacking, spine merge — unchanged
 # ---------------------------------------------------------------------------
 
-def unpack_bundle(bundle_path, output_dir, progress_callback=None):
+def unpack_bundle(bundle_path, output_dir, progress_callback=None, fast=False):
     """
     Entry point for Kotlin to unpack a bundle.
+
+    fast=True 用于预览：只导出 png/atlas/skel 且 PNG 低压缩，明显更快（详见 unpacker）。
+
     Returns a tuple: (success: Boolean, message: String)
     """
     try:
         success, message = unpacker_main(
             bundle_path=bundle_path,
             output_dir=output_dir,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            fast=fast
         )
 
         print(message)
@@ -381,6 +435,47 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=None):
         if progress_callback:
             progress_callback(f"An error occurred: {e}")
         return False, error_message
+
+
+def restore_bundle(original_bundle_path, output_path, progress_callback=None):
+    """把 CDN 下载的原版 bundle 转成游戏缓存能直接用的格式，不做任何资源替换。
+
+    卸载 mod 需要把官方原版盖回游戏缓存，但 CDN 上那份是压缩包（实测某个 bundle
+    6.2 MB），而 UnityCache 里的 __data 是另一种编码（同一 bundle 26 MB）。直接拷
+    CDN 包过去，大小和格式都不对，游戏读不了。
+
+    repack_bundle 也不能用来干这件事：它在没有任何资源被替换时会判定「No modifications
+    were made」直接返回失败，压根不写输出文件。
+
+    所以这里单独走一遍 UnityPy 载入 + 原样保存，只做格式转换。packer 与 repack 保持
+    一致（lz4），这样还原结果和正常装入产出的编码同源。
+
+    Returns (success: bool, message: str)
+    """
+    try:
+        import UnityPy
+        if progress_callback:
+            progress_callback("正在读取官方原版...")
+        env = UnityPy.load(original_bundle_path)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        if progress_callback:
+            progress_callback("正在转换为游戏缓存格式...")
+        with open(output_path, "wb") as f:
+            env.file.save(f, packer="lz4")
+        del env
+        import gc
+        gc.collect()
+        size = os.path.getsize(output_path)
+        if progress_callback:
+            progress_callback("原版已就绪")
+        return True, f"restored {size} bytes"
+    except Exception as e:
+        import traceback
+        msg = traceback.format_exc()
+        print(f"restore_bundle failed: {msg}")
+        if progress_callback:
+            progress_callback(f"还原失败: {e}")
+        return False, msg
 
 
 def main(original_bundle_path, modded_assets_folder, output_path, use_astc, progress_callback=None):

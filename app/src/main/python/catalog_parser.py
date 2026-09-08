@@ -23,6 +23,12 @@ class SerializationUtilities:
         JsonObject = 7
 
 def get_cdn_version(quality):
+    # 注意：这个模块里的 get_cdn_version / download_catalog 是 cdn_downloader 里同名函数的
+    # 重复实现，目前没有调用方（character_scraper 只用本模块的
+    # parse_catalog_for_bundle_names）。归一化照样加上，免得哪天有人用到它、
+    # 又踩一次「CDN 上没有 FHD 路径」那个坑。真正的归一化来源是
+    # cdn_downloader.normalize_quality。
+    quality = "HD" if quality == "FHD" else quality
     url = "https://mt.bd2.pmang.cloud/MaintenanceInfo"
     headers = {
         'accept': '*/*',
@@ -44,6 +50,7 @@ def get_cdn_version(quality):
     return maintenance_response.market_info.bundle_version if quality == 'HD' else maintenance_response.market_info.bundle_version_sd
 
 def download_catalog(output_dir, quality, version, cache, lock, progress_callback=None):
+    quality = "HD" if quality == "FHD" else quality  # 见 get_cdn_version 上的说明
     # Check the in-memory cache first
     if version in cache:
         if progress_callback: progress_callback(f"Catalog for version {version} found in memory cache.")

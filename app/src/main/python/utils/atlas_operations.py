@@ -1,4 +1,4 @@
-"""Atlas file parsing utilities for BDroid_X."""
+"""Spine .atlas 文件的解析辅助函数。"""
 import re
 from typing import Dict, Optional, Tuple
 

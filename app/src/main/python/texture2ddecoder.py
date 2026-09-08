@@ -2,15 +2,22 @@
 import ctypes
 import os
 
-# Load the shared library
+# Load the shared library lazily: on x86_64 emulators the .so is not shipped,
+# so importing must still succeed (repack/encode paths never decode textures).
+# Decode functions raise only if actually called without the native library.
 try:
     # Chaquopy will place the .so in the lib directory
     lib = ctypes.cdll.LoadLibrary("libtexture2ddecoder.so")
-except OSError as e:
-    raise ImportError(f"Failed to load libtexture2ddecoder.so. Make sure it's in jniLibs. Error: {e}")
+except OSError:
+    lib = None
+
+def _require_lib(func_name):
+    if lib is None:
+        raise RuntimeError(f"{func_name}: libtexture2ddecoder.so not available on this device")
 
 # Helper function to handle the common decode pattern
 def _decode_image(func_name, data, width, height, *extra_args):
+    _require_lib(func_name)
     image_buffer = (ctypes.c_uint * (width * height))()
     
     c_func = getattr(lib, func_name)
@@ -34,6 +41,7 @@ def _decode_image(func_name, data, width, height, *extra_args):
 
 # Helper for crunch functions
 def _unpack_crunch(func_name, data):
+    _require_lib(func_name)
     c_func = getattr(lib, func_name)
     c_func.argtypes = [
         ctypes.c_void_p,

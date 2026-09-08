@@ -154,15 +154,26 @@ def _build_unique_export_path(output_dir, base_name, extension, path_id):
     return os.path.join(output_dir, duplicate_filename)
 
 
-def unpack_bundle(bundle_path, output_dir, progress_callback=print):
+def unpack_bundle(bundle_path, output_dir, progress_callback=print, fast=False):
+    """把 bundle 里的资源导出到 output_dir。
+
+    fast=True 是给「预览」用的快速模式，做两件事省时间：
+      1. 只处理 Texture2D / TextAsset / MonoBehaviour —— 预览只需要 png + atlas + skel，
+         其余类型（AnimationClip、Material、Shader、GameObject 等）连 obj.read() 都不做。
+         obj.read() 是完整反序列化，对用不上的对象是纯浪费。
+      2. PNG 用最低压缩级别写盘。PIL 默认 compress_level=6，对几 MB 的贴图要花不少时间；
+         预览的文件看完就删，体积无所谓，换速度划算。
+
+    解包工具（用户主动提取资源）仍走默认模式，保持原有行为与压缩率。
+    """
     progress_callback(f"Starting to unpack '{os.path.basename(bundle_path)}'...")
-    
+
     if not os.path.exists(bundle_path):
         return (False, f"Bundle file not found at '{bundle_path}'")
 
     os.makedirs(output_dir, exist_ok=True)
     progress_callback(f"Output directory '{output_dir}' is ready.")
-    
+
     TypeTreeHelper.read_typetree_boost = False
     UnityPy.config.FALLBACK_UNITY_VERSION = '2022.3.22f1'
     
@@ -175,6 +186,10 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print):
         for i, obj in enumerate(env.objects):
             data = None
             try:
+                # 快速模式：用不上的类型连反序列化都不做（obj.read() 是完整解析，很贵）
+                if fast and obj.type.name not in ("Texture2D", "TextAsset", "MonoBehaviour"):
+                    continue
+
                 data = obj.read()
                 
                 if not hasattr(data, 'm_Name') or not data.m_Name:
@@ -192,7 +207,11 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print):
                     img = None
                     try:
                         img = data.image
-                        img.save(dest_path)
+                        if fast:
+                            # 预览用图看完即删，用最低压缩换写盘速度
+                            img.save(dest_path, compress_level=1)
+                        else:
+                            img.save(dest_path)
                     finally:
                         if img:
                             del img

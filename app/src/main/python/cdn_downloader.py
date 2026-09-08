@@ -10,6 +10,26 @@ from tqdm import tqdm
 
 import maintenance_info_pb2
 
+
+# 官方 CDN 上只有 HD 和 SD 两档：
+#   HD/<bundle_version>/catalog_alpha.json
+#   SD/<bundle_version_sd>/catalog_alpha.json
+# 界面上的 FHD 是个档位名，对应的资源仍是 HD 那份 —— 实测 FHD/<任何版本号>
+# 一律返回 NoSuchKey。所以凡是要拿版本号或拼 CDN 路径的地方，都必须先过这个归一化。
+#
+# 早先只在 download_bundle 那条路上手写了 `"HD" if quality == "FHD" else quality`，
+# 取 catalog 那条路漏了（版本号映射了、路径没映射），拼出 FHD/<HD 版本号> 直接 404。
+# 后果不是「下载失败」这么直白：catalog 拿不到 → 干净检测表为空 → 一键卸载认为
+# 没有任何被修改的 bundle，显示「所有资源都是官方原版」。选了 FHD 的用户因此
+# 完全卸不掉 mod。归一化收在一个函数里就是为了不再漏第二次。
+CDN_QUALITIES = ("HD", "SD")
+
+
+def normalize_quality(quality):
+    """把界面画质换成 CDN 上真实存在的那一档。"""
+    return "HD" if quality == "FHD" else quality
+
+
 # Helper functions to simulate SerializationUtilities
 class SerializationUtilities:
     class ObjectType:
@@ -23,6 +43,7 @@ class SerializationUtilities:
         JsonObject = 7
 
 def get_cdn_version(quality):
+    quality = normalize_quality(quality)
     try:
         from java.net import URL
         from java.lang import String
@@ -87,6 +108,7 @@ def get_cdn_version(quality):
     return None
 
 def download_catalog(output_dir, quality, version, cache, lock, progress_callback=None):
+    quality = normalize_quality(quality)
     # Check the in-memory cache first
     if version in cache:
         if progress_callback: progress_callback(f"Catalog for version {version} found in memory cache.")
@@ -102,13 +124,28 @@ def download_catalog(output_dir, quality, version, cache, lock, progress_callbac
         # --- If still not in cache, proceed with download ---
         filename = Path(output_dir).joinpath(f"catalog_{version}.json")
 
+        # 磁盘缓存：catalog 约 60MB，而内存缓存每换一个安装批次就会被清空
+        # （见 download_bundle 里的 cache_key 逻辑）。同版本直接复用磁盘上的那份，
+        # 避免每批安装都重下 60MB。文件名按 version 命名，故不存在读到旧版本的风险。
+        if filename.exists():
+            try:
+                with open(filename, 'rb') as file:
+                    catalog_content = json.loads(file.read())
+                cache[version] = catalog_content
+                if progress_callback:
+                    progress_callback(f"Catalog for version {version} loaded from disk cache.")
+                return catalog_content, None
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(f"Disk-cached catalog unusable ({e}), re-downloading.")
+
         # Clean up old physical catalogs to prevent using stale data
         old_catalogs = list(Path(output_dir).glob("catalog_*.json"))
         for f in old_catalogs:
             try:
                 os.remove(f)
             except OSError as e:
-                if progress_callback: 
+                if progress_callback:
                     progress_callback(f"Error removing old catalog {f}: {e}")
 
         url = f"https://cdn.bd2.pmang.cloud/ServerData/Android/{quality}/{version}/catalog_alpha.json"
@@ -234,6 +271,7 @@ def _generate_download_urls(base_url, download_name, bundle_name, bundle_hash):
 
 
 def find_and_download_bundle(catalog_content, version, quality, hashed_name, output_dir, progress_callback=None):
+    quality = normalize_quality(quality)
     if not catalog_content:
         return None, "Catalog content is missing or empty."
 

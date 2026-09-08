@@ -1,146 +1,127 @@
-[![GitHub All Releases](https://img.shields.io/github/downloads/Ark-Repoleved/BDroid_X/total)](https://github.com/Ark-Repoleved/BDroid_X/releases) [![GitHub release (latest by date)](https://img.shields.io/github/downloads/Ark-Repoleved/BDroid_X/latest/total)](https://github.com/Ark-Repoleved/BDroid_X/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/Haru762/BD2ToolsBox)](https://github.com/Haru762/BD2ToolsBox/releases/latest)
 
-[English](./README.md) | [繁體中文](./README.zh-TW.md) | [實用度調查](https://github.com/Ark-Repoleved/bd2-android-mod-manager/discussions/5) | <a href="https://ko-fi.com/issekisaji">
-    <img alt="Static Badge" align="top" src="https://raw.githubusercontent.com/Ark-Repoleved/bd2-android-mod-manager/refs/heads/main/.github/sparkle-mug.gif" height="24">
-</a>
+[简体中文](./README.md) | [English](./README.en.md) | [繁體中文](./README.zh-TW.md)
 
-# BrownDust 2 Android 模組管理器
+# BD2 ToolsBox
 
-**直接在手機上管理並安裝《棕色塵埃2》模組。**
+**在手機上直接管理和裝入 Brown Dust 2 的 mod，不需要電腦。**
 
 ---
 
-## ✨ 主要功能
+## 功能
 
-*   **📱 無需電腦**：完全在您的 Android 裝置上完成模組解包、紋理轉換 (ASTC) 和重新打包。
-*   **🧠 智慧模組分組**：自動掃描您的模組資料夾，並根據修改的目標遊戲檔案進行分組，避免衝突。
-*   **⚡ 批次處理**：一次選取並安裝來自不同分組的多個模組，省時又省力。
-*   **🔀 Shizuku 整合**：一鍵將打包好的檔案搬移到遊戲目錄。
-*   **👀 動畫即時預覽**：安裝前長按任何模組，即可預覽其 Spine 動畫的實際效果。
-*   **🔧 內建實用工具**：包含 Spine 圖集合併、遊戲資源檔解包等進階工具。
-
----
-
-## 🚀 開始使用
-
-### 系統需求
-*   Android 8 或更高版本。
-*   已安裝最新版的《棕色塵埃2》官方遊戲。
-*   [Shizuku](https://shizuku.rikka.app/)：資源包掃描和一鍵將檔案搬到遊戲目錄，這是必要條件。
-
-### 安裝與設定
-
-1.  **下載應用程式**：從 [Releases 頁面](https://github.com/Ark-Repoleved/bd2-android-mod-manager/releases)下載最新的 `.apk` 檔案並安裝。
-2.  **選擇模組資料夾**：
-    *   打開 app 並點擊 **"Select Mod Source Folder"** 按鈕。
-    *   找到您存放所有模組的資料夾，然後點擊 **"使用這個資料夾"**。
-    > **💡 建議：** 在手機根目錄建立一個專用資料夾 (例如：`.BD2_Mods`) 來存放所有模組，方便管理。
+*   **全程手機操作**：解包、紋理轉換（ASTC）、重打包全部在安卓裝置上完成。
+*   **按角色瀏覽**：自動掃描 mod 資料夾，按遊戲角色分組，防止衝突。
+*   **批次處理**：一次勾選多個不同分組的 mod，一起轉換裝入。
+*   **Shizuku 整合**：轉換完一鍵移入遊戲目錄。
+*   **動畫預覽**：長按列表裡的 mod，直接播放它的 Spine 動畫。
+*   **攻略板塊**：GameKee 棕塵2分區攻略——分類樹、搜尋、留言區，正文本地快取，可離線重讀。
+*   **兌換碼板塊**：兌換碼列表 + 官方通道一鍵兌換，填一次遊戲內暱稱，獎勵由官方直發遊戲內信箱，不用登入、不用進遊戲。
+*   **內建工具**：圖集合併、遊戲 bundle 解包。
 
 ---
 
-## 🛠️ 使用教學
+## 上手
 
-### 1. 準備您的模組 (重要！)
+### 需要
 
-為確保 App 能正確識別，您的模組必須遵循特定的資料夾結構。每個模組都需要有自己獨立的資料夾，且內部的檔案名稱**必須**與遊戲原始資產的名稱完全相同。
+*   Android 8 及以上。
+*   已安裝官方最新版 Brown Dust 2。
+*   [Shizuku](https://shizuku.rikka.app/)——掃描與移入遊戲目錄都靠它。沒有 Shizuku 能轉換，但裝不進遊戲。
 
-> **⚠️ 警告：** 所有檔案名稱都必須是**小寫**（例如：`char000104.png`，不能是 `Char000104.png`）。此外，`.atlas` 檔案內引用的圖片檔名也必須是**小寫**，不然遊戲可能會**閃退**。
+### 安裝
 
-**範例結構：**
+1.  從 [Releases](https://github.com/Haru762/BD2ToolsBox/releases) 下載最新 APK 安裝。模擬器上務必強制 x86_64，否則會走 ARM 轉譯閃退：
+    `adb install --abi x86_64 BD2_ToolsBox_debug.apk`
+2.  啟動 Shizuku，按首次引導完成授權。
+3.  點「**新增 mod 資料夾**」，選到你放 mod 的目錄。
+
+> 建議在手機儲存空間裡建一個專用目錄（如 `.BD2_Mods`），把所有 mod 集中放在裡面。
+
+---
+
+## mod 的目錄結構（重要）
+
+每個 mod 一個資料夾，裡面的檔名必須與遊戲原始資源**完全一致**。zip 包也認，任意層級都會被找出來；子資料夾會自動往下找，選合集根目錄也可以。
+
+> **⚠️ 注意：所有檔名必須全小寫**（`char000104.png` 而不是 `Char000104.png`），且 `.atlas` 裡引用的圖片檔名也得是小寫，否則遊戲可能當機。
+
+**目錄結構範例：**
 ```
-📁 .BD2_Mods/
-├── 📁 Lathel_DarkKnight_IDLE/
-│   ├── 📄 char000104.skel      (或 .json 骨架檔)
-│   ├── 📄 char000104.atlas     (圖集定義檔)
-│   └── 🖼️ char000104.png         (紋理貼圖)
-│
-└── 📁 Another_Mod/
-    └── ... (其他模組檔案)
+.BD2_Mods/
+├── Lathel_DarkKnight_IDLE/
+│   ├── char000104.skel      （骨架，或 .json）
+│   ├── char000104.atlas     （圖集映射）
+│   └── char000104.png       （貼圖）
+└── Another_Mod/
+    └── ...
 ```
 
-### 2. 安裝模組
+---
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Ark-Repoleved/bd2-android-mod-manager/main/guide_video.gif" width="250">
-</p>
+## 裝 mod
 
-1.  **選擇模組**：在 App 主畫面中，勾選您想安裝的模組。
-2.  **開始打包**：點擊右下角的 **Repack (✓)** 浮動按鈕。
-3.  **等待處理**：App 將自動下載最新的遊戲原始檔案並重新打包您選擇的模組。進度會即時顯示在彈出視窗中。
-4.  **搬移檔案到遊戲目錄**：
-    *   打包完成後，一個包含所有模組檔案的新資料夾 **`Shared`** 將會儲存到您手機的 **`Download`** 資料夾中。
-    *   **使用 Shizuku（推薦）：** 如果 [Shizuku](https://shizuku.rikka.app/) 正在運行，畫面上會出現 **「Move to Game Directory」** 按鈕。點擊即可自動搬移檔案 — 即使是 Android 16+ 也能正常運作。
-    *   **不使用 Shizuku：** 您可以使用第三方檔案管理器手動搬移 `Shared` 資料夾，或複製畫面上提供的 ADB 指令。
-    *   目標路徑為：`/Android/data/com.neowizgames.game.browndust2/files/UnityCache/`。
+1.  **勾選**：在列表裡勾上要裝的 mod。
+2.  **轉換**：點「**開始**」——app 會自動下載所需的原版檔案並重打包，彈窗顯示即時進度。
+3.  **裝入**：轉換完點「**一鍵裝入遊戲**」（需 Shizuku 執行中）——檔案移入遊戲目錄，**重新啟動遊戲後生效**。
+4.  **解除安裝**：「一鍵解除全部 mod」或單個 mod 的「解除安裝」，還原原版。
+
+手動搬運時的目標路徑：`/Android/data/com.neowizgames.game.browndust2/files/UnityCache/`
 
 ---
 
-## 🔧 其他工具
+## 其他工具
 
-### Spine 動畫預覽
-不確定模組動起來的效果如何？
-1.  在列表中找到您想查看的模組。
-2.  **長按**該模組。
-3.  預覽視窗將會彈出並播放動畫。
+### 動畫預覽
+不確定 mod 裝上什麼效果？**長按**列表裡的 mod 即可開啟預覽播放。
 
-### Spine 圖集合併工具 (問題排解專用)
-**已自動化，但保留手動模式作為備案。**
+### 圖集合併（自救工具）
+裝入後貼圖錯亂時：只勾選出問題的那個 mod，點合併。原始檔會備份進 `.old` 子資料夾，重新裝入即可。
 
-App 會在打包過程中自動偵測並合併圖檔，這能解決大部分的閃退問題。但如果您的模組顯示仍然異常：
-1.  在主畫面，找到導致閃退的模組，並**只勾選該模組**。
-2.  點擊 **"Merge Spine"** 浮動按鈕。
-3.  App 會自動處理檔案，原始檔案將被備份至新的 `.old` 子資料夾。
-4.  重新安裝合併後的新模組，閃退問題應該就會解決。
-
-### 獨立資源解包工具
-供進階使用者提取遊戲原始檔案。
-1.  確保主畫面上沒有勾選任何模組。
-2.  點擊右下角的**解包 (📤)** 浮動按鈕。
-3.  選擇您想解包的 `__data` 檔案。
-4.  解包後的內容將儲存於 **`Download/outputs`** 資料夾。
+### bundle 解包
+想提取原版遊戲檔案：不勾任何 mod，點解包圖示，選要解的 `__data` 檔案，產物儲存在 `Download/outputs`。
 
 ---
 
-## ❤️ 支持這個專案
+## 常見問題
 
-如果您覺得這個工具對你有幫助，歡迎 <a href="https://ko-fi.com/issekisaji" style="text-decoration: none;">請我喝杯咖啡 <img alt="在 Ko-fi 上支持我" align="top" src="https://raw.githubusercontent.com/Ark-Repoleved/bd2-android-mod-manager/refs/heads/main/.github/sparkle-mug.gif" height="24"></a>，任何支持都會是我持續開發的動力！
+**Q：列表裡看不到我的 mod。**
+檢查「新增 mod 資料夾」選的目錄對不對；mod 要按上面的結構放；檔名要和遊戲原始資源一致。
 
----
+**Q：裝完 mod 遊戲當機。**
+多半是這兩種：貼圖數量和原版對不上（app 一般會自動修）；或檔名沒全小寫（見上文警告）。先試試「圖集合併」工具；還不行就是 mod 本身損壞或不相容。
 
-## ❓ 常見問題
+**Q：裝入失敗。**
+常見原因：網路不好（原版檔案沒下載下來）、mod 檔名不對、轉換出錯。看彈窗裡的錯誤訊息定位。
 
-*   **Q: 為什麼我的模組沒有顯示在 App 裡？**
-    *   **A:** 請再次確認您在初次設定時選擇了正確的「模組來源資料夾」。同時，確保您的模組都已解壓縮，並遵循正確的[資料夾結構](#1-準備您的模組-重要)。
-
-*   **Q: 裝完模組後遊戲閃退或崩潰了怎麼辦？**
-    *   **A:** 這通常是以下原因造成的：
-        1.  **紋理數量不符**：模組的 `.png` 檔案數量與原始遊戲不符（App 通常會自動修復此問題）。
-        2.  **檔名錯誤**：所有檔案名稱必須是**小寫**（例如 `char000104.png`），且 `.atlas` 內引用的圖片檔名也必須是小寫。
-
-        如果問題持續，請嘗試使用 **「Merge Spine」** 功能手動合併。若仍無法解決，那可能是模組本身損壞或與遊戲版本不相容。
-
-*   **Q: 安裝失敗了怎麼辦？**
-    *   **A:** 安裝失敗的常見原因有：
-        1.  網路連線不穩，導致無法下載遊戲原始檔。
-        2.  模組內的檔案名稱不正確。
-        3.  打包過程中發生非預期的錯誤。
-        請檢查彈出視窗中的錯誤訊息以獲得更多資訊。
-
-*   **Q: 安裝後遊戲內的畫面顯示不正常。**
-    *   **A:** 這很可能是模組本身不完整，或與 Android 版不相容。一個完整的角色模組需要包含 `.png`、`.atlas` 以及 `.skel` (或 `.json`) 三種檔案。
+**Q：裝完後遊戲裡貼圖錯亂。**
+mod 不完整或不相容安卓版。完整的角色 mod 需要三個檔案：`.png`、`.atlas`、`.skel`（或 `.json`）。
 
 ---
 
-## 🙏 致謝
+## 致謝
 
-本專案的完成離不開以下優秀的開源專案與工具：
+本專案站在這些專案之上：
 
-*   **[browndust2-repacker-android](https://codeberg.org/kxdekxde/browndust2-repacker-android)**: 提供 `__data` 檔案重新打包、ASTC 紋理壓縮與 LZ4 壓縮的核心技術。
-*   **[ReDustX](https://github.com/Jelosus2/ReDustX)**: 提供 `.json` 轉 `.skel` 以及從遊戲 CDN 下載原始檔案的機制。
-*   **[UnityPy](https://github.com/K0lb3/UnityPy)**: 用於讀取、修改及儲存 Unity 遊戲資產的基礎 Python 函式庫。
-*   **[astc-encoder](https://github.com/ARM-software/astc-encoder)**: 由 ARM 官方提供的 ASTC 紋理編碼器。
+*   [Ark-Repoleved/BDroid_X](https://github.com/Ark-Repoleved/BDroid_X)——本專案直接改造自它（其授權狀態見下文）。
+*   [browndust2-repacker-android](https://codeberg.org/kxdekxde/browndust2-repacker-android)（GPL-3.0）——重打包與紋理壓縮核心。
+*   [ReDustX](https://github.com/Jelosus2/ReDustX)（MIT）——json 轉 skel 邏輯與 CDN 下載方法。
+*   [UnityPy](https://github.com/K0lb3/UnityPy)（MIT）——Unity 資源讀寫。
+*   [astc-encoder](https://github.com/ARM-software/astc-encoder)（Apache-2.0）——官方 ASTC 紋理編碼器。
+*   [BD2ModManager](https://github.com/bruhnn/BD2ModManager)（GPL-3.0）——角色詮釋資料（中文名 / 性別 / 頭像）來源。
+*   資料來源：[browndust2modding.pages.dev](https://browndust2modding.pages.dev/characters)（角色表）、[Brown-Dust-2-Asset](https://github.com/myssal/Brown-Dust-2-Asset)（頭像與立繪）。
+
+各元件在程式碼裡的位置與完整清單見 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ---
 
-## ⭐ Stargazers over time
-[![Stargazers over time](https://starchart.cc/Ark-Repoleved/BDroid_X.svg?variant=adaptive)](https://starchart.cc/Ark-Repoleved/BDroid_X)
+## 授權條款
+
+本專案按 **GNU General Public License v3** 分發，全文見 [`LICENSE`](LICENSE)。
+
+GPLv3 不是自由選擇：轉換核心（`python/repacker/repacker.py`）源自 GPL-3.0 專案，授權隨之傳染。開源前有兩件事需要說清楚（詳見 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)）：
+
+-   本專案從 [Ark-Repoleved/BDroid_X](https://github.com/Ark-Repoleved/BDroid_X) 改造而來，該倉庫目前**沒有 LICENSE 檔案**，其原創部分的再分發授權尚未明確。來源已標注，並已向上游提 issue 請其表態；若你是上游作者對此有異議，請開 issue，我們會立即配合處理。
+-   `pixi-spine` 使用與 GPL 不相容的 SPINE-LICENSE，**不隨 APK 分發**——首次使用動畫預覽時由 app 從 npm CDN 自行下載。
+
+*Brown Dust 2* 及其全部遊戲素材版權屬 Neowiz / Round8 Studio 所有。本工具只修改本地遊戲快取，不分發任何遊戲素材。

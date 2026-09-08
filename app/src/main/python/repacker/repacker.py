@@ -1,3 +1,23 @@
+# ---------------------------------------------------------------------------
+# 来源与许可
+#
+# 本文件的核心重打包与纹理压缩逻辑源自 browndust2-repacker-android
+#   https://codeberg.org/kxdekxde/browndust2-repacker-android
+#   Copyright (C) kxdekxde
+#   许可：GNU General Public License v3（该仓库根目录 LICENSE.txt）
+# 经 BDroid_X（https://github.com/Ark-Repoleved/BDroid_X）改造后并入本项目，
+# 本项目在其上继续修改。
+#
+# 本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证
+# 第 3 版的条款重新分发和／或修改它。许可证全文见本仓库根目录的 LICENSE。
+#
+# 分发本程序是希望它有用，但**不提供任何担保**，甚至没有适销性或特定用途
+# 适用性的默示担保。详见 GNU 通用公共许可证。
+#
+# 上游 LICENSE.txt 只放了 GPLv3 全文、未声明是否适用「或任何更新版本」，
+# 因此这里按 GPLv3 本身处理，不擅自替上游加 or-later。
+# ---------------------------------------------------------------------------
+
 from PIL import Image
 import os
 import ctypes

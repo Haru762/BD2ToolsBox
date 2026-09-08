@@ -5,7 +5,7 @@
 -keep class com.chaquo.python.runtime.** { *; }
 
 # Shizuku
--keep class com.example.bd2modmanager.service.ShizukuFileService { *; }
+-keep class com.bd2toolsbox.service.ShizukuFileService { *; }
 
 # Gson: preserve generic signatures for TypeToken
 -keepattributes Signature
@@ -13,4 +13,4 @@
 -keep class * extends com.google.gson.reflect.TypeToken
 
 # Keep data model classes used with Gson serialization
--keep class com.example.bd2modmanager.data.model.** { *; }
+-keep class com.bd2toolsbox.data.model.** { *; }

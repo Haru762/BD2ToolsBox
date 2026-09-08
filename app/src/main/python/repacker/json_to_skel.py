@@ -1,3 +1,17 @@
+# ---------------------------------------------------------------------------
+# 来源与许可
+#
+# 本文件的 .json → .skel 转换逻辑源自 ReDustX
+#   https://github.com/Jelosus2/ReDustX
+#   Copyright (c) 2025 Jelosus2
+#   许可：MIT（全文见本仓库 licenses/ReDustX-LICENSE.txt）
+# 经 BDroid_X（https://github.com/Ark-Repoleved/BDroid_X）改造后并入本项目。
+#
+# MIT 允许并入 GPLv3 项目，条件是保留上述版权声明与许可全文 —— 所以这段注释
+# 和 licenses/ 下那份全文都不能删。整个项目按 GPLv3 分发（见根目录 LICENSE），
+# 但本文件源自 ReDustX 的那部分同时仍受 MIT 覆盖。
+# ---------------------------------------------------------------------------
+
 import hashlib
 import json
 import struct

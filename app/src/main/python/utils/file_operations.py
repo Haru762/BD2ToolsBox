@@ -1,4 +1,4 @@
-"""File operation utilities for BDroid_X."""
+"""文件操作辅助函数。"""
 import os
 from typing import Optional
 

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.bd2modmanager"
+    namespace = "com.bd2toolsbox"
     compileSdk = 34
 
     signingConfigs {
@@ -21,11 +23,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.bd2modmanager"
+        applicationId = "com.bd2toolsbox"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = System.getenv("APP_VERSION_NAME") ?: "1.0"
+        versionCode = 2
+        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -84,6 +86,22 @@ android {
 
 chaquopy {
     defaultConfig {
+        // 构建机上用哪个 Python 来装 pip 包。Chaquopy 15 只支持 3.8–3.11，
+        // 而系统 PATH 上常常是更新的版本（3.13），所以多半要显式指定。
+        //
+        // 不能写死路径 —— 那是某台机器上的绝对路径，别人克隆下来必然构建失败，
+        // 而且会把本机用户名带进公开仓库。改成按这个顺序找：
+        //   1. local.properties 里的 chaquopy.python（该文件已在 .gitignore 中）
+        //   2. 环境变量 CHAQUOPY_PYTHON
+        //   3. 都没有就不设，交给 Chaquopy 自己去 PATH 里找
+        val localPython = Properties().apply {
+            rootProject.file("local.properties")
+                .takeIf { it.exists() }
+                ?.inputStream()
+                ?.use { load(it) }
+        }.getProperty("chaquopy.python") ?: System.getenv("CHAQUOPY_PYTHON")
+
+        if (!localPython.isNullOrBlank()) buildPython(localPython)
         pip {
             install("Pillow")
             install("lz4")

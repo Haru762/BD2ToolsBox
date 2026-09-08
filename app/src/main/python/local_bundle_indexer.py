@@ -128,7 +128,39 @@ def _load_existing_cache(cache_path):
 # Three-step scanning API
 # ---------------------------------------------------------------------------
 
-def check_scan_needed(output_dir, bundle_list_json):
+def _relevant_bundles_from_catalog(output_dir):
+    """从 catalog 找出「可能被 mod 替换」的 bundle 集合。查不到就返回 None。
+
+    扫描的唯一用途是把 mod 的文件名映射到游戏 bundle，而 mod 能替换的只有角色骨架
+    （SkeletonData/…）和立绘 prefab（illust_*）这两类。游戏里另外那一大半 bundle 装的是
+    UI、音效、场景、字体，扫了也永远匹配不上。
+
+    实测按此筛选：1780 个 bundle → 309 个，需从游戏目录拷贝的字节数
+    14.47 GB → 4.19 GB（降到 29%）。而判断依据全部来自 catalog，一个文件都不用拷。
+
+    返回 None 表示 catalog 不可用（比如首次启动还没下载），此时调用方应退回全量扫描 ——
+    宁可慢，也不能因为筛错而认不出用户的 mod。
+    """
+    try:
+        _, bundle_to_keys = _parse_catalog_data(output_dir)
+    except Exception:
+        return None
+    if not bundle_to_keys:
+        return None
+
+    relevant = set()
+    for bundle_name, keys in bundle_to_keys.items():
+        for k in keys:
+            if "skeletondata" in k or "illust" in k:
+                relevant.add(bundle_name)
+                break
+    # catalog 解析出的条目太少，说明格式变了或解析出错，不敢据此裁剪
+    if len(relevant) < 20:
+        return None
+    return relevant
+
+
+def check_scan_needed(output_dir, bundle_list_json, full_scan=False):
     """
     Step 1: Compare the current bundle list against the cached index to
     determine which bundles need scanning.
@@ -140,6 +172,7 @@ def check_scan_needed(output_dir, bundle_list_json):
         output_dir: Path where the index cache JSON lives (app-writable dir)
         bundle_list_json: JSON string or list of objects:
             [{"name": "bundleName", "hash": "hashDirName"}, ...]
+        full_scan: True 时不做 catalog 预筛，扫描全部 bundle（兜底用）
 
     Returns:
         JSON string of bundle names that need scanning: ["name1", "name2", ...]
@@ -153,8 +186,12 @@ def check_scan_needed(output_dir, bundle_list_json):
     existing_cache = _load_existing_cache(cache_path)
     cached_bundles = existing_cache.get("scannedBundles", {}) if existing_cache else {}
 
+    # 只扫「可能被 mod 替换」的那部分，其余跳过（详见 _relevant_bundles_from_catalog）
+    relevant = None if full_scan else _relevant_bundles_from_catalog(output_dir)
+
     needs_scan = []
     still_valid = {}
+    skipped_irrelevant = 0
 
     for item in bundle_list:
         name = item["name"]
@@ -163,9 +200,16 @@ def check_scan_needed(output_dir, bundle_list_json):
         if cached and cached.get("hash") == hash_:
             # Hash unchanged — reuse cached scan result
             still_valid[name] = cached
+        elif relevant is not None and name not in relevant:
+            # catalog 说这个 bundle 里没有骨架/立绘，mod 不可能改它 —— 不必拷进来解析
+            skipped_irrelevant += 1
         else:
             # New or updated — needs scanning
             needs_scan.append(name)
+
+    if skipped_irrelevant:
+        print(f"catalog 预筛跳过 {skipped_irrelevant} 个与 mod 无关的 bundle，"
+              f"待扫 {len(needs_scan)} 个")
 
     # Initialize/reset scan state
     _scan_state = {
