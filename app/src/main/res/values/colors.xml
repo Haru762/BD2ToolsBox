@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <!-- 启动图标的底色。取默认配色方案（AppThemes.PURPLE）的主色，
+         这样桌面图标和进 app 后看到的颜色是一套。原先是纯黑 —— 那是上游的选择。 -->
+    <color name="ic_launcher_background">#FF6650A4</color>
+</resources>

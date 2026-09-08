@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Spine Preview</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <script src="./js/pixi.min.js"></script>
+    <!-- pixi-spine 不随安装包分发（SPINE-LICENSE 是专有许可，与本项目的 GPLv3 不兼容），
+         由 app 首次预览时下载到私有目录，路径通过 URL 参数 runtime 传进来。
+         见 SpineRuntimeRepository。 -->
+    <link rel="stylesheet" href="./css/main.css">
+</head>
+<body>
+<main id="main" class="side-collapsed">
+    <div id="scene">
+        <div id="resolution">
+            <div>Width: <span id="resolution-width"></span>px</div>
+            <div>Height: <span id="resolution-height"></span>px</div>
+        </div>
+    </div>
+    <button id="toggle-button"></button>
+    <div id="side">
+        <div class="control-group">
+            <div class="control-group-title">Playback</div>
+            <div class="row">
+                <label for="zoom">Zoom</label>
+                <input type="range" id="zoom" value="100" min="10" max="500" step="1">
+                <span id="zoom-show" class="option-value">100%</span>
+            </div>
+            <div class="row">
+                <label for="speed">Speed</label>
+                <input type="range" id="speed" value="1" min="0" max="5" step="0.01">
+                <span id="speed-show" class="option-value">1.00x</span>
+            </div>
+            <div class="row">
+                <label for="default-mix">Mix</label>
+                <input type="range" id="default-mix" value="0" min="0" max="2" step="0.1">
+                <span id="default-mix-show" class="option-value">0.0s</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="control-group-title">Scene</div>
+             <div class="row">
+                <label for="colorInput">Background</label>
+                <input type="color" id="colorInput" value="#1a1a1a">
+            </div>
+            <div class="row">
+                <button onclick="resetPosition()">Reset Position</button>
+                <button onclick="pauseAnimation()">Pause/Play</button>
+                <button onclick="resetZoom()">Reset Zoom</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="control-group-title">Skins</div>
+            <ol class="list" id="skins"></ol>
+        </div>
+
+        <div class="control-group" style="flex-grow: 1; display: flex; flex-direction: column;">
+            <div class="control-group-title">Animations</div>
+            <ol class="list" id="animations"></ol>
+        </div>
+    </div>
+</main>
+<script src="js/util.js"></script>
+<script>
+    // pixi-spine 与渲染脚本的加载顺序必须严格保证：preview_renderer.js 一上来就用
+    // PIXI.spine.*，运行时没就绪就会直接抛错。所以先加载 runtime，onload 之后
+    // 再把 renderer 挂上，而不是两个 <script> 并排写。
+    (function () {
+        var runtime = new URLSearchParams(location.search).get('runtime');
+
+        function fail(msg) {
+            document.body.innerHTML =
+                '<div style="color:#ddd;font:14px/1.7 sans-serif;padding:24px;white-space:pre-wrap">' +
+                msg + '</div>';
+        }
+
+        if (!runtime) {
+            fail('缺少 Spine 运行时路径参数。');
+            return;
+        }
+
+        var s = document.createElement('script');
+        s.src = runtime;
+        s.onload = function () {
+            var r = document.createElement('script');
+            r.src = 'preview_renderer.js';
+            // preview_renderer.js 是靠 DOMContentLoaded 启动的（见其末尾）。
+            // 等它被动态插进来时那个事件早就触发过了，监听器再也不会被调用 ——
+            // 页面会是一片深色空白（PixiJS 初始化成功、但角色始终不加载）。
+            // 所以补派发一次。整页只有 renderer 监听这个事件，不会牵连别处。
+            r.onload = function () {
+                if (document.readyState !== 'loading') {
+                    document.dispatchEvent(new Event('DOMContentLoaded'));
+                }
+            };
+            document.body.appendChild(r);
+        };
+        // 文件存在但内容不对（下到一页错误页之类）会走到这里
+        s.onerror = function () {
+            fail('Spine 运行时加载失败。\n文件可能不完整，可在设置里清掉它再重新预览一次。');
+        };
+        document.head.appendChild(s);
+    })();
+</script>
+</body>
+</html>

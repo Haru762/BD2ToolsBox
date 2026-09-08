@@ -1,0 +1,2857 @@
+package com.bd2toolsbox.ui.viewmodel
+
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import android.provider.DocumentsContract
+import android.provider.MediaStore
+import android.util.Log
+import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.chaquo.python.Python
+import com.bd2toolsbox.SpinePreviewActivity
+import com.bd2toolsbox.data.model.*
+import com.bd2toolsbox.data.repository.AvatarRepository
+import com.bd2toolsbox.data.repository.BundleBackupRepository
+import com.bd2toolsbox.data.repository.BundleNameResolver
+import com.bd2toolsbox.data.repository.CharacterMetaRepository
+import com.bd2toolsbox.data.repository.CharacterRepository
+import com.bd2toolsbox.data.repository.InstalledModRepository
+import com.bd2toolsbox.data.repository.ModRepository
+import com.bd2toolsbox.data.repository.PreviewCacheRepository
+import com.bd2toolsbox.data.repository.SpineRuntimeRepository
+import com.bd2toolsbox.service.InstallService
+import com.bd2toolsbox.service.ModdingService
+import com.bd2toolsbox.service.PrepackService
+import com.bd2toolsbox.service.ShizukuManager
+import com.bd2toolsbox.ui.theme.AppTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.zip.ZipInputStream
+
+class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
+
+    companion object {
+        /** Shizuku 官方 app 的包名，用于「打开 Shizuku」按钮。 */
+        const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+
+        /**
+         * mod 源目录列表在 SharedPreferences 里的分隔符。
+         *
+         * 用换行而不是 JSON：URI 规范要求换行必须转义，所以它绝不会出现在值里，
+         * 这么写就不必为一个字符串列表专门养一个 Gson 实例。
+         */
+        private const val DIR_SEPARATOR = "\n"
+
+        /**
+         * 无 Shizuku 时的手动装入命令（需要 root shell）。
+         *
+         * 必须是「合并」语义而不是 `mv`：游戏跑过一次就会在 UnityCache 下生成
+         * 非空的 Shared 目录，此时 `mv src/Shared dst/` 会因目标已存在而直接失败
+         * （`Directory not empty`），一个文件都不会被装入。`cp -rf src/. dst/`
+         * 才是把内容逐个合并进去。
+         */
+        const val MANUAL_INSTALL_COMMAND =
+            "cp -rf /storage/emulated/0/Download/Shared/. " +
+            "/storage/emulated/0/Android/data/com.neowizgames.game.browndust2/files/UnityCache/Shared/ " +
+            "&& rm -rf /storage/emulated/0/Download/Shared"
+    }
+
+    private fun shouldIgnoreModEntry(entryName: String?): Boolean {
+        val name = entryName?.substringAfterLast('/')?.trim()?.lowercase() ?: return true
+        return name.isEmpty() || name == ".modfile" || name.endsWith(".modfile")
+    }
+
+    private lateinit var characterRepository: CharacterRepository
+    private lateinit var modRepository: ModRepository
+    private lateinit var installedModRepository: InstalledModRepository
+    private lateinit var backupRepository: BundleBackupRepository
+    private lateinit var previewCacheRepository: PreviewCacheRepository
+
+    /**
+     * 全部 mod 源目录。
+     *
+     * 原先只记一个：选哪个就只显示哪个，换目录等于把上一个的 mod 全从列表里抹掉 ——
+     * 而 mod 本来就常散在好几处（按作者分的、下载堆着的、自己整理过的）。
+     *
+     * 只存 URI、不把文件拷到一处：拷贝动辄几个 GB，而且会废掉用户原有的目录结构。
+     * 扫描时遍历全部目录再合并，按 mod uri 去重（用户可能同时加了 A 和 A/sub）。
+     */
+    private val _modSourceDirs = MutableStateFlow<List<Uri>>(emptyList())
+    val modSourceDirs: StateFlow<List<Uri>> = _modSourceDirs.asStateFlow()
+
+    /**
+     * 「有没有目录」以及「其中某一个」。
+     *
+     * 保留这个是为了让判空的地方（欢迎页、下拉刷新等）不必都改成查列表长度；
+     * 值取列表第一个，null 表示一个目录都没有。
+     */
+    val modSourceDirectoryUri: StateFlow<Uri?> = _modSourceDirs
+        .map { it.firstOrNull() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _modsList = MutableStateFlow<List<ModInfo>>(emptyList())
+    val modsList: StateFlow<List<ModInfo>> = _modsList.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _isUpdatingCharacters = MutableStateFlow(false)
+    val isUpdatingCharacters: StateFlow<Boolean> = _isUpdatingCharacters.asStateFlow()
+
+    val showShimmer: StateFlow<Boolean> =
+        combine(_modsList, _isLoading, _isUpdatingCharacters) { mods, isScanning, isUpdating ->
+            (isScanning || isUpdating) && mods.isEmpty()
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
+
+    private val _selectedMods = MutableStateFlow<Set<Uri>>(emptySet())
+    val selectedMods: StateFlow<Set<Uri>> = _selectedMods.asStateFlow()
+
+    private val _useAstc = MutableStateFlow(false)
+
+    /** 装入前是否自动备份原版 bundle，让卸载能本地秒还原而不必重新下载。默认开。 */
+    private val _backupOriginals = MutableStateFlow(true)
+    val backupOriginals: StateFlow<Boolean> = _backupOriginals.asStateFlow()
+
+    /**
+     * 跟随壁纸取色（Material You）。默认**关** —— 壁纸配色未必和界面里那套状态色协调，
+     * 交给用户主动开。Android 12 以下即便开了也无效（主题里会忽略）。
+     */
+    private val _dynamicColor = MutableStateFlow(false)
+    val dynamicColor: StateFlow<Boolean> = _dynamicColor.asStateFlow()
+
+    /** 手选的配色预设。开了「跟随壁纸取色」时它让位（系统那套没法再叠预设）。 */
+    private val _appTheme = MutableStateFlow(AppTheme.PURPLE)
+    val appTheme: StateFlow<AppTheme> = _appTheme.asStateFlow()
+
+    fun setAppTheme(theme: AppTheme) {
+        _appTheme.value = theme
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.putString("app_theme", theme.name)?.apply()
+    }
+
+    /**
+     * 自定义壁纸的 SAF URI；null = 不用壁纸。
+     *
+     * 存 URI 而不是把图拷进 app 目录：省一份体积，用户换图也不必再来一趟。
+     * 代价是要拿持久化读权限（见 [setWallpaper]），否则重启后读不到。
+     */
+    private val _wallpaperUri = MutableStateFlow<Uri?>(null)
+    val wallpaperUri: StateFlow<Uri?> = _wallpaperUri.asStateFlow()
+
+    /**
+     * 内容层盖在壁纸上的遮罩不透明度，0f = 壁纸全见（字最难读）、1f = 完全挡住壁纸。
+     *
+     * 有这个滑块是因为「壁纸好看」和「字看得清」天生冲突，而哪张图配多少合适
+     * 只有用户自己知道 —— 与其我定死一个值，不如给条滑块。默认 0.82：
+     * 实测这个值下浅色图能看清正文，深色图也还能辨认壁纸内容。
+     */
+    private val _wallpaperScrim = MutableStateFlow(0.82f)
+    val wallpaperScrim: StateFlow<Float> = _wallpaperScrim.asStateFlow()
+
+    fun setWallpaperScrim(v: Float) {
+        val clamped = v.coerceIn(0f, 1f)
+        _wallpaperScrim.value = clamped
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.putFloat("wallpaper_scrim", clamped)?.apply()
+    }
+
+    /** 选好壁纸后调用。会尝试拿持久化读权限，拿不到也照存 —— 本次运行仍能显示。 */
+    fun setWallpaper(uri: Uri?) {
+        val ctx = appContext
+        if (uri != null && ctx != null) {
+            try {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                // 有些来源（相册的临时项等）给不了持久权限。不拦：本次能看，
+                // 重启后读不到时 loadWallpaper 会返回 null，界面自动退回纯色。
+                Log.w("MainViewModel", "壁纸未能取得持久权限，重启后可能失效", e)
+            }
+        }
+        _wallpaperUri.value = uri
+        ctx?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.putString("wallpaper_uri", uri?.toString())?.apply()
+    }
+
+    /** 备份占用（字节数, 个数），供设置区显示。 */
+    private val _backupUsage = MutableStateFlow(0L to 0)
+    val backupUsage: StateFlow<Pair<Long, Int>> = _backupUsage.asStateFlow()
+    val useAstc: StateFlow<Boolean> = _useAstc.asStateFlow()
+
+    private val _selectedQuality = MutableStateFlow("HD")
+    val selectedQuality: StateFlow<String> = _selectedQuality.asStateFlow()
+
+    private val _isSearchActive = MutableStateFlow(false)
+    val isSearchActive: StateFlow<Boolean> = _isSearchActive.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /** 状态筛选。null = 全部。上百个 mod 时靠它快速找出「当前生效的是哪些」。 */
+    private val _stateFilter = MutableStateFlow<ModInstallState?>(null)
+    val stateFilter: StateFlow<ModInstallState?> = _stateFilter.asStateFlow()
+
+    fun setStateFilter(state: ModInstallState?) {
+        _stateFilter.value = if (_stateFilter.value == state) null else state
+    }
+
+    val filteredModsList: StateFlow<List<ModInfo>> =
+        combine(_modsList, _searchQuery, _stateFilter) { mods, query, filter ->
+            val byState = if (filter == null) mods else mods.filter { it.installState == filter }
+            if (query.isBlank()) {
+                byState
+            } else {
+                val keywords = query.split(" ").filter { it.isNotBlank() }
+                byState.filter { modInfo ->
+                    keywords.all { keyword ->
+                        modInfo.name.contains(keyword, ignoreCase = true) ||
+                        modInfo.character.contains(keyword, ignoreCase = true) ||
+                        modInfo.costume.contains(keyword, ignoreCase = true) ||
+                        modInfo.type.contains(keyword, ignoreCase = true)
+                    }
+                }
+            }
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _installJobs = MutableStateFlow<List<InstallJob>>(emptyList())
+    val installJobs: StateFlow<List<InstallJob>> = _installJobs.asStateFlow()
+
+    /**
+     * 转换 / 装入专用的作用域。**故意不用 viewModelScope，也故意不在 onCleared 里取消。**
+     *
+     * 用户反馈「装 mod 时放着不管容易被杀」。两个原因叠在一起：
+     *   1. 没有前台服务，切后台后系统把整个进程当空闲后台回收
+     *   2. 跑在 viewModelScope 上，用户退出界面时 ViewModel onCleared、协程被取消
+     * 只补第 1 条（[InstallService]）解决不了第 2 条 —— 这是 v6.5 做预解包时踩过的坑。
+     *
+     * 重打包断在中途会在游戏目录留下半个 __data，比慢一点严重得多，所以这条流程
+     * 一旦开始就该跑完。生命周期挂在进程上（前台服务负责让进程活着），
+     * 而不是挂在界面上。
+     */
+    private val installScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val _showInstallDialog = MutableStateFlow(false)
+    val showInstallDialog: StateFlow<Boolean> = _showInstallDialog.asStateFlow()
+
+    private val _finalInstallResult = MutableStateFlow<FinalInstallResult?>(null)
+    val finalInstallResult: StateFlow<FinalInstallResult?> = _finalInstallResult.asStateFlow()
+    
+    // 批次處理開始時間（用於計算總耗時）
+    private var batchStartTimeMs: Long = 0L
+
+    private val _uninstallState = MutableStateFlow<UninstallState>(UninstallState.Idle)
+    val uninstallState: StateFlow<UninstallState> = _uninstallState.asStateFlow()
+
+    private val _unpackState = MutableStateFlow<UnpackState>(UnpackState.Idle)
+    val unpackState: StateFlow<UnpackState> = _unpackState.asStateFlow()
+
+    private val _unpackInputFile = MutableStateFlow<Uri?>(null)
+    val unpackInputFile: StateFlow<Uri?> = _unpackInputFile.asStateFlow()
+
+    private val _mergeState = MutableStateFlow<MergeState>(MergeState.Idle)
+    val mergeState: StateFlow<MergeState> = _mergeState.asStateFlow()
+
+    private val _showMergeDialog = MutableStateFlow(false)
+    val showMergeDialog: StateFlow<Boolean> = _showMergeDialog.asStateFlow()
+
+    private val _moveState = MutableStateFlow<MoveState>(MoveState.Idle)
+    val moveState: StateFlow<MoveState> = _moveState.asStateFlow()
+
+    private val _bundleScanState = MutableStateFlow<BundleScanState>(BundleScanState.Idle)
+    val bundleScanState: StateFlow<BundleScanState> = _bundleScanState.asStateFlow()
+
+    private val _showVersionMismatchWarning = MutableStateFlow(false)
+    val showVersionMismatchWarning: StateFlow<Boolean> = _showVersionMismatchWarning.asStateFlow()
+
+    // Stored for deferred scan execution after user confirmation
+    private var pendingCheckResult: BundleCheckResult? = null
+    private var appContext: Context? = null
+
+    private var initialized = false
+    private var scanJob: Job? = null
+    private var pendingScan: Boolean = false
+
+    /**
+     * 清掉上次遗留的预览临时目录。
+     *
+     * SpinePreviewActivity.onDestroy 会删自己那份，但预览界面被强杀、或 app 整体被系统
+     * 回收时不会走到，残留就永久留在 cache 里。一次预览解出的素材有好几 MB（实测约 5 MB），
+     * 攒多了不小。启动时统一收一遍，比在各处补 try/finally 可靠。
+     */
+    private fun cleanStalePreviewDirs(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                var freed = 0L
+                var n = 0
+                context.cacheDir.listFiles()?.forEach { f ->
+                    if (f.isDirectory && f.name.startsWith("spine_preview_")) {
+                        freed += f.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+                        if (f.deleteRecursively()) n++
+                    }
+                }
+                if (n > 0) {
+                    Log.d("MainViewModel", "清理遗留预览目录 $n 个，释放 ${freed / 1024 / 1024} MB")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun initialize(context: Context) {
+        if (initialized) return
+        initialized = true
+        appContext = context.applicationContext
+
+        val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        restoreSettings(prefs)
+        restoreWallpaper(prefs)
+        restoreModSourceDirs(prefs)
+        watchPrepackCompletion()
+        cleanStalePreviewDirs(context)
+        initRepositories(context)
+        migrateLegacyLedgerIfNeeded()
+
+        startAsyncInitialization(context)
+    }
+
+    /** 读回全部用户设置项。 */
+    private fun restoreSettings(prefs: android.content.SharedPreferences) {
+        _useAstc.value = prefs.getBoolean("use_astc", false)
+        _backupOriginals.value = prefs.getBoolean("backup_originals", true)
+        _dynamicColor.value = prefs.getBoolean("dynamic_color", false)
+        // 画质只认 SD/HD；历史版本存过 FHD（与 HD 同源的假档位），读回归一成 HD
+        _selectedQuality.value = prefs.getString("selected_quality", "HD")
+            ?.takeIf { it == "SD" || it == "HD" } ?: "HD"
+        _appTheme.value = AppTheme.fromName(prefs.getString("app_theme", null))
+        _onboardingDone.value = prefs.getBoolean("onboarding_done", false)
+        _wallpaperScrim.value = prefs.getFloat("wallpaper_scrim", 0.82f)
+    }
+
+    /** 恢复壁纸，但只在持久读权限还在时 —— 权限被系统回收后那个 URI 读不出图，
+     *  界面会是一片空白背景，不如退回纯色（顺手把死键清掉）。 */
+    private fun restoreWallpaper(prefs: android.content.SharedPreferences) {
+        prefs.getString("wallpaper_uri", null)?.let { saved ->
+            try {
+                val uri = Uri.parse(saved)
+                val readable = appContext!!.contentResolver.persistedUriPermissions.any {
+                    it.uri == uri && it.isReadPermission
+                }
+                if (readable) _wallpaperUri.value = uri
+                else prefs.edit().remove("wallpaper_uri").apply()
+            } catch (e: Exception) {
+                prefs.edit().remove("wallpaper_uri").apply()
+            }
+        }
+    }
+
+    /** 恢复上次的 mod 文件夹们，避免每次启动都回到欢迎页。
+     *  只保留持久权限还在的 —— 权限被回收的目录读不出任何东西，留在列表里
+     *  只会让人以为 mod 丢了。v9.3 及以前存的是单目录键，这里一并迁移。 */
+    private fun restoreModSourceDirs(prefs: android.content.SharedPreferences) {
+        val saved = prefs.getString("mod_source_dirs", null)
+        val legacy = prefs.getString("mod_source_dir_uri", null)
+        val raw: List<String> = when {
+            saved != null -> saved.split(DIR_SEPARATOR).filter { it.isNotBlank() }
+            legacy != null -> listOf(legacy)
+            else -> emptyList()
+        }
+        val granted = appContext!!.contentResolver.persistedUriPermissions
+        val alive = raw.mapNotNull { s ->
+            try {
+                val uri = Uri.parse(s)
+                if (granted.any { it.uri == uri && it.isReadPermission }) uri else null
+            } catch (e: Exception) {
+                null
+            }
+        }
+        _modSourceDirs.value = alive
+        if (alive.size != raw.size || saved == null) {
+            // 顺手清掉旧的单目录键，并落一次新格式
+            prefs.edit().remove("mod_source_dir_uri").apply()
+            persistModSourceDirs()
+        }
+    }
+
+    /** 预解包结束（进度由非空变回 null）后刷新缓存用量。
+     *  解包循环在前台服务里，服务够不到 ViewModel，只能由这边观察它的进度收尾。 */
+    private fun watchPrepackCompletion() {
+        viewModelScope.launch {
+            var wasRunning = false
+            PrepackService.progress.collect { p ->
+                val running = p != null
+                if (wasRunning && !running) refreshPreviewCacheUsage()
+                wasRunning = running
+            }
+        }
+    }
+
+    private fun initRepositories(context: Context) {
+        characterRepository = CharacterRepository(context)
+        modRepository = ModRepository(context, characterRepository)
+        installedModRepository = InstalledModRepository(context)
+        backupRepository = BundleBackupRepository(context)
+        previewCacheRepository = PreviewCacheRepository(context)
+    }
+
+    /** 旧版账本一条记录含多个 modUris 却只有一个 familyKey，还原不出 uri 与 familyKey
+     *  的对应关系，没法安全迁移，只能丢弃重建。账本仅是记账：清空不动游戏里的实际
+     *  文件；装过的 mod 会暂时显示成「被其他工具改过」，重装一次即恢复。 */
+    private fun migrateLegacyLedgerIfNeeded() {
+        if (!installedModRepository.needsReset()) return
+        val n = try {
+            installedModRepository.load().size
+        } catch (e: Exception) {
+            0
+        }
+        installedModRepository.clear()
+        _ledgerResetNotice.value =
+            "装入记录的格式已升级（旧版把同一资源包里的多个 mod 记成一条，会导致卸载时" +
+                "连带卸掉别的 mod）。旧记录已清空，游戏里的文件没有动。" +
+                "重新装一次即可恢复状态显示。"
+        Log.i("MainViewModel", "检测到旧格式账本（$n 条），已清空")
+    }
+
+    /**
+     * 启动期的异步两步：
+     *   1. 刷新角色表（顺带拉起 Python 运行时）
+     *   2. Shizuku 在线时对照缓存检查游戏 bundle，要重扫就弹确认框
+     *
+     * 第 2 步必须排在第 1 步后：两边都要用 Python，而 Python.start() 不是线程安全的。
+     * 角色表刚换版本、游戏 bundle 却没变化时，多半是游戏还没更新 —— 提醒用户去更新。
+     * 需要用户确认扫描的话，初始化收尾推迟到确认之后（finishInitialization）。
+     */
+    private fun startAsyncInitialization(context: Context) {
+        viewModelScope.launch {
+            var requiresDeferredInitialization = false
+            try {
+                _isUpdatingCharacters.value = true
+                val hadLocalCharacters = characterRepository.hasLocalCharactersJson()
+                // 本地已有角色表就先读出来把界面填上：版本检查只是一次网络确认
+                //（常态几秒钟、结果多为「没新版」），没必要让用户对着「首次启动
+                // 需要联网下载」的空屏干等 —— 缓存明明是好的，观感像缓存坏了。
+                if (hadLocalCharacters) refreshCharacterNames()
+
+                val updateStatus = characterRepository.updateCharacterData(_selectedQuality.value)
+                val charactersWereRefreshed = (updateStatus == "SUCCESS" && hadLocalCharacters)
+                if (!hadLocalCharacters || updateStatus == "SUCCESS") {
+                    // 首次启动（空模板，必须等下载完才有得读）或刚换新版本（重读）
+                    refreshCharacterNames()
+                }
+
+                if (ShizukuManager.isAvailable()) {
+                    val checkResult = withContext(Dispatchers.IO) {
+                        ShizukuManager.checkLocalBundles(
+                            outputDir = context.filesDir.absolutePath
+                        ) { progress ->
+                            Log.d("MainViewModel", "Bundle check: $progress")
+                        }
+                    }
+                    if (checkResult != null) {
+                        if (checkResult.needsScanCount > 0) {
+                            pendingCheckResult = checkResult
+                            _bundleScanState.value = BundleScanState.Confirmation(checkResult.needsScanCount)
+                            requiresDeferredInitialization = true
+                        } else if (charactersWereRefreshed) {
+                            // 全部 bundle 都没变 + 角色表刚换版本 → 游戏本体还没更新。
+                            // 不需要重扫时也别跑 finalizeScan —— 那会白白重解析一遍 catalog。
+                            _showVersionMismatchWarning.value = true
+                        }
+                    }
+                } else {
+                    Log.d("MainViewModel", "Shizuku not available, skipping local bundle scan. Using cached index if available.")
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error during initialization", e)
+            }
+
+            if (!requiresDeferredInitialization) {
+                finishInitialization()
+            }
+        }
+
+        // 所有 job 收尾后汇总结果。用 installScope 而不是 viewModelScope：
+        // 汇总带着「自动移入游戏」这步，界面销毁就停止收集的话，
+        // 转换跑完了却没人做最后那一下，产物白留在 Download/Shared。
+        installScope.launch {
+            installJobs.collect { jobs ->
+                if (jobs.isNotEmpty() &&
+                    jobs.all { it.status is JobStatus.Finished || it.status is JobStatus.Failed }) {
+                    summarizeResults()
+                }
+            }
+        }
+    }
+
+    /**
+     * 添加一个 mod 源目录。返回 false 表示这个目录已经被覆盖、列表没有变化。
+     *
+     * 嵌套目录要处理，但**方向只能是一个**：新目录是某个已记住目录的下级时，什么都不做
+     * （它的 mod 本来就已经在列表里了）；反过来新目录是上级时，把它下面那几条收掉。
+     * 早先两个方向一起剔，于是「加了 BD2mods/pc_test」会把「BD2mods」顶掉 ——
+     * 用户本想再添一个目录，眼前 50 个 mod 反而缩成几个。往小的方向改列表永远是错的。
+     */
+    fun addModSourceDir(context: Context, uri: Uri?): Boolean {
+        if (uri == null) return false
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "目录未能取得持久权限: $uri", e)
+        }
+
+        val incoming = uri.toString()
+        val existing = _modSourceDirs.value
+
+        // 已经在列表里，或被某个已记住的上级目录覆盖 —— 加进去只会让同一批 mod
+        // 被扫两遍，而列表里还多一条看不出区别的路径。
+        val coveredBy = existing.firstOrNull { old ->
+            val o = old.toString()
+            incoming == o || incoming.startsWith("$o/")
+        }
+        if (coveredBy != null) {
+            Log.d("MainViewModel", "目录已被覆盖，不重复添加: $incoming（已有 $coveredBy）")
+            rescanAllModSources()
+            return false
+        }
+
+        val kept = existing.filterNot { it.toString().startsWith("$incoming/") }
+        _modSourceDirs.value = kept + uri
+        persistModSourceDirs()
+        rescanAllModSources()
+        return true
+    }
+
+    /** 移除一个目录，并把它的持久权限一并放掉（不然会一直占着配额）。 */
+    fun removeModSourceDir(uri: Uri) {
+        _modSourceDirs.value = _modSourceDirs.value.filterNot { it == uri }
+        persistModSourceDirs()
+        try {
+            appContext?.contentResolver?.releasePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "释放目录权限失败: $uri", e)
+        }
+        if (_modSourceDirs.value.isEmpty()) {
+            _modsList.value = emptyList()
+            _selectedMods.value = emptySet()
+            _stateFilter.value = null
+        } else {
+            rescanAllModSources()
+        }
+    }
+
+    private fun persistModSourceDirs() {
+        // 换行分隔而不是 JSON：URI 规范要求换行必须转义，所以它绝不会出现在值里，
+        // 这么写就不必为一个字符串列表专门养一个 Gson 实例。
+        val blob = _modSourceDirs.value.joinToString(DIR_SEPARATOR) { it.toString() }
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.putString("mod_source_dirs", blob)?.apply()
+    }
+
+    fun setUseAstc(useAstc: Boolean) {
+        _useAstc.value = useAstc
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)?.edit()?.putBoolean("use_astc", useAstc)?.apply()
+    }
+
+    fun setBackupOriginals(enabled: Boolean) {
+        _backupOriginals.value = enabled
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.putBoolean("backup_originals", enabled)?.apply()
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        _dynamicColor.value = enabled
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.putBoolean("dynamic_color", enabled)?.apply()
+    }
+
+    /** 重算备份占用（遍历备份目录，放 IO 线程）。 */
+    fun refreshBackupUsage() {
+        if (!::backupRepository.isInitialized) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val usage = backupRepository.totalBytes() to backupRepository.count()
+            _backupUsage.value = usage
+        }
+    }
+
+    fun clearBackups() {
+        if (!::backupRepository.isInitialized) return
+        viewModelScope.launch(Dispatchers.IO) {
+            backupRepository.clearAll()
+            _backupUsage.value = 0L to 0
+        }
+    }
+
+    // ------------------------------------------------ 批量预解包
+
+    /** 批量预解包的评估结果，给确认框用。 */
+    data class PrepackPlan(
+        val total: Int,
+        val alreadyCached: Int,
+        val todo: Int,
+        val estimatedBytes: Long,
+        val freeBytes: Long,
+        val ratioFromSamples: Boolean
+    ) {
+        /** 预估占用超过可用空间的九成就拦下 —— 塞满存储比多等一会儿糟得多。 */
+        val enoughSpace: Boolean get() = estimatedBytes < freeBytes * 0.9
+    }
+
+    private val _prepackPlan = MutableStateFlow<PrepackPlan?>(null)
+    val prepackPlan: StateFlow<PrepackPlan?> = _prepackPlan.asStateFlow()
+
+    /**
+     * 角色表里的全部角色名，供「按角色」主界面用。
+     *
+     * 必须是全量而非「有 mod 的那些」—— 用户也想看出自己还缺谁。
+     * 角色表是启动时下载的，所以在这里按需读一次并缓存。
+     */
+    private val _allCharacterNames = MutableStateFlow<List<String>>(emptyList())
+    val allCharacterNames: StateFlow<List<String>> = _allCharacterNames.asStateFlow()
+
+    /** NPC（商店/路人模型）角色名，列表里排在可玩角色之后的单独分区。 */
+    private val _npcCharacterNames = MutableStateFlow<List<String>>(emptyList())
+    val npcCharacterNames: StateFlow<List<String>> = _npcCharacterNames.asStateFlow()
+
+    private fun refreshCharacterNames() {
+        val ctx = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val resolver = BundleNameResolver(ctx)
+            val names = resolver.listAllCharacters()
+            _allCharacterNames.value = names
+            _npcCharacterNames.value = resolver.listNpcCharacters()
+            Log.d("MainViewModel", "角色表收录 ${names.size} 个角色")
+
+            // 顺手把随包的角色附加信息（性别/联动/中文名/头像文件名）建好索引。
+            // 它读并解析 52 KB 的 assets json —— 放在这里做掉，界面就不会在
+            // 第一次点筛选或画第一个头像时卡一下。
+            val meta = CharacterMetaRepository.get(ctx)
+            val (male, female, collab) = meta.counts()
+            Log.d(
+                "MainViewModel",
+                "角色附加信息 v${meta.version()}：男 $male / 女 $female / 联动 $collab"
+            )
+        }
+    }
+
+    /** 头像缓存占用（字节数, 文件数）。 */
+    private val _avatarCacheUsage = MutableStateFlow(0L to 0)
+    val avatarCacheUsage: StateFlow<Pair<Long, Int>> = _avatarCacheUsage.asStateFlow()
+
+    fun refreshAvatarCacheUsage() {
+        val ctx = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _avatarCacheUsage.value = AvatarRepository.get(ctx).usage()
+        }
+    }
+
+    fun clearAvatarCache() {
+        val ctx = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            AvatarRepository.get(ctx).clearCache()
+            _avatarCacheUsage.value = 0L to 0
+        }
+    }
+
+    /** 旧格式账本被清空时的一次性告知；null 表示无需提示。 */
+    private val _ledgerResetNotice = MutableStateFlow<String?>(null)
+    val ledgerResetNotice: StateFlow<String?> = _ledgerResetNotice.asStateFlow()
+
+    fun dismissLedgerResetNotice() {
+        _ledgerResetNotice.value = null
+    }
+
+    /**
+     * 批量预解包进度。null 表示没在跑。
+     *
+     * 真正的进度源在 [PrepackService]（它与本进程同生共死，直接共享 StateFlow）。
+     * 用 Eagerly 而非 WhileSubscribed：设置弹层关掉后仍要能感知任务结束。
+     *
+     * 直接把 [PrepackService.Progress] 透出去，不压成 Triple —— 加了 detail
+     * （「读取 62%」/「解包 12/48」）之后四个字段，Triple 装不下，而且靠位置取值
+     * 本来就容易搞错。
+     * （「读取 62%」/「解包 12/48」）之后四个字段，Triple 装不下，而且靠位置取值
+     * 本来就容易搞错。
+     */
+    val prepackProgress: StateFlow<PrepackService.Progress?> =
+        PrepackService.progress
+            .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+
+    /**
+     * 估算「把所有已转换产物都预解包」需要多少空间，并与剩余可用空间比对。
+     *
+     * 膨胀比优先用已有缓存实测出来的（解包后素材 ÷ 源 `__data`），没有样本时退回 1.6 ——
+     * 这个数来自实测：4.0 MB 的产物解出约 6.4 MB 素材。拍系数不如量，但总比不提示好。
+     */
+    fun preparePrepack() {
+        val context = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val converted = _modsList.value.filter {
+                it.kind == ModKind.CONVERTED_BUNDLE && it.convertedHashDir != null
+            }
+            var cached = 0
+            var todoBytes = 0L
+            for (m in converted) {
+                val name = m.targetHash ?: continue
+                val hash = m.convertedHashDir ?: continue
+                val size = m.convertedDataSize ?: 0L
+                if (size > 0 && previewCacheRepository.isValid(name, hash, size)) cached++
+                else todoBytes += size
+            }
+            val measured = previewCacheRepository.measuredExpansionRatio()
+            val ratio = measured ?: 1.6
+            val free = try {
+                (context.getExternalFilesDir(null) ?: context.filesDir).usableSpace
+            } catch (e: Exception) {
+                0L
+            }
+            _prepackPlan.value = PrepackPlan(
+                total = converted.size,
+                alreadyCached = cached,
+                todo = converted.size - cached,
+                estimatedBytes = (todoBytes * ratio).toLong(),
+                freeBytes = free,
+                ratioFromSamples = measured != null
+            )
+        }
+    }
+
+    fun dismissPrepackPlan() {
+        _prepackPlan.value = null
+    }
+
+    /**
+     * 批量预解包：把所有还没缓存的产物依次解包填进缓存，之后预览都是秒开。
+     *
+     * 实际的解包循环在 [PrepackService] 里跑，本函数只负责挑出待办目标并把它交出去。
+     * 之所以不留在 viewModelScope：那样用户一退出界面 ViewModel 就 onCleared、
+     * 协程随之取消，十几分钟的任务几乎不可能跑完。前台服务才撑得住。
+     *
+     * 串行执行 —— 解包是 CPU 密集（要解 ASTC 再压 PNG），并行只会互相抢核，还更容易 OOM。
+     * 缓存逐个提交，所以即便中途被杀，下次再点也会跳过已完成的接着做，不会白干。
+     */
+    fun startPrepack() {
+        val context = appContext ?: return
+        val plan = _prepackPlan.value
+        _prepackPlan.value = null
+        if (plan == null || plan.todo == 0) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val targets = _modsList.value.filter {
+                it.kind == ModKind.CONVERTED_BUNDLE && it.convertedHashDir != null
+            }.mapNotNull { m ->
+                val n = m.targetHash ?: return@mapNotNull null
+                val h = m.convertedHashDir ?: return@mapNotNull null
+                val s = m.convertedDataSize
+                if (s > 0 && previewCacheRepository.isValid(n, h, s)) return@mapNotNull null
+                PrepackService.Target(
+                    treeUri = m.uri.toString(),
+                    bundleName = n,
+                    hashDir = h,
+                    size = s,
+                    displayName = m.name
+                )
+            }
+            if (targets.isEmpty()) return@launch
+            Log.d("MainViewModel", "交给前台服务预解包 ${targets.size} 个")
+            PrepackService.start(context, targets)
+        }
+    }
+
+    fun cancelPrepack() {
+        val context = appContext ?: return
+        PrepackService.cancel(context)
+        refreshPreviewCacheUsage()
+    }
+
+    /** 预览缓存占用（字节数, 条目数）。 */
+    private val _previewCacheUsage = MutableStateFlow(0L to 0)
+    val previewCacheUsage: StateFlow<Pair<Long, Int>> = _previewCacheUsage.asStateFlow()
+
+    fun refreshPreviewCacheUsage() {
+        if (!::previewCacheRepository.isInitialized) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _previewCacheUsage.value =
+                previewCacheRepository.totalBytes() to previewCacheRepository.count()
+        }
+    }
+
+    fun clearPreviewCache() {
+        if (!::previewCacheRepository.isInitialized) return
+        viewModelScope.launch(Dispatchers.IO) {
+            previewCacheRepository.clearAll()
+            _previewCacheUsage.value = 0L to 0
+        }
+    }
+
+    /**
+     * Spine 运行时（pixi-spine）的占用字节数，0 表示还没下过。
+     *
+     * 它不随安装包分发（专有许可，与本项目 GPLv3 不兼容），首次预览时才下一份，
+     * 所以要有个地方让用户看到「它在不在、占多少」，以及下坏了能清掉重下 ——
+     * 预览页的失败提示里就是让用户来这儿清的。
+     */
+    private val _spineRuntimeUsage = MutableStateFlow(0L)
+    val spineRuntimeUsage: StateFlow<Long> = _spineRuntimeUsage.asStateFlow()
+
+    fun refreshSpineRuntimeUsage() {
+        val ctx = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _spineRuntimeUsage.value = SpineRuntimeRepository.get(ctx).usage()
+        }
+    }
+
+    fun clearSpineRuntime() {
+        val ctx = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            SpineRuntimeRepository.get(ctx).clear()
+            _spineRuntimeUsage.value = 0L
+        }
+    }
+
+    /**
+     * 使用引导看过了没有。false 时盖在主界面之上。
+     *
+     * 初值给 true（不显示）而不是 false：[initialize] 是在 setContent 之前跑的、
+     * 读 prefs 又是同步的，所以真实值第一帧就位；万一哪天调用顺序变了，
+     * 宁可老用户少看一次引导，也别让每个人启动时都闪一下引导页。
+     */
+    private val _onboardingDone = MutableStateFlow(true)
+    val onboardingDone: StateFlow<Boolean> = _onboardingDone.asStateFlow()
+
+    fun completeOnboarding() {
+        _onboardingDone.value = true
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.putBoolean("onboarding_done", true)?.apply()
+    }
+
+    /** 设置里「重看使用引导」。只改内存状态，不动 prefs —— 看完照样算看过。 */
+    fun replayOnboarding() {
+        _onboardingDone.value = false
+    }
+
+    fun setSelectedQuality(quality: String) {
+        _selectedQuality.value = quality
+        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)?.edit()?.putString("selected_quality", quality)?.apply()
+    }
+
+    // ------------------------------------------------ 一键卸载
+
+    /** 一键卸载的预估结果，用于确认对话框。 */
+    data class UninstallPlan(
+        val bundles: List<String>,
+        val fromBackup: Int,
+        val needDownload: Int,
+        val downloadBytes: Long,
+        /**
+         * 非空表示这次「压根没测出来」，而不是「没东西要卸」。
+         * 对话框据此改成报错，不能再说「所有资源都是官方原版」。
+         */
+        val error: String? = null,
+        /** [error] 的技术细节，对话框里收进「详细原因」折叠区。 */
+        val detail: String? = null
+    )
+
+    private val _uninstallPlan = MutableStateFlow<UninstallPlan?>(null)
+    val uninstallPlan: StateFlow<UninstallPlan?> = _uninstallPlan.asStateFlow()
+
+    /**
+     * 算一遍"要卸载什么、代价多大"，不动任何文件。
+     *
+     * 关键：判断依据是干净检测（游戏目录里 __data 的实际大小 ≠ catalog 记录的原版大小），
+     * **不依赖装入记账**。所以用户手动拷进游戏目录的 mod 同样能被发现并卸掉 —— 这正是
+     * "一键恢复原状"该有的语义。
+     */
+    fun prepareUninstallAll() {
+        val context = appContext ?: return
+        viewModelScope.launch {
+            _isUninstallScanning.value = true
+            try {
+                withContext(Dispatchers.IO) { refreshBundleCleanStates() }
+                // 检测本身没跑成功就别给计划：0 个 bundle 的计划看起来跟「已经很干净」
+                // 一模一样，而这两件事的后果完全相反。
+                cleanScanError?.let { err ->
+                    _uninstallPlan.value = UninstallPlan(
+                        emptyList(), 0, 0, 0L, error = err, detail = cleanScanDetail
+                    )
+                    return@launch
+                }
+                val modified = bundleCleanStates.filterValues { it == BundleCleanState.MODIFIED }.keys.toList()
+                var fromBackup = 0
+                var needDownload = 0
+                var bytes = 0L
+                val meta = withContext(Dispatchers.IO) {
+                    ModdingService.getBundleMeta(context.filesDir.absolutePath, _selectedQuality.value) { }
+                }
+                for (name in modified) {
+                    val hashDir = gameBundleHashes[name]
+                    if (hashDir != null && backupRepository.hasBackup(name, hashDir)) {
+                        fromBackup++
+                    } else {
+                        needDownload++
+                        bytes += meta?.get(name)?.first ?: 0L
+                    }
+                }
+                _uninstallPlan.value = UninstallPlan(modified, fromBackup, needDownload, bytes)
+            } finally {
+                _isUninstallScanning.value = false
+            }
+        }
+    }
+
+    private val _isUninstallScanning = MutableStateFlow(false)
+    val isUninstallScanning: StateFlow<Boolean> = _isUninstallScanning.asStateFlow()
+
+    fun dismissUninstallPlan() {
+        _uninstallPlan.value = null
+    }
+
+    /**
+     * 执行一键卸载：把所有被改过的 bundle 还原成官方原版。
+     *
+     * 复用装入那套流程 —— 每个 bundle 一个"空 mod 列表"的 RepackJob，[processSingleJob]
+     * 见到空列表就跳过重打包、直接把原版落盘。于是并发调度、进度对话框、「装入游戏」按钮
+     * 全部照用，不必另写一套。有备份的走本地拷贝（瞬间），没备份的才下载。
+     *
+     * 装入完成后清空装入记账 —— 卸载后 app 不该再声称任何 mod 生效中。
+     */
+    fun uninstallAll(context: Context) {
+        val plan = _uninstallPlan.value ?: return
+        _uninstallPlan.value = null
+        if (plan.bundles.isEmpty()) return
+
+        pendingRecordClear = true
+        _moveState.value = MoveState.Idle
+        batchStartTimeMs = System.currentTimeMillis()
+        _installJobs.value = plan.bundles.map { InstallJob(RepackJob(it, emptyList())) }
+        _finalInstallResult.value = null
+        _showInstallDialog.value = true
+        processInstallJobs(context)
+    }
+
+    /** 一键卸载走完并装入后要清空记账；由 [moveFilesToGame] 成功时触发。 */
+    private var pendingRecordClear = false
+
+    // --- Bundle Scan Dialog Actions ---
+
+    /** 用户确认后执行启动期发现的 bundle 扫描（Phase 2），结束后收尾初始化。 */
+    fun confirmBundleScan() {
+        val context = appContext ?: return
+        val checkResult = pendingCheckResult ?: return
+
+        viewModelScope.launch {
+            try {
+                // Shizuku 服务跑在 shell UID，写不了 app 的内部 cacheDir（/data/data/…），
+                // 扫描临时文件得放 externalCacheDir
+                val shizukuCacheDir = (context.externalCacheDir ?: context.cacheDir).absolutePath
+
+                val (success, scanned, failed) = withContext(Dispatchers.IO) {
+                    ShizukuManager.executeBundleScan(
+                        outputDir = context.filesDir.absolutePath,
+                        cacheDir = shizukuCacheDir,
+                        checkResult = checkResult
+                    ) { currentIndex, total, bundleName, message ->
+                        // 扫描跑在 IO 线程，状态更新回主线程
+                        viewModelScope.launch(Dispatchers.Main) {
+                            _bundleScanState.value = BundleScanState.Scanning(
+                                currentIndex = currentIndex,
+                                totalCount = total,
+                                currentBundle = bundleName,
+                                progressMessage = message
+                            )
+                        }
+                    }
+                }
+
+                _bundleScanState.value = if (success) {
+                    BundleScanState.Finished(
+                        scannedCount = scanned,
+                        failedCount = failed,
+                        message = "扫描完成：成功 $scanned 个，失败 $failed 个。"
+                    )
+                } else {
+                    BundleScanState.Failed("资源扫描失败。")
+                }
+            } catch (e: Exception) {
+                _bundleScanState.value = BundleScanState.Failed(e.message ?: "Unknown error")
+            } finally {
+                pendingCheckResult = null
+                // 扫描产出新索引，收尾初始化并触发一轮 mod 重扫
+                finishInitialization()
+            }
+        }
+    }
+
+    /** 用户跳过/关闭扫描：清掉待扫结果。跳过确认框时初始化收尾要在这里补上。 */
+    fun dismissBundleScan() {
+        val wasPending = pendingCheckResult != null
+        pendingCheckResult = null
+        _bundleScanState.value = BundleScanState.Idle
+        if (wasPending) finishInitialization()
+    }
+
+    private fun finishInitialization() {
+        _isUpdatingCharacters.value = false
+        if (modSourceDirs.value.isNotEmpty()) rescanAllModSources()
+    }
+
+    fun dismissVersionMismatchWarning() {
+        _showVersionMismatchWarning.value = false
+    }
+
+    fun setSearchActive(isActive: Boolean) {
+        _isSearchActive.value = isActive
+        if (!isActive) {
+            _searchQuery.value = ""
+        }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun toggleModSelection(modUri: Uri) {
+        _selectedMods.value = if (modUri in _selectedMods.value) _selectedMods.value - modUri else _selectedMods.value + modUri
+    }
+
+    /** 列表内（筛选后）可装条目的全选/取消全选。以「筛选结果是否已全选」为切换依据，
+     *  不看整体选中数 —— 否则筛出 2 项时永远判不全选，点一下变成「再加一遍」。 */
+    fun toggleSelectAll() {
+        toggleSelection(filteredModsList.value
+            .filter { it.resolutionState == ResolutionState.KNOWN }
+            .map { it.uri }
+            .toSet())
+    }
+
+    /**
+     * 对一组指定的条目做全选/取消全选。
+     *
+     * 比按 targetHash 全选更准：同一个 bundle 可能被多个角色的 mod 竞争（实测心契之约的
+     * 立绘全都打包进同一个 bundle，19 个不同角色共用一个 hash），列表按角色拆开显示后，
+     * 若仍按 hash 全选，用户在某个角色下看到 1 项、一点却选中了 19 项。
+     */
+    fun toggleSelectAllForUris(uris: Set<Uri>) {
+        if (uris.isEmpty()) return
+        val current = _selectedMods.value
+        val inGroup = current.intersect(uris)
+        _selectedMods.value = if (inGroup.size == uris.size) current - uris else current + uris
+    }
+
+    /** 同一 bundle 分组的全选/取消全选（只认该组内可装条目）。 */
+    fun toggleSelectAllForGroup(groupHash: String) {
+        toggleSelection(filteredModsList.value
+            .filter { it.targetHash == groupHash && it.resolutionState == ResolutionState.KNOWN }
+            .map { it.uri }
+            .toSet())
+    }
+
+    /** 全选切换的公共实现：集合已全选则移除，否则并入。空集合不动。 */
+    private fun toggleSelection(uris: Set<Uri>) {
+        if (uris.isEmpty()) return
+        val current = _selectedMods.value
+        _selectedMods.value =
+            if (current.intersect(uris).size == uris.size) current - uris
+            else current + uris
+    }
+
+    /**
+     * 把「本次要装的 mod」与「该 bundle 上已装的 mod」合并成一份重打包清单。
+     *
+     * 为什么必须合并：游戏把多个角色的资源打进同一个包（实测某个立绘包被 45 个角色共用，
+     * 心契之约的 19 个角色更是全在一个包里）。而 [processSingleJob] 取基底时，只要发现
+     * 包已被改过就会退回官方原版重打包 —— 那是有意的保守选择（避免在改过的包上反复叠加
+     * 导致 Spine 贴图页累积、atlas 错乱）。两者相加的后果是：分两次装同一个包里的两个
+     * mod，第二次会把第一次的改动抹掉。而按角色浏览的界面天然就是一次装一个。
+     *
+     * 所以基底仍然用干净原版，但把这个包上所有要保留的 mod 一起重新打包 ——
+     * 不叠加、不丢失，且同一组 mod 无论装几次都得到同样的包。这也与卸载侧一致
+     * （[removeSingleMod] 就是「摘掉一个，剩下的重新打包」）。
+     *
+     * 顺序：已装的排前、本次选中的排后。[processSingleJob] 是顺序把各 mod 的文件拷进同一
+     * 个目录，后者覆盖同名文件 —— 于是「换掉同一资源的另一个版本」和「新增另一个角色」
+     * 两种意图都自然正确。
+     *
+     * 只按 uri 去重，**不按 familyKey 去重**：familyKey 会剥掉 `_1` 后缀，拆成
+     * Part A / Part B 的 mod（`cutscene_char004091` 与 `cutscene_char004091_1`，实为两个
+     * 资源、需同时装）算出来是同一个 key，按它去重会弄坏这类 mod。
+     */
+    private fun mergeWithInstalled(targetHash: String, selected: List<ModInfo>): List<ModInfo> {
+        if (!::installedModRepository.isInitialized) return selected
+        val selectedUris = selected.map { it.uri.toString() }.toSet()
+        val alreadyInstalled = installedModRepository.listByTargetHash(targetHash)
+            .map { it.modUri }
+            .filterNot { it in selectedUris }
+        if (alreadyInstalled.isEmpty()) return selected
+
+        val byUri = _modsList.value.associateBy { it.uri.toString() }
+        val kept = alreadyInstalled.mapNotNull { uri ->
+            byUri[uri] ?: run {
+                // 源文件已不在（用户删了文件夹、或换了 mod 目录）。没法重打包，只能放弃它，
+                // 但要说出来 —— 静默丢弃的结果是用户发现某个 mod 莫名失效却无从追查。
+                Log.w("MainViewModel", "包 $targetHash 上已装的 $uri 源文件不在，本次重打包将不含它")
+                null
+            }
+        }
+        if (kept.isNotEmpty()) {
+            Log.d("MainViewModel", "包 $targetHash 并入已装 ${kept.size} 个，本次选中 ${selected.size} 个")
+        }
+        return kept + selected
+    }
+
+    fun initiateBatchRepack(context: Context) {
+        val allMods = _modsList.value
+        startRepackFor(
+            context,
+            _selectedMods.value.mapNotNull { uri -> allMods.find { it.uri == uri } }
+        )
+    }
+
+    /**
+     * 按给定的一批 mod 启动「转换 + 装入」。
+     *
+     * 两个入口汇到这里：列表页用它自己的选中集，角色卡片用卡片内的多选。
+     * 分组与合并（同一 bundle 的多个 mod 要并成一个 job，并把已装入的一起带上）
+     * 只写一遍 —— 这段逻辑错一次就会出「装第二个把第一个顶掉」那类问题。
+     */
+    fun startRepackFor(context: Context, mods: List<ModInfo>) {
+        val jobs = mods
+            .filter {
+                !it.targetHash.isNullOrBlank() &&
+                    it.resolutionState == ResolutionState.KNOWN
+            }
+            .groupBy { it.targetHash!! }
+            .map { (hash, group) -> RepackJob(hash, mergeWithInstalled(hash, group)) }
+
+        if (jobs.isNotEmpty()) {
+            _moveState.value = MoveState.Idle
+            batchStartTimeMs = System.currentTimeMillis()  // 記錄開始時間
+            _installJobs.value = jobs.map { InstallJob(it) }
+            _finalInstallResult.value = null
+            _showInstallDialog.value = true
+            processInstallJobs(context)
+        }
+    }
+
+    private fun processInstallJobs(context: Context) {
+        installScope.launch {
+            val total = _installJobs.value.size
+            // 用 appContext 而不是传进来的 Activity context：这条流程刻意要活过界面
+            // 销毁，而用已销毁的 Activity context 发 Intent 会失败 —— 通知就更新不了、
+            // 也停不掉，恰好毁在这个功能最该起作用的场景上。
+            val svcCtx = appContext ?: context
+            InstallService.start(svcCtx, total)
+            try {
+                if (!Python.isStarted()) {
+                    withContext(Dispatchers.IO) {
+                        Python.start(com.chaquo.python.android.AndroidPlatform(context))
+                    }
+                }
+
+                // 每次转换前重新做一遍干净检测。
+                //
+                // 这一步是「本地资源复用」的安全阀：上一批装入游戏后，那些 bundle 已经不再干净，
+                // 若沿用旧的检测结果就会把已改过的文件当原版基底，导致贴图叠加。检测本身只是
+                // 一次目录遍历 + 读一份 150KB 缓存，代价极小。
+                withContext(Dispatchers.IO) {
+                    refreshBundleCleanStates()
+                }
+
+                val batchCacheKey = System.currentTimeMillis().toString()
+                val semaphore = Semaphore(5)
+
+                // coroutineScope 是必须的：外层 launch 的 block 一返回就会走 finally，
+                // 那时子协程还在跑，通知会在装到一半时被撤掉。包一层等它们全部结束。
+                coroutineScope {
+                    _installJobs.value.forEach { installJob ->
+                        launch(Dispatchers.IO) {
+                            semaphore.acquire()
+                            try {
+                                processSingleJob(context, installJob, batchCacheKey)
+                            } finally {
+                                semaphore.release()
+                            }
+                        }
+                    }
+                }
+            } finally {
+                InstallService.stop(svcCtx)
+            }
+        }
+    }
+
+    /**
+     * 一个转换任务的完整流水：取基底（备份/游戏目录/CDN）→ 解包 mod 文件 →
+     * 重打包（或纯还原）→ 落到 Download/Shared。任何一步失败即整任务失败，
+     * 临时文件在 finally 里全部清掉。
+     *
+     * 空 modsToInstall = 纯还原任务（一键卸载走这条），不替换任何资源。
+     */
+    private suspend fun processSingleJob(context: Context, installJob: InstallJob, cacheKey: String) {
+        val hashedName = installJob.job.hashedName
+        var originalDataCache: File? = null
+        var repackedDataCache: File? = null
+        val modAssetsDir = File(context.cacheDir, "temp_mod_assets_$hashedName")
+
+        try {
+            // ---- 取原版基底 ----
+            // 基底优先级：本地备份 > 游戏目录的干净原版 > CDN 下载。前两种是
+            // UnityCache 格式（游戏直接能读），CDN 那份是压缩包（同一 bundle 实测
+            // 6.2 MB vs 26 MB）—— 重打包两种都吃（UnityPy 都读得懂，输出统一 lz4），
+            // 但纯还原必须区分：前者直接拷回，后者要转格式。
+            // 只有干净检测判 PRISTINE（目录名 = catalog 内容哈希且大小 = 官方字节数）
+            // 才敢用游戏目录那份 —— 本地装着 mod 时拿它当基底会把贴图叠上去。
+            var baseIsGameFormat = false
+            val backupBase = tryUseBackup(context, hashedName)
+            if (backupBase != null) baseIsGameFormat = true
+            val localBase = backupBase ?: tryUseLocalBundle(context, hashedName)?.also {
+                baseIsGameFormat = true
+            }
+            val baseMessage: String = if (localBase != null) {
+                updateJobStatus(hashedName, JobStatus.Downloading("已复用本地原版资源，跳过下载"))
+                localBase
+            } else {
+                updateJobStatus(hashedName, JobStatus.Downloading("开始下载..."))
+                val (ok, result) = ModdingService.downloadBundle(
+                    hashedName, selectedQuality.value, context.cacheDir.absolutePath, cacheKey
+                ) { progress -> updateJobStatus(hashedName, JobStatus.Downloading(progress)) }
+                if (!ok) throw Exception("Download failed: $result")
+                result
+            }
+
+            originalDataCache = File(baseMessage)
+            val relativePath = originalDataCache.relativeTo(context.cacheDir)
+
+            // 顺手把这份原版存成备份 —— 卸载时就能本地拷回，不用再下一次。
+            // 只备份「游戏目录格式」那份：能直接盖回游戏，还原最简单。CDN 那份是
+            // 压缩包，存下来还得转一次格式，留给 restore_bundle 现场处理。
+            // 「装哪个备份哪个」，已备份的不重复占空间。
+            if (backupOriginals.value && baseIsGameFormat && backupBase == null) {
+                hashDirOf(relativePath)?.let { hashDir ->
+                    withContext(Dispatchers.IO) {
+                        backupRepository.saveBackup(hashedName, hashDir, originalDataCache!!)
+                    }
+                }
+            }
+
+            // ---- 解包 mod 文件到临时目录 ----
+            updateJobStatus(hashedName, JobStatus.Installing("Extracting mod files..."))
+            if (modAssetsDir.exists()) modAssetsDir.deleteRecursively()
+            modAssetsDir.mkdirs()
+            for (mod in installJob.job.modsToInstall) {
+                extractModInto(mod, context, modAssetsDir)
+            }
+
+            // ---- 重打包（或纯还原）----
+            updateJobStatus(hashedName, JobStatus.Installing("Repacking bundle..."))
+            repackedDataCache = File(context.cacheDir, "repacked/${relativePath.path}")
+            repackedDataCache.parentFile?.mkdirs()
+
+            if (installJob.job.modsToInstall.isEmpty()) {
+                restoreBaseBundle(hashedName, originalDataCache, repackedDataCache, baseIsGameFormat, relativePath)
+            } else {
+                val (ok, message) = ModdingService.repackBundle(
+                    originalDataCache.absolutePath, modAssetsDir.absolutePath,
+                    repackedDataCache.absolutePath, useAstc.value
+                ) { progress -> updateJobStatus(hashedName, JobStatus.Installing(progress)) }
+                if (!ok) throw Exception("Repack failed: $message")
+            }
+
+            // ---- 落到公共目录 ----
+            val publicUri = saveFileToDownloads(context, repackedDataCache, relativePath.path, "Shared")
+            if (publicUri != null) {
+                updateJobStatus(hashedName, JobStatus.Finished(relativePath.path))
+            } else {
+                throw Exception("Failed to save file to Downloads folder.")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            val fullError = e.message ?: "An unknown error occurred."
+            val displayError = if (fullError.startsWith("Repack failed:")) {
+                "Repack failed: Repack process failed without an exception."
+            } else {
+                fullError
+            }
+            updateJobStatus(hashedName, JobStatus.Failed(displayMessage = displayError, detailedLog = fullError))
+        } finally {
+            // 三处临时产物逐一清理，单项失败不掩盖其余清理
+            originalDataCache?.takeIf { it.exists() }?.let { runCatching { it.delete() } }
+            repackedDataCache?.takeIf { it.exists() }?.let { runCatching { it.delete() } }
+            runCatching { if (modAssetsDir.exists()) modAssetsDir.deleteRecursively() }
+        }
+    }
+
+    /** 缓存相对路径里的 hash 目录名（`<bundle>/<hash>/__data` 的中间段）。 */
+    private fun hashDirOf(relativePath: File): String? =
+        relativePath.path.replace('\\', '/').split('/').let {
+            if (it.size >= 2) it[it.size - 2] else null
+        }
+
+    /** 一个 mod 的源文件解到收集目录：目录 mod 整树拷入，zip mod 逐条解压。 */
+    private fun extractModInto(mod: ModInfo, context: Context, dest: File) {
+        if (mod.isDirectory) {
+            DocumentFile.fromTreeUri(context, mod.uri)?.let {
+                copyDirectoryToCache(context, it, dest)
+            }
+            return
+        }
+        context.contentResolver.openInputStream(mod.uri)?.use { fis ->
+            ZipInputStream(fis).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && !shouldIgnoreModEntry(entry.name)) {
+                        val outFile = File(dest, entry.name)
+                        outFile.parentFile?.mkdirs()
+                        outFile.outputStream().use { fos -> zis.copyTo(fos) }
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        }
+    }
+
+    /**
+     * 纯还原任务（空 mod 列表）的产出：官方原版转成游戏缓存格式。
+     * CDN 下载的基底是压缩包，与 UnityCache 的 __data 编码不同，不能直接拷；
+     * 备份/游戏目录来源的已经是游戏格式，拷贝即完成。
+     */
+    private suspend fun restoreBaseBundle(
+        hashedName: String,
+        base: File,
+        output: File,
+        baseIsGameFormat: Boolean,
+        relativePath: File
+    ) {
+        if (baseIsGameFormat) {
+            updateJobStatus(hashedName, JobStatus.Installing("正在从本地备份还原..."))
+            base.copyTo(output, overwrite = true)
+            return
+        }
+        val (ok, msg) = ModdingService.restoreBundle(
+            base.absolutePath, output.absolutePath
+        ) { progress -> updateJobStatus(hashedName, JobStatus.Installing(progress)) }
+        if (!ok) throw Exception("Restore failed: $msg")
+
+        // 还原产物就是原版的游戏格式，顺手存成备份。两个好处：
+        // 下次卸载零下载；而且 restore_bundle 用 lz4 重打包，字节数与官方 catalog
+        // 有千分之几差异（实测 6,243,701 vs 6,238,441），干净检测把备份大小也当
+        // 原版基准，卸载后状态才不会一直停在「被修改」。
+        hashDirOf(relativePath)?.let { hashDir ->
+            withContext(Dispatchers.IO) {
+                backupRepository.saveBackup(hashedName, hashDir, output)
+            }
+        }
+    }
+
+    /**
+     * 尝试用游戏本地的原版 bundle 当重打包基底，成功则返回缓存文件路径，否则返回 null。
+     *
+     * 安全前提：只有干净检测判定为 [BundleCleanState.PRISTINE] 才复用。这个判定来自
+     * catalog 的官方原版字节数与内容哈希，与 app 自己的记账无关，所以连旧版工具或手动
+     * 装入造成的改动也能挡住 —— 那些情况会落到 MODIFIED，从而走 CDN 取权威原版。
+     *
+     * 落盘路径刻意与 downloadBundle 保持一致（`<cacheDir>/<bundleName>/<hash>/__data`），
+     * 因为调用方随后用 relativeTo(cacheDir) 推导产物路径，结构必须相同。
+     */
+    /**
+     * 优先拿本地备份当原版基底。
+     *
+     * 比 [tryUseLocalBundle] 更靠前：备份是装入前存下的权威原版，而游戏目录里那份一旦装过
+     * mod 就不再干净、只能弃用。所以对"已经装过 mod、现在要卸载或换一批"的 bundle，
+     * 备份是唯一能免下载的来源。
+     *
+     * 注意不检查 [backupOriginals] 开关 —— 开关只管"要不要新建备份"，已经存下来的备份
+     * 无论开关状态都该拿来用。
+     */
+    private fun tryUseBackup(context: Context, bundleName: String): String? {
+        val hashDir = gameBundleHashes[bundleName] ?: return null
+        if (!backupRepository.hasBackup(bundleName, hashDir)) return null
+        val dest = File(context.cacheDir, "$bundleName/$hashDir/__data")
+        dest.parentFile?.mkdirs()
+        return try {
+            backupRepository.backupFile(bundleName, hashDir).copyTo(dest, overwrite = true)
+            Log.d("MainViewModel", "使用本地备份原版: $bundleName (${dest.length()} 字节)")
+            dest.absolutePath
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    private suspend fun tryUseLocalBundle(context: Context, bundleName: String): String? {
+        if (bundleCleanStates[bundleName] != BundleCleanState.PRISTINE) return null
+
+        val hashDir = gameBundleHashes[bundleName] ?: return null
+        val dest = File(context.cacheDir, "$bundleName/$hashDir/__data")
+        dest.parentFile?.mkdirs()
+
+        val ok = ShizukuManager.copyLocalBundleToCache(bundleName, hashDir, dest.absolutePath)
+        if (!ok || !dest.isFile || dest.length() <= 0L) {
+            try {
+                if (dest.exists()) dest.delete()
+            } catch (_: Exception) {}
+            return null
+        }
+        Log.d("MainViewModel", "复用本地原版 bundle: $bundleName (${dest.length()} 字节)")
+        return dest.absolutePath
+    }
+
+    // ------------------------------------------------ 已转换产物：直接装入（不跑转换）
+
+    /**
+     * 把 SAF 的 documentId 还原成 Shizuku（shell UID）能读的真实路径。
+     *
+     * SAF 权限是系统授予 app 的，没法传递给独立进程的 shell 服务，所以 Shizuku 只认真实路径。
+     * 好在用户的产物本来就躺在 /sdcard 下，shell 直接可读 —— 推导成功就能少拷一整趟。
+     *
+     * 只对 ExternalStorageProvider 的 `primary:` 前缀有把握；SD 卡、Downloads provider 或
+     * 第三方文件管理器的 provider 一律返回 null，交给中转路径兜底。
+     */
+    private fun resolveRealPath(uri: Uri): String? {
+        if (uri.authority != "com.android.externalstorage.documents") return null
+        val docId = try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (e: Exception) {
+            return null
+        }
+        val parts = docId.split(':', limit = 2)
+        if (parts.size != 2 || parts[0] != "primary") return null
+        val rel = parts[1].trim('/')
+        return if (rel.isEmpty()) "/storage/emulated/0" else "/storage/emulated/0/$rel"
+    }
+
+    /**
+     * 装入一批已转换好的产物。
+     *
+     * 这类条目本身就是打包完成的 bundle，只需放到游戏 Shared/ 下的正确位置，完全不经过
+     * 下载与重打包 —— 所以比 PC mod 快一个数量级。
+     */
+    /**
+     * 把游戏目录里那份原版 bundle 备份下来，供日后卸载时本地还原。
+     *
+     * 只在干净检测判定 PRISTINE 时才做 —— 已经装着 mod 的那份不是原版，存下来会让
+     * 「还原」把 mod 又盖回去。已有备份则跳过，不重复占空间。
+     *
+     * 用于「直接装入产物」这条路径：它覆盖式写游戏目录，写完原版就找不回来了，
+     * 而它既不下载也不重打包，没有别的地方能顺手拿到原版。
+     */
+    private suspend fun backupPristineOriginal(bundleName: String) {
+        if (!::backupRepository.isInitialized) return
+        if (bundleCleanStates[bundleName] != BundleCleanState.PRISTINE) return
+        val hashDir = gameBundleHashes[bundleName] ?: return
+        if (backupRepository.hasBackup(bundleName, hashDir)) return
+
+        val tmp = File(appContext?.cacheDir ?: return, "backup_stage/$bundleName/$hashDir/__data")
+        tmp.parentFile?.mkdirs()
+        try {
+            val ok = ShizukuManager.copyLocalBundleToCache(bundleName, hashDir, tmp.absolutePath)
+            if (ok && tmp.isFile && tmp.length() > 0) {
+                backupRepository.saveBackup(bundleName, hashDir, tmp)
+                Log.d("MainViewModel", "已备份原版 $bundleName (${tmp.length()} 字节)")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            try { tmp.delete() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * 「装产物会覆盖同包已装 mod」的预警。
+     *
+     * 产物是已经打包好的完整 bundle，直接覆盖写进游戏目录，没有重打包环节，
+     * 所以**无法**像 [mergeWithInstalled] 那样把同包已装的 mod 并进去 ——
+     * 只能在动手前说清会损失什么。
+     */
+    data class ConvertedOverwritePlan(
+        val mods: List<ModInfo>,
+        /** bundle 名 -> 会被覆盖掉的已装 mod 名字 */
+        val casualties: Map<String, List<String>>,
+        /** 其中源文件仍在、可改走转换流程保住的 bundle 名 */
+        val recoverable: Set<String>
+    ) {
+        val total: Int get() = casualties.values.sumOf { it.size }
+    }
+
+    private val _convertedOverwritePlan = MutableStateFlow<ConvertedOverwritePlan?>(null)
+    val convertedOverwritePlan: StateFlow<ConvertedOverwritePlan?> = _convertedOverwritePlan.asStateFlow()
+
+    fun dismissConvertedOverwritePlan() {
+        _convertedOverwritePlan.value = null
+    }
+
+    /** 用户在预警框里点了「仍要装入」。 */
+    fun confirmConvertedOverwrite(context: Context) {
+        val plan = _convertedOverwritePlan.value ?: return
+        _convertedOverwritePlan.value = null
+        doInstallConvertedBundles(context, plan.mods)
+    }
+
+    fun installConvertedBundles(context: Context, mods: List<ModInfo>) {
+        val targets = mods.filter { it.kind == ModKind.CONVERTED_BUNDLE && it.targetHash != null }
+        if (targets.isEmpty()) return
+
+        // 先看会不会覆盖掉同包里已装的别的 mod
+        if (::installedModRepository.isInitialized) {
+            val selectedUris = targets.map { it.uri.toString() }.toSet()
+            val byUri = _modsList.value.associateBy { it.uri.toString() }
+            val casualties = LinkedHashMap<String, List<String>>()
+            val recoverable = HashSet<String>()
+            for (hash in targets.mapNotNull { it.targetHash }.distinct()) {
+                val victims = installedModRepository.listByTargetHash(hash)
+                    .filterNot { it.modUri in selectedUris }
+                if (victims.isEmpty()) continue
+                casualties[hash] = victims.map { it.modName }
+                // 源文件都还在的话，改走「转换所选」就能靠重打包保住它们
+                if (victims.all { byUri.containsKey(it.modUri) }) recoverable.add(hash)
+            }
+            if (casualties.isNotEmpty()) {
+                _convertedOverwritePlan.value =
+                    ConvertedOverwritePlan(targets, casualties, recoverable)
+                return
+            }
+        }
+        doInstallConvertedBundles(context, targets)
+    }
+
+    private fun doInstallConvertedBundles(context: Context, targets: List<ModInfo>) {
+        if (targets.isEmpty()) return
+        _moveState.value = MoveState.Idle
+        batchStartTimeMs = System.currentTimeMillis()
+        _installJobs.value = targets.map { InstallJob(RepackJob(it.targetHash!!, listOf(it))) }
+        _finalInstallResult.value = null
+        _showInstallDialog.value = true
+
+        installScope.launch {
+            // 同上：服务的生命周期挂在进程上，不能用 Activity context 去驱动
+            val svcCtx = appContext ?: context
+            InstallService.start(svcCtx, targets.size)
+            try {
+            var ok = 0
+            val failed = mutableListOf<FailedJobInfo>()
+
+            // 先刷一次干净检测：备份原版的前提是「游戏目录里那份现在还是原版」，
+            // 拿启动时的旧结果判断会误备份已经装过 mod 的文件。一次目录遍历，代价很小。
+            withContext(Dispatchers.IO) { refreshBundleCleanStates() }
+
+            for (mod in targets) {
+                val bundleName = mod.targetHash!!
+                updateJobStatus(bundleName, JobStatus.Installing("准备装入 ${mod.name}"))
+
+                // 直接装入是覆盖式写游戏目录，写完原版就没了。所以先把原版留一份 ——
+                // 这条路径不下载、不重打包，备份只能在这里做（转换流程那边是在拿到
+                // 下载/复用的基底时顺手存的，两条路互不经过）。
+                if (backupOriginals.value) {
+                    withContext(Dispatchers.IO) { backupPristineOriginal(bundleName) }
+                }
+
+                val (success, message) = withContext(Dispatchers.IO) {
+                    installOneConverted(context, mod, bundleName)
+                }
+                if (success) {
+                    ok++
+                    updateJobStatus(bundleName, JobStatus.Finished(bundleName))
+                } else {
+                    failed.add(FailedJobInfo(bundleName, message))
+                    updateJobStatus(bundleName, JobStatus.Failed(message, message))
+                }
+            }
+
+            if (ok > 0) {
+                recordConvertedInstalls(targets.filter { m ->
+                    failed.none { it.hashedName == m.targetHash }
+                })
+                withContext(Dispatchers.IO) { refreshBundleCleanStates() }
+                refreshInstallStates()
+            }
+
+            // 必须先设 moveState、后设 finalInstallResult —— 这两个是各自独立的
+            // StateFlow，中间会有一次重组。反过来的话那一帧是「finalResult 已非 null
+            // 而 moveState 还是 Idle」，对话框据此走进 Idle 分支、弹出「一键装入游戏」；
+            // 而这条路是直拷进游戏目录的，Download/Shared 里根本没东西，点了就报
+            // 「未找到 Download/Shared 目录」，紧接着 Success 到达又跳成「已装入」。
+            // 实测就是用户看到的那个现象。
+            if (ok > 0) {
+                _moveState.value = MoveState.Success("已装入 $ok 个，重启游戏后生效。")
+            }
+
+            _finalInstallResult.value = FinalInstallResult(
+                successfulJobs = ok,
+                failedJobs = failed.size,
+                // 已经直接进游戏目录了，没有留在 Download/ 的东西需要再装一次
+                command = null,
+                elapsedTimeMs = System.currentTimeMillis() - batchStartTimeMs,
+                failedJobDetails = failed,
+                shizukuAvailable = ShizukuManager.isRunning(),
+                alreadyInGame = true
+            )
+            } finally {
+                InstallService.stop(svcCtx)
+            }
+        }
+    }
+
+    /** 单个产物的装入：优先直接拷，推导不出真实路径或拷贝失败则走 externalCacheDir 中转。 */
+    private suspend fun installOneConverted(
+        context: Context,
+        mod: ModInfo,
+        bundleName: String
+    ): Pair<Boolean, String> {
+        val real = resolveRealPath(mod.uri)
+        if (real != null) {
+            val (ok, msg) = ShizukuManager.installConvertedBundle(real, bundleName)
+            if (ok) {
+                Log.d("MainViewModel", "直接装入（1 趟拷贝）: $bundleName <- $real")
+                return true to msg
+            }
+            Log.w("MainViewModel", "直接装入失败，回退中转: $bundleName ($msg)")
+        }
+
+        // 中转：SAF 读 -> externalCacheDir -> Shizuku 拷。
+        // 必须用 externalCacheDir 而非 cacheDir —— 后者在 app 私有目录里，shell 读不到。
+        val staging = File(context.externalCacheDir ?: context.cacheDir, "converted_staging/$bundleName")
+        return try {
+            if (staging.exists()) staging.deleteRecursively()
+            staging.mkdirs()
+            val copied = copyTreeFromSaf(context, mod.uri, staging)
+            if (!copied) return false to "从所选目录读取失败：$bundleName"
+            val (ok, msg) = ShizukuManager.installConvertedBundle(staging.absolutePath, bundleName)
+            if (ok) Log.d("MainViewModel", "中转装入（2 趟拷贝）: $bundleName")
+            ok to msg
+        } catch (e: Exception) {
+            false to (e.message ?: "装入出错：$bundleName")
+        } finally {
+            try {
+                if (staging.exists()) staging.deleteRecursively()
+            } catch (_: Exception) {}
+        }
+    }
+
+    /** 把 SAF 目录树整体复制到本地目录（产物只有 `<hash>/__data` 两层，深度很浅）。 */
+    private fun copyTreeFromSaf(context: Context, treeUri: Uri, dest: File): Boolean {
+        val doc = DocumentFile.fromTreeUri(context, treeUri) ?: return false
+        if (!doc.isDirectory) return false
+        return try {
+            fun walk(src: DocumentFile, out: File) {
+                out.mkdirs()
+                src.listFiles().forEach { child ->
+                    val name = child.name ?: return@forEach
+                    if (child.isDirectory) {
+                        walk(child, File(out, name))
+                    } else {
+                        context.contentResolver.openInputStream(child.uri)?.use { input ->
+                            File(out, name).outputStream().use { input.copyTo(it) }
+                        }
+                    }
+                }
+            }
+            walk(doc, dest)
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /** 已转换产物的记账。familyKey 用反查到的资源名，与 PC mod 完全一致，从而复用同一套状态管理。 */
+    private fun recordConvertedInstalls(mods: List<ModInfo>) {
+        if (!::installedModRepository.isInitialized || mods.isEmpty()) return
+        val now = System.currentTimeMillis()
+        installedModRepository.putAll(
+            mods.mapNotNull { mod ->
+                val hash = mod.targetHash ?: return@mapNotNull null
+                InstalledModRecord(
+                    modUri = mod.uri.toString(),
+                    modName = mod.name,
+                    familyKey = mod.resolvedFamilyKey ?: hash,
+                    snapshotTargetHash = hash,
+                    quality = _selectedQuality.value,
+                    usedAstc = _useAstc.value,
+                    installedAt = now
+                )
+            }
+        )
+    }
+
+    // ------------------------------------------------ mod 目录管理 / 隐藏 / 删除
+
+    /**
+     * 换一个 mod 文件夹。
+     *
+     * 之前只有欢迎页有选目录的入口，而目录一旦持久化就再也回不到欢迎页 —— 等于没法换目录，
+     * 也没法从选错的目录里退出来。这里把入口独立出来，随时可用。
+     */
+    fun clearModSourceDirectory() {
+        val context = appContext
+        // 逐个放掉持久权限，别把配额一直占着（系统给每个 app 的额度有限）
+        _modSourceDirs.value.forEach { uri ->
+            try {
+                context?.contentResolver?.releasePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                Log.w("MainViewModel", "释放目录权限失败: $uri", e)
+            }
+        }
+        _modSourceDirs.value = emptyList()
+        context?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.edit()?.remove("mod_source_dirs")?.remove("mod_source_dir_uri")?.apply()
+        _modsList.value = emptyList()
+        _selectedMods.value = emptySet()
+        _stateFilter.value = null
+    }
+
+    private val _hiddenMods = MutableStateFlow<Set<String>>(emptySet())
+
+    /** 已隐藏的条目数，供工作台显示「恢复已隐藏的项」是否有内容可恢复。 */
+    val hiddenCount: StateFlow<Int> = _hiddenMods
+        .map { it.size }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), 0)
+
+    private fun hiddenFile(): File? =
+        appContext?.let { File(it.filesDir, "hidden_mods.json") }
+
+    private fun loadHidden(): Set<String> {
+        val f = hiddenFile() ?: return emptySet()
+        if (!f.exists()) return emptySet()
+        return try {
+            val arr = org.json.JSONArray(f.readText())
+            buildSet { for (i in 0 until arr.length()) add(arr.optString(i)) }
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
+
+    private fun saveHidden(set: Set<String>) {
+        val f = hiddenFile() ?: return
+        try {
+            f.writeText(org.json.JSONArray(set.toList()).toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /** 把一个条目从列表里藏起来。只记一个 uri，不动手机上的文件。 */
+    fun hideMod(mod: ModInfo) {
+        val next = loadHidden() + mod.uri.toString()
+        saveHidden(next)
+        _hiddenMods.value = next
+        _modsList.value = _modsList.value.filterNot { it.uri == mod.uri }
+    }
+
+    fun clearHidden() {
+        saveHidden(emptySet())
+        _hiddenMods.value = emptySet()
+        if (modSourceDirs.value.isNotEmpty()) rescanAllModSources()
+    }
+
+    /**
+     * 从手机上真正删除这个 mod 文件夹。
+     *
+     * 这是整个 app 里唯一会动用户文件的操作，不可恢复，调用方必须先做二次确认。
+     */
+    fun deleteModFolder(context: Context, mod: ModInfo, onDone: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    val doc = if (mod.isDirectory) {
+                        DocumentFile.fromTreeUri(context, mod.uri)
+                    } else {
+                        DocumentFile.fromSingleUri(context, mod.uri)
+                    }
+                    doc?.delete() == true
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    false
+                }
+            }
+            if (ok) {
+                _modsList.value = _modsList.value.filterNot { it.uri == mod.uri }
+                _selectedMods.value = _selectedMods.value - mod.uri
+                // 源文件都删了，账本里这条留着只会让状态推导继续把它算成「生效中」，
+                // 而重打包时又找不到文件。注意这里只销账，不动游戏里的实际内容 ——
+                // 那需要重打包，属于「移除 mod」的动作，不是「删源文件」该做的事。
+                installedModRepository.remove(mod.uri.toString())
+                onDone(true, "已从手机删除「${mod.name}」")
+            } else {
+                onDone(false, "删除失败，可能没有该目录的写入权限")
+            }
+        }
+    }
+
+    /** 读某个 bundle 当前的自定义名（没设过则为空串）。 */
+    fun aliasOf(bundleName: String): String =
+        appContext?.let { BundleNameResolver(it).aliasOf(bundleName) } ?: ""
+
+    /** 设置/清除自定义名，并就地刷新列表里该条目的显示。 */
+    fun setModAlias(mod: ModInfo, alias: String) {
+        val context = appContext ?: return
+        val bundleName = mod.targetHash ?: return
+        val resolver = BundleNameResolver(context)
+        resolver.setAlias(bundleName, alias)
+        val shown = resolver.displayName(bundleName)
+        _modsList.value = _modsList.value.map {
+            if (it.uri == mod.uri) it.copy(name = shown) else it
+        }
+    }
+
+    /**
+     * 全部 job 收尾后的汇总：成功/失败计数、失败明细、总耗时，组装成
+     * [FinalInstallResult] 给结果对话框。
+     *
+     * 转换成功且 Shizuku 在线就直接移进游戏，不等用户点「一键装入游戏」——
+     * 那一步没有任何决策，用户点它只是因为程序要求点；转换完走开的人
+     * 回来常忘了还有一下要点，mod 明明转好了却没生效。Shizuku 不可用时
+     * 保持原样：那种情况确实需要用户处理（启动 Shizuku 或 root 手动拷），
+     * 对话框里的引导和命令照给。
+     */
+    private fun summarizeResults() {
+        val jobs = _installJobs.value
+        val successful = jobs.filter { it.status is JobStatus.Finished }
+        val failed = jobs.filter { it.status is JobStatus.Failed }
+
+        _finalInstallResult.value = FinalInstallResult(
+            successfulJobs = successful.size,
+            failedJobs = failed.size,
+            command = if (successful.isNotEmpty()) MANUAL_INSTALL_COMMAND else null,
+            elapsedTimeMs = System.currentTimeMillis() - batchStartTimeMs,
+            failedJobDetails = failed.map {
+                FailedJobInfo(
+                    hashedName = it.job.hashedName,
+                    error = (it.status as JobStatus.Failed).detailedLog
+                )
+            },
+            shizukuAvailable = ShizukuManager.isRunning()
+        )
+
+        if (successful.isNotEmpty() && ShizukuManager.isRunning()) {
+            moveFilesToGame()
+        }
+    }
+
+    @Synchronized
+    private fun updateJobStatus(hashedName: String, newStatus: JobStatus) {
+        installScope.launch(Dispatchers.Main) {
+            val currentJobs = _installJobs.value.toMutableList()
+            val jobIndex = currentJobs.indexOfFirst { it.job.hashedName == hashedName }
+            if (jobIndex != -1) {
+                currentJobs[jobIndex] = currentJobs[jobIndex].copy(status = newStatus)
+                _installJobs.value = currentJobs
+                pushInstallNotification(currentJobs, newStatus)
+            }
+        }
+    }
+
+    /** 通知节流用。下载进度回调一秒来几十次，每次都发 Intent 既没必要也会被系统丢弃。 */
+    private var lastInstallNotifyMs = 0L
+
+    /**
+     * 把当前进度推给前台服务的通知栏。
+     *
+     * 这里是所有 job 状态的唯一汇聚点，所以通知也从这里更新 —— 不必在每个环节
+     * （下载 / 重打包 / 装入）各插一次。
+     */
+    private fun pushInstallNotification(jobs: List<InstallJob>, latest: JobStatus) {
+        val ctx = appContext ?: return
+        val done = jobs.count { it.status is JobStatus.Finished || it.status is JobStatus.Failed }
+        val terminal = latest is JobStatus.Finished || latest is JobStatus.Failed
+        val now = System.currentTimeMillis()
+        // 有 job 收尾时不节流：进度条往前跳一格是用户最想看到的那一帧
+        if (!terminal && now - lastInstallNotifyMs < 700L) return
+        lastInstallNotifyMs = now
+
+        val text = when (latest) {
+            is JobStatus.Downloading -> latest.progressMessage
+            is JobStatus.Installing -> latest.progressMessage
+            is JobStatus.Finished -> "已完成 $done/${jobs.size}"
+            is JobStatus.Failed -> latest.displayMessage
+            JobStatus.Pending -> "等待中…"
+        }
+        InstallService.update(ctx, done, jobs.size, text)
+    }
+
+    fun closeInstallDialog() {
+        _showInstallDialog.value = false
+        _installJobs.value = emptyList()
+        _finalInstallResult.value = null
+        _selectedMods.value = emptySet()
+        _moveState.value = MoveState.Idle
+    }
+
+    fun moveFilesToGame() {
+        // 跟着装入流程走 installScope：它现在是「转换完自动移入」的收尾一步，
+        // 界面销毁时若被取消，产物就停在 Download/Shared 里没进游戏 —— 用户以为装好了。
+        installScope.launch {
+            _moveState.value = MoveState.Moving
+            val (success, message) = ShizukuManager.moveDownloadToGame()
+            _moveState.value = if (success) {
+                MoveState.Success(message)
+            } else {
+                MoveState.Failed(message)
+            }
+            if (success) {
+                // 装完就把 command 清掉，「一键装入游戏」按钮从此不再出现。
+                //
+                // 这是必需的，不只是收拾门面：moveDownloadToGame 是「移动」语义 ——
+                // 拷进游戏目录后会 deleteRecursively() 删掉 Download/Shared。而 command
+                // 只是个手动命令的文本常量（转换成功就非 null），它被当成了「要不要显示
+                // 装入按钮」的开关，却完全不反映「Download/Shared 里还有没有东西」。
+                // 于是只要 _moveState 被别的操作重置回 Idle（installSingle 等就会这么做），
+                // 按钮又冒出来，一点必然报「未找到 Download/Shared 目录」——
+                // 用户看到的就是「已转换的再点导入到游戏说没在 dl 目录」。
+                _finalInstallResult.value = _finalInstallResult.value?.copy(command = null)
+                (_uninstallState.value as? UninstallState.Finished)?.let {
+                    _uninstallState.value = it.copy(command = null)
+                }
+
+                // 一键卸载的装入完成 —— 记账里不该再留任何「生效中」，否则状态与游戏实际相反。
+                // 必须早于 recordSuccessfulInstall()：卸载任务的 mod 列表是空的，本来不会写账，
+                // 但残留的旧记录得在这里一并清掉。
+                if (pendingRecordClear) {
+                    if (::installedModRepository.isInitialized) {
+                        withContext(Dispatchers.IO) { installedModRepository.clear() }
+                    }
+                    pendingRecordClear = false
+                } else {
+                    // 装入游戏成功才算「生效」，此时才记账 —— 转换只是把产物放到 Download/，
+                    // 没进游戏目录的话 mod 并未生效，记了反而会谎报状态。
+                    recordSuccessfulInstall()
+                    pendingUninstallTargetHash?.let { installedModRepository.removeByTargetHash(it) }
+                    pendingUninstallTargetHash = null
+                }
+                // 游戏目录已变，重新检测并刷新列表状态（顺带让状态徽章立刻更新）
+                withContext(Dispatchers.IO) { refreshBundleCleanStates() }
+                refreshInstallStates()
+                refreshBackupUsage()
+            }
+        }
+    }
+
+    /** 把本批成功装入的 job 写进账本 —— 一个 mod 一条。 */
+    private fun recordSuccessfulInstall() {
+        if (!::installedModRepository.isInitialized) return
+        val now = System.currentTimeMillis()
+        val quality = _selectedQuality.value
+        val astc = _useAstc.value
+
+        val records = _installJobs.value
+            .filter { it.status is JobStatus.Finished }
+            .flatMap { installJob ->
+                val hash = installJob.job.hashedName
+                installJob.job.modsToInstall.map { mod ->
+                    InstalledModRecord(
+                        modUri = mod.uri.toString(),
+                        modName = mod.name,
+                        // familyKey 降为普通字段，只用于游戏更新后识别「需重新应用」。
+                        // 早先它是主键、一个 bundle 只记一条，导致同包第二个 mod
+                        // 既卸不掉也显示错状态（见 InstalledModRecord 的说明）。
+                        familyKey = mod.resolvedFamilyKey ?: hash,
+                        snapshotTargetHash = hash,
+                        quality = quality,
+                        usedAstc = astc,
+                        installedAt = now
+                    )
+                }
+            }
+        installedModRepository.putAll(records)
+    }
+
+    /** 不重新扫描 mod 目录，只按最新的检测结果刷新状态徽章。 */
+    private fun refreshInstallStates() {
+        _modsList.value = applyInstallState(_modsList.value)
+    }
+
+    /**
+     * 重新检测 Shizuku 是否已启动，并就地更新完成/还原对话框的状态。
+     *
+     * 用户常见处境：手机重启后 Shizuku 失效（真机每次重启都要重新激活），
+     * 但 bundle 索引仍在缓存里，所以转换照样能跑完 —— 只是装不进游戏。
+     * 有了这个方法，用户去启动 Shizuku 后回来点一下即可继续装入，
+     * 不必重跑一遍耗时的转换。
+     *
+     * @return 检测后 Shizuku 是否可用，供 UI 层给出即时反馈
+     */
+    fun recheckShizuku(): Boolean {
+        val available = ShizukuManager.isRunning()
+        _moveState.value = MoveState.Idle
+        _finalInstallResult.value = _finalInstallResult.value?.copy(shizukuAvailable = available)
+        (_uninstallState.value as? UninstallState.Finished)?.let { finished ->
+            _uninstallState.value = finished.copy(shizukuAvailable = available)
+        }
+        return available
+    }
+
+    fun resetMoveState() {
+        _moveState.value = MoveState.Idle
+    }
+
+    /**
+     * 移除单个 mod（而非整组还原）。
+     *
+     * 同一个 bundle 可能由多个 mod 合并打包而成，所以移除的语义分两种：
+     *  - 该 bundle 还有别的 mod 留着 → 重新打包一次，只放保留下来的那些
+     *  - 一个都不剩 → 走原有的还原流程，把官方原版盖回去
+     *
+     * 两种都需要用户再点一次「装入游戏」才真正生效（安卓改的是游戏缓存，绕不开这一步）。
+     */
+    fun removeSingleMod(context: Context, mod: ModInfo) {
+        if (!::installedModRepository.isInitialized) return
+        val targetHash = mod.targetHash ?: return
+
+        // 先摘掉这一个，再看这个包上还剩谁。
+        // 早先是 detachMod(familyKey, uri)，而账本按 familyKey「一包一条」记 ——
+        // 卸同包第二个 mod 时按它自己的 familyKey 查不到记录，detachMod 返回空，
+        // 就被当成「该包已无 mod」而整包还原，把同包其他 mod 一起卸了。
+        installedModRepository.remove(mod.uri.toString())
+        val remainingUris = installedModRepository.listByTargetHash(targetHash).map { it.modUri }
+
+        if (remainingUris.isEmpty()) {
+            // 该 bundle 已无 mod —— 还原成官方原版
+            initiateUninstall(context, targetHash)
+            refreshInstallStates()
+            return
+        }
+
+        // 还有保留项 —— 只带上它们重新打包一次
+        val keep = _modsList.value.filter { it.uri.toString() in remainingUris }
+        if (keep.isEmpty()) {
+            // 记录还在但源文件都没了，重打包无从下手，只能还原原版
+            Log.w("MainViewModel", "包 $targetHash 尚有 ${remainingUris.size} 条记录但源文件均缺失，改为还原原版")
+            installedModRepository.removeByTargetHash(targetHash)
+            initiateUninstall(context, targetHash)
+            refreshInstallStates()
+            return
+        }
+        _moveState.value = MoveState.Idle
+        batchStartTimeMs = System.currentTimeMillis()
+        _installJobs.value = listOf(InstallJob(RepackJob(targetHash, keep)))
+        _finalInstallResult.value = null
+        _showInstallDialog.value = true
+        processInstallJobs(context)
+    }
+
+    /**
+     * 还原单个 bundle 的官方原版。
+     *
+     * 直接委托给批量还原那条路（一个空 mod 列表的 RepackJob）。原先这里是另一套实现：
+     * 下载完就把 CDN 那份原样存进 Download/ —— 但 CDN 是压缩包，与游戏缓存里的 __data
+     * 编码不同（实测同一 bundle 6.2 MB vs 26 MB），装进去游戏读不了。批量那条路已经处理
+     * 好格式转换、备份优先和状态刷新，没有理由再维护第二份还原逻辑。
+     */
+    fun initiateUninstall(context: Context, hashedName: String) {
+        if (_installJobs.value.any { it.status !is JobStatus.Finished && it.status !is JobStatus.Failed }) return
+        pendingUninstallTargetHash = hashedName
+        _moveState.value = MoveState.Idle
+        batchStartTimeMs = System.currentTimeMillis()
+        _installJobs.value = listOf(InstallJob(RepackJob(hashedName, emptyList())))
+        _finalInstallResult.value = null
+        _showInstallDialog.value = true
+        processInstallJobs(context)
+    }
+
+    fun resetUninstallState() {
+        _uninstallState.value = UninstallState.Idle
+    }
+
+    fun setUnpackInputFile(uri: Uri?) {
+        _unpackInputFile.value = uri
+    }
+
+    /** 解包工具入口：SAF 选的文件先拷到缓存，python 解包后产物逐个落到 Download/outputs。 */
+    /**
+     * 解包入口：源文件拷进 cache → python 解包 → 产物逐个存进 Download/outputs。
+     * 临时文件用完即清；失败也清，不留半个解包结果。
+     */
+    fun initiateUnpack(context: Context) {
+        val inputFile = _unpackInputFile.value ?: return
+
+        viewModelScope.launch {
+            _unpackState.value = UnpackState.Unpacking("Starting unpack...")
+            val (success, message) = withContext(Dispatchers.IO) {
+                if (!Python.isStarted()) {
+                    Python.start(com.chaquo.python.android.AndroidPlatform(context))
+                }
+                val tempInput = File(context.cacheDir, "temp_unpack_input.bundle")
+                context.contentResolver.openInputStream(inputFile)?.use { input ->
+                    tempInput.outputStream().use { input.copyTo(it) }
+                }
+
+                val tempOutput = File(context.cacheDir, "temp_unpack_output").apply {
+                    if (exists()) deleteRecursively()
+                    mkdirs()
+                }
+
+                val result = ModdingService.unpackBundle(
+                    tempInput.absolutePath, tempOutput.absolutePath
+                ) { progress ->
+                    viewModelScope.launch(Dispatchers.Main) {
+                        _unpackState.value = UnpackState.Unpacking(progress)
+                    }
+                }
+
+                if (result.first) {
+                    tempOutput.listFiles()?.forEach { file ->
+                        saveFileToDownloads(context, file, file.name, "outputs")
+                    }
+                }
+
+                tempInput.delete()
+                tempOutput.deleteRecursively()
+                result
+            }
+
+            _unpackState.value = if (success) {
+                UnpackState.Finished("解包完成，文件已保存到 Download/outputs。")
+            } else {
+                UnpackState.Failed(message)
+            }
+        }
+    }
+
+    fun resetUnpackState() {
+        _unpackState.value = UnpackState.Idle
+        _unpackInputFile.value = null
+    }
+
+    /**
+     * 图集合并入口：把选中的单个 mod 的文件拷到临时目录、跑 python 合并，
+     * 然后把合并产物（png/atlas 与 .old 备份）写回 mod 源目录。
+     * UI 入口当前未挂（转换时自动合并），保留供高级菜单复用。
+     */
+    fun initiateMerge(context: Context) {
+        if (selectedMods.value.size != 1) return
+        val modUri = selectedMods.value.first()
+        val modInfo = _modsList.value.find { it.uri == modUri } ?: return
+
+        _showMergeDialog.value = true
+        _mergeState.value = MergeState.Merging("Preparing files...")
+
+        viewModelScope.launch {
+            val tempDir = File(context.cacheDir, "temp_merge_${System.currentTimeMillis()}")
+            try {
+                withContext(Dispatchers.IO) {
+                    tempDir.apply { if (exists()) deleteRecursively(); mkdirs() }
+                    if (modInfo.isDirectory) {
+                        DocumentFile.fromTreeUri(context, modInfo.uri)?.let {
+                            copyDirectoryToCacheNonRecursive(context, it, tempDir)
+                        }
+                    } else {
+                        extractZipToFlatDir(context, modInfo.uri, tempDir)
+                    }
+                }
+
+                val (success, message) = withContext(Dispatchers.IO) {
+                    ModdingService.mergeSpineAssets(tempDir.absolutePath) { progress ->
+                        viewModelScope.launch(Dispatchers.Main) {
+                            _mergeState.value = MergeState.Merging(progress)
+                        }
+                    }
+                }
+
+                _mergeState.value = if (success) {
+                    writeMergeResultBack(context, modInfo, tempDir)
+                } else {
+                    MergeState.Failed(message)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _mergeState.value = MergeState.Failed(e.message ?: "An unknown error occurred.")
+            } finally {
+                withContext(Dispatchers.IO) {
+                    if (tempDir.exists()) tempDir.deleteRecursively()
+                }
+            }
+        }
+    }
+
+    /** zip mod 解到目录（拍平：只取文件名段，忽略目录层级）。 */
+    private fun extractZipToFlatDir(context: Context, zipUri: Uri, destDir: File) {
+        context.contentResolver.openInputStream(zipUri)?.use { fis ->
+            ZipInputStream(fis).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val fileName = entry.name.substringAfterLast('/')
+                    if (!entry.isDirectory && !shouldIgnoreModEntry(fileName)) {
+                        File(destDir, fileName).outputStream().use { zis.copyTo(it) }
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        }
+    }
+
+    /** 合并产物写回 mod 源目录：先删旧的 png/atlas，再写入合并后的（含 .old 备份目录）。 */
+    private fun writeMergeResultBack(
+        context: Context,
+        modInfo: ModInfo,
+        tempDir: File
+    ): MergeState {
+        val modDoc = DocumentFile.fromTreeUri(context, modInfo.uri)
+        if (modDoc == null || !modDoc.isDirectory) {
+            return MergeState.Failed("Failed to access original mod directory.")
+        }
+        modDoc.listFiles()
+            .filter { it.isFile && (it.name?.endsWith(".png") == true || it.name?.endsWith(".atlas") == true) }
+            .forEach { it.delete() }
+
+        tempDir.listFiles()?.forEach { file ->
+            when {
+                file.isFile && (file.name.endsWith(".png") || file.name.endsWith(".atlas")) -> {
+                    modDoc.createFile("application/octet-stream", file.name)?.let { doc ->
+                        context.contentResolver.openOutputStream(doc.uri)?.use { output ->
+                            file.inputStream().use { it.copyTo(output) }
+                        }
+                    }
+                }
+                file.isDirectory && file.name == ".old" -> {
+                    modDoc.createDirectory(".old")?.let { oldDoc ->
+                        copyDirectoryToSaf(context, file, oldDoc)
+                    }
+                }
+            }
+        }
+        return MergeState.Finished("Successfully merged mod in-place!")
+    }
+
+    fun resetMergeState() {
+        _mergeState.value = MergeState.Idle
+        _showMergeDialog.value = false
+    }
+
+    /** SAF 目录的直接子文件拷进 cache 目录（不递归、跳过 .modfile 等噪音）。 */
+    private fun copyDirectoryToCacheNonRecursive(context: Context, sourceDir: DocumentFile, destinationDir: File) {
+        if (!destinationDir.exists()) destinationDir.mkdirs()
+        sourceDir.listFiles().forEach { file ->
+            val fileName = file.name ?: return@forEach
+            if (!file.isFile || shouldIgnoreModEntry(fileName)) return@forEach
+            try {
+                context.contentResolver.openInputStream(file.uri)?.use { input ->
+                    File(destinationDir, fileName).outputStream().use { input.copyTo(it) }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /** 真实目录树整个拷进 SAF 目录（递归；合并产物回 mod 源目录时用）。 */
+    private fun copyDirectoryToSaf(context: Context, sourceDir: File, destinationDoc: DocumentFile) {
+        sourceDir.listFiles()?.forEach { file ->
+            when {
+                file.isFile -> {
+                    if (shouldIgnoreModEntry(file.name)) return@forEach
+                    destinationDoc.createFile("application/octet-stream", file.name)?.let { doc ->
+                        context.contentResolver.openOutputStream(doc.uri)?.use { output ->
+                            file.inputStream().use { it.copyTo(output) }
+                        }
+                    }
+                }
+                file.isDirectory ->
+                    destinationDoc.createDirectory(file.name)?.let { dirDoc ->
+                        copyDirectoryToSaf(context, file, dirDoc)
+                    }
+            }
+        }
+    }
+
+
+
+    /**
+     * 重扫**全部** mod 源目录并合并成一个列表。
+     *
+     * 原先是「扫哪个目录就只显示哪个」，签名也带着一个 dirUri。现在目录是一组，
+     * 所以这里不再收参数 —— 想扫某个目录就先 [addModSourceDir] 把它加进来。
+     *
+     * `pendingScan` 那套防抖保留：扫描期间又被触发（加了新目录、下拉刷新）时
+     * 不并发跑第二遍，而是记一个标记、当前这轮结束后再扫一次。
+     */
+    fun rescanAllModSources() {
+        pendingScan = true
+        if (scanJob?.isActive == true) return
+
+        scanJob = viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                if (!pendingScan) break
+                pendingScan = false
+
+                val dirs = _modSourceDirs.value
+                if (dirs.isEmpty()) break
+
+                withContext(Dispatchers.Main) {
+                    _isLoading.value = true
+                }
+
+                isUpdatingCharacters.first { !it } // Wait for character data to be ready
+                try {
+                    val hidden = loadHidden()
+                    // 按 uri 去重：目录嵌套（用户加了 A 又加了 A/sub）或同一 mod
+                    // 出现在两处时，只留第一次扫到的那份。
+                    val seen = HashSet<String>()
+                    val mods = ArrayList<ModInfo>()
+                    for (dir in dirs) {
+                        val found = try {
+                            modRepository.scanMods(dir)
+                        } catch (e: Exception) {
+                            // 单个目录出问题（权限被撤、被删）不该让整次扫描失败，
+                            // 否则用户会以为所有 mod 都不见了。
+                            Log.w("MainViewModel", "扫描目录失败，跳过: $dir", e)
+                            emptyList()
+                        }
+                        for (m in found) {
+                            val key = m.uri.toString()
+                            if (key in hidden) continue
+                            if (seen.add(key)) mods.add(m)
+                        }
+                    }
+                    Log.d("MainViewModel", "扫描 ${dirs.size} 个目录，合计 ${mods.size} 个 mod")
+                    refreshBundleCleanStates()
+                    val withState = applyInstallState(mods)
+                    withContext(Dispatchers.Main) {
+                        _modsList.value = withState
+                        _selectedMods.value = emptySet()
+                    }
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        _isLoading.value = false
+                    }
+                }
+
+                if (!pendingScan) break
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- 干净检测
+
+    /** 上次干净检测的结果：bundle 名 -> 干净程度。装 mod 时用它决定基底从哪来。 */
+    private var bundleCleanStates: Map<String, BundleCleanState> = emptyMap()
+
+    /** 同一次检测里记下的 bundle 名 -> hash 目录名，避免每个 job 都重新遍历游戏目录。 */
+    private var gameBundleHashes: Map<String, String> = emptyMap()
+
+    /**
+     * 上次干净检测失败的原因，null 表示上次检测跑完了（结果可能是空表，那是「确实都干净」）。
+     *
+     * 有这个字段才能把「都是原版」和「压根没测出来」分开。缺了它，Shizuku 断开或者
+     * 连不上 CDN 时，一键卸载会显示「游戏目录里所有资源都是官方原版」—— 用户据此
+     * 以为 mod 已经卸干净，实际一个都没动。
+     */
+    private var cleanScanError: String? = null
+
+    /**
+     * 上面那句的技术细节（哪个域名、底层抛的原文），收进对话框的折叠区。
+     *
+     * 分开是因为这两段的读者不同：主文案要让玩家一眼知道该干什么，
+     * 技术原文只在排查时有用 —— 摊在正文里只会把那句「检查网络后重试」淹掉。
+     */
+    private var cleanScanDetail: String? = null
+
+    /** 正在还原的 bundle 名。装入游戏成功后据它清掉对应记账。 */
+    private var pendingUninstallTargetHash: String? = null
+
+    /**
+     * 刷新干净检测。
+     *
+     * 把 catalog 的权威值（每个 bundle 的原版字节数 + 内容哈希）与游戏目录的实际值
+     * （hash 目录名 + __data 大小）比对。这是客观判定，不依赖 app 自己的记账，因此
+     * 也能发现旧版工具或手动装入造成的改动。
+     *
+     * 重打包产物沿用原版的路径结构，所以目录名对 mod 版和原版是一样的 —— 只有大小
+     * 能区分两者，这也是当初给 listBundleDirectory 加 size 字段的原因。
+     */
+    private suspend fun refreshBundleCleanStates(): Map<String, BundleCleanState> {
+        val context = appContext ?: return emptyMap()
+
+        val local = ShizukuManager.listGameBundles()
+        if (local == null) {
+            bundleCleanStates = emptyMap()      // 拿不到实际值就不做判断，而非假定干净
+            gameBundleHashes = emptyMap()
+            // 空表和「检测失败」必须分开：前者是「确实都干净」，后者是「不知道」。
+            // 一键卸载据此决定是报错还是说「没有需要卸载的」—— 混在一起会让
+            // 网络/Shizuku 出问题时显示「所有资源都是官方原版」，用户以为已经卸干净了。
+            cleanScanError = "无法读取游戏目录。请确认 Shizuku 正在运行，然后在设置里点「重新检测 Shizuku」。"
+            cleanScanDetail = null
+            return bundleCleanStates
+        }
+        gameBundleHashes = local.mapValues { it.value.first }
+
+        // 画质自检 + 取元数据：先按当前档位取，对不上时换另一档比对比对。
+        var metaHint: String? = null
+        val meta = withContext(Dispatchers.IO) {
+            detectQualityAndFetchMeta(context, local) { msg ->
+                Log.d("MainViewModel", "bundleMeta: $msg")
+                if (msg.contains("失败")) metaHint = msg
+            }
+        }
+        if (meta == null) {
+            bundleCleanStates = emptyMap()
+            cleanScanError = "无法获取官方资源清单，请检查网络后重试。"
+            cleanScanDetail = "判断哪些资源被改过，要先从官方 CDN（cdn.bd2.pmang.cloud）" +
+                    "取到一份资源清单（catalog），这一步没成功。" +
+                    (metaHint?.let { "\n\n$it" } ?: "")
+            return bundleCleanStates
+        }
+
+        val states = HashMap<String, BundleCleanState>(meta.size)
+        val hasBackupRepo = ::backupRepository.isInitialized
+        for ((name, expected) in meta) {
+            val (expectedSize, expectedHash) = expected
+            val actual = local[name]
+            states[name] = when {
+                actual == null -> BundleCleanState.ABSENT
+                actual.first != expectedHash -> BundleCleanState.VERSION_MISMATCH
+                actual.second < 0 -> BundleCleanState.UNKNOWN
+                actual.second == expectedSize -> BundleCleanState.PRISTINE
+                // 与本地备份一致也算原版：备份要么是装 mod 前从游戏目录留下的原版，
+                // 要么是卸载时 restore_bundle 产出的原版。后者用 lz4 重打包，字节数与
+                // 官方 catalog 会差千分之几，不认这一条的话卸载完会一直显示「被修改」。
+                hasBackupRepo && actual.second ==
+                        backupRepository.backupSize(name, actual.first) -> BundleCleanState.PRISTINE
+                else -> BundleCleanState.MODIFIED
+            }
+        }
+        bundleCleanStates = states
+        cleanScanError = null
+        cleanScanDetail = null
+        Log.d("MainViewModel", "干净检测: ${states.size} 个 bundle，" +
+                "其中被修改 ${states.count { it.value == BundleCleanState.MODIFIED }} 个")
+        return states
+    }
+
+    /**
+     * 按游戏目录里实际存在的内容哈希推断资源档位，返回该用的 bundle 元数据。
+     *
+     * 游戏 Shared/<bundle>/<hash>/ 的 hash 来自游戏自己下载时用的那份 catalog
+     * （HD / SD 各一份），所以跟两档 catalog 的权威哈希比对即可：哪档对得多
+     * 就是哪档。推断出与设置不同的档位就顺手切换 —— 选错档会让干净检测把
+     * 全部资源判成「版本不符」，下载的原版也和游戏目录对不上。
+     *
+     * 游戏比 catalog 旧（更新后没进过游戏）时两档都对不上，保持现状 ——
+     * 那种情况有「游戏资源需要更新」的提醒兜底。另一档的 catalog 只在真的
+     * 需要判别时才下载（约 60MB，之后磁盘缓存复用）。
+     */
+    private suspend fun detectQualityAndFetchMeta(
+        context: Context,
+        local: Map<String, Pair<String, Long>>,
+        onProgress: (String) -> Unit
+    ): Map<String, Pair<Long, String>>? {
+        val selected = _selectedQuality.value
+        val selectedMeta = ModdingService.getBundleMeta(context.filesDir.absolutePath, selected, onProgress)
+            ?: return null
+        // 游戏目录还没东西（刚装游戏）或当前档位对得上 —— 不需要判别
+        if (local.isEmpty() || hashMatchRatio(local, selectedMeta) > 0.5) {
+            return selectedMeta
+        }
+
+        // 当前档位对不上：试另一档。对得明显更多才切，避免半更新状态误判。
+        val other = if (selected == "HD") "SD" else "HD"
+        val otherMeta = ModdingService.getBundleMeta(context.filesDir.absolutePath, other) { }
+            ?: return selectedMeta
+        if (hashMatchRatio(local, otherMeta) > hashMatchRatio(local, selectedMeta)) {
+            Log.i("MainViewModel", "画质自检：游戏资源是 $other（原设置 $selected），已自动切换")
+            setSelectedQuality(other)
+            return otherMeta
+        }
+        return selectedMeta
+    }
+
+    /** 游戏目录与 catalog 都有的 bundle 里，内容哈希一致的比例。 */
+    private fun hashMatchRatio(
+        local: Map<String, Pair<String, Long>>,
+        meta: Map<String, Pair<Long, String>>
+    ): Double {
+        val common = local.keys intersect meta.keys
+        if (common.isEmpty()) return 0.0
+        val matched = common.count { name -> local[name]?.first == meta[name]?.second }
+        return matched.toDouble() / common.size
+    }
+
+    /**
+     * 给每个 mod 标上装入状态：干净检测的客观结果 × 装入记账。
+     *
+     * 用当前已有的 [bundleCleanStates]，不自己触发检测 —— 刷新时机由调用方掌握
+     * （扫描后、装入后各刷一次，避免同一次操作里重复遍历游戏目录）。
+     *
+     * 记账里有 + bundle 已被修改 → 生效中
+     * 记账里有 + bundle 是干净原版/版本不符 → 需重新应用（被还原过，或游戏更新了）
+     * 记账里没有 + bundle 已被修改 → 被其他工具改过（装入前会先取回官方原版做基底）
+     */
+    private fun applyInstallState(mods: List<ModInfo>): List<ModInfo> {
+        val states = bundleCleanStates
+        val records = if (::installedModRepository.isInitialized) {
+            installedModRepository.load()
+        } else {
+            emptyMap()
+        }
+
+        if (states.isEmpty()) {
+            // 无法校验：记账里有的标 UNVERIFIED，其余保持未装
+            return mods.map { mod ->
+                val recorded = records.containsKey(mod.uri.toString())
+                mod.copy(installState = if (recorded) ModInstallState.UNVERIFIED
+                                        else ModInstallState.NOT_INSTALLED)
+            }
+        }
+
+        return mods.map { mod ->
+            val targetHash = mod.targetHash
+            // 账本按 mod uri 索引，直接命中即可。以前是拿 mod 自己的 familyKey 去查
+            // 「一包一条」的记录，同包第二个 mod 必然查不到，于是被误判成
+            // MODIFIED_BY_OTHER（界面上显示「被其他工具改过」）。
+            val recorded = records.containsKey(mod.uri.toString())
+            val clean = targetHash?.let { states[it] } ?: BundleCleanState.UNKNOWN
+
+            val state = when {
+                recorded && clean == BundleCleanState.MODIFIED -> ModInstallState.INSTALLED
+                recorded -> ModInstallState.STALE
+                clean == BundleCleanState.MODIFIED -> ModInstallState.MODIFIED_BY_OTHER
+                clean == BundleCleanState.UNKNOWN -> ModInstallState.UNVERIFIED
+                else -> ModInstallState.NOT_INSTALLED
+            }
+            mod.copy(installState = state)
+        }
+    }
+
+    /**
+     * 把一个产物文件写进公共 Download 目录（MediaStore）。
+     *
+     * 同名覆盖的完整策略：先查已有条目直接覆写 → 写失败则删掉重建 →
+     * 插入新条目 → 并发插入撞 UNIQUE 约束时退回复查（另一个写入者已建好）。
+     * 全失败返回 null，由调用方按「保存失败」处理。
+     */
+    private fun saveFileToDownloads(context: Context, file: File, relativeDestPath: String, rootDir: String): Uri? {
+        val resolver = context.contentResolver
+        val finalRelativePath = File(rootDir, relativeDestPath)
+        val relativeDir = File(Environment.DIRECTORY_DOWNLOADS, finalRelativePath.parent).path + File.separator
+
+        val queryUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+        val selectionArgs = arrayOf(relativeDir, finalRelativePath.name)
+
+        fun findExistingUri(): Uri? {
+            resolver.query(queryUri, projection, selection, selectionArgs, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idColumn = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                    if (idColumn != -1) {
+                        return ContentUris.withAppendedId(queryUri, cursor.getLong(idColumn))
+                    }
+                }
+            }
+            return null
+        }
+
+        fun writeToUri(targetUri: Uri): Boolean = try {
+            resolver.openOutputStream(targetUri, "wt")?.use { output ->
+                file.inputStream().use { it.copyTo(output) }
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+
+        // 覆写已有条目；写坏了就删掉走重建
+        findExistingUri()?.let { existing ->
+            if (writeToUri(existing)) return existing
+            runCatching { resolver.delete(existing, null, null) }
+        }
+
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, finalRelativePath.name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativeDir)
+        }
+        try {
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                if (writeToUri(uri)) return uri
+                runCatching { resolver.delete(uri, null, null) }
+            }
+        } catch (e: Exception) {
+            // 并发插入的 UNIQUE 冲突 —— 对方多半已建好条目，退回复查覆写
+            Log.w("MainViewModel", "MediaStore insert conflict, falling back to overwrite: ${e.message}")
+            findExistingUri()?.let { existing ->
+                if (writeToUri(existing)) return existing
+            }
+        }
+        return null
+    }
+
+    private fun copyDirectoryToCache(context: Context, sourceDir: DocumentFile, destinationDir: File) {
+        if (!destinationDir.exists()) destinationDir.mkdirs()
+        sourceDir.listFiles().forEach { file ->
+            val fileName = file.name ?: return@forEach
+            if (file.isFile && !shouldIgnoreModEntry(fileName)) {
+                val destFile = File(destinationDir, fileName)
+                try {
+                    context.contentResolver.openInputStream(file.uri)?.use { input -> destFile.outputStream().use { output -> input.copyTo(output) } }
+                } catch (e: Exception) { e.printStackTrace() }
+            }
+        }
+    }
+
+    private val _previewState = MutableStateFlow<PreviewState>(PreviewState.Idle)
+    val previewState: StateFlow<PreviewState> = _previewState.asStateFlow()
+
+    fun dismissPreviewState() {
+        _previewState.value = PreviewState.Idle
+    }
+
+    /**
+     * 把已转换产物解包成可预览的 Spine 素材。
+     *
+     * 产物里只有二进制 `__data`，得先解包才能拿到 skel/atlas/png。流程：
+     * 1. 从 SAF 把 `<bundle>/<hash>/__data` 拷进 cache（Shizuku 不参与，产物在用户目录下）
+     * 2. 交给 Python 的 unpack_bundle 解包（贴图走 libastcenc 解码，x86_64 也有）
+     * 3. 在解包结果里找 skel + atlas
+     *
+     * 解包器只在**同名冲突**时才会给文件加 ` #<path_id>` 后缀，而单个 bundle 内不会有同名
+     * 资源，所以导出的贴图名与 atlas 里的引用天然对得上，不需要额外改名。
+     *
+     * @return skel 与 atlas 的路径；任一缺失则返回 null
+     */
+    private suspend fun unpackConvertedForPreview(
+        context: Context,
+        modInfo: ModInfo,
+        tempDir: File
+    ): Pair<String, String>? {
+        val hashDir = modInfo.convertedHashDir ?: return null
+        val srcSize = modInfo.convertedDataSize ?: -1L
+        val bundleName = modInfo.targetHash ?: return null
+
+        // 命中缓存就整段跳过解包 —— 这正是「批量预解包」的收益所在：
+        // 预热过的 mod 再看只是读文件，不用再等那几秒。
+        if (srcSize > 0 && previewCacheRepository.isValid(bundleName, hashDir, srcSize)) {
+            previewCacheRepository.resolvePair(bundleName, hashDir)?.let { cached ->
+                Log.d("MainViewModel", "预览命中缓存: $bundleName")
+                // 不能把缓存目录直接交给 SpinePreviewActivity —— 它 onDestroy 里会
+                // deleteRecursively 传入的目录，那样看一次就把缓存删了。拷副本给它删。
+                previewCacheRepository.entryDir(bundleName, hashDir).listFiles()
+                    ?.filter { it.isFile && !it.name.startsWith(".") }
+                    ?.forEach { it.copyTo(File(tempDir, it.name), overwrite = true) }
+                return File(tempDir, File(cached.first).name).absolutePath to
+                        File(tempDir, File(cached.second).name).absolutePath
+            }
+        }
+
+        val dataDoc = DocumentFile.fromTreeUri(context, modInfo.uri)
+            ?.findFile(hashDir)?.findFile("__data")
+            ?: return null
+
+        _previewState.value = PreviewState.Preparing("正在读取产物…")
+        val bundleFile = File(tempDir, "__data")
+        context.contentResolver.openInputStream(dataDoc.uri)?.use { input ->
+            bundleFile.outputStream().use { input.copyTo(it) }
+        } ?: return null
+
+        if (!Python.isStarted()) {
+            Python.start(com.chaquo.python.android.AndroidPlatform(context))
+        }
+        // 直接解到缓存位置，省掉「解到临时目录再整体拷进缓存」那一趟
+        val outDir = previewCacheRepository.prepareDir(bundleName, hashDir)
+        val (ok, msg) = ModdingService.unpackBundle(
+            bundleFile.absolutePath, outDir.absolutePath, fast = true
+        ) { p -> _previewState.value = PreviewState.Preparing(p) }
+        bundleFile.delete()
+        if (!ok) {
+            previewCacheRepository.delete(bundleName, hashDir)   // 不留半成品当缓存
+            _previewState.value = PreviewState.Failed("解包失败：$msg")
+            return null
+        }
+
+        val files = outDir.listFiles()?.toList().orEmpty()
+        val skel = files.firstOrNull { it.name.endsWith(".skel", true) }
+            ?: files.firstOrNull { it.name.endsWith(".json", true) }
+        val atlas = files.firstOrNull { it.name.endsWith(".atlas", true) }
+        if (skel == null || atlas == null) {
+            previewCacheRepository.delete(bundleName, hashDir)
+            _previewState.value = PreviewState.Failed(
+                "这个 bundle 里没有可预览的 Spine 骨架（解出 ${files.size} 个文件）"
+            )
+            return null
+        }
+        if (srcSize > 0) previewCacheRepository.commit(bundleName, hashDir, srcSize)
+
+        files.filter { it.isFile && !it.name.startsWith(".") }
+            .forEach { it.copyTo(File(tempDir, it.name), overwrite = true) }
+        return File(tempDir, skel.name).absolutePath to File(tempDir, atlas.name).absolutePath
+    }
+
+    /**
+     * 装入单个 mod —— 按角色浏览的界面用这个入口。
+     *
+     * 内部自动判断走哪条路：已有产物就直接放进游戏目录（不必重打包），
+     * 否则走转换流程。用户不该为了装一个 mod 先自己跨过「转换」这道门。
+     *
+     * 两条路都会把同包已装的其他 mod 一并处理：转换那条靠 [mergeWithInstalled]，
+     * 产物那条没法合并，所以 [installConvertedBundles] 会先弹预警。
+     */
+    fun installSingle(context: Context, converted: ModInfo?, source: ModInfo?) {
+        if (converted != null) {
+            installConvertedBundles(context, listOf(converted))
+            return
+        }
+        val mod = source ?: return
+        val hash = mod.targetHash
+        if (hash.isNullOrBlank() || mod.resolutionState != ResolutionState.KNOWN) {
+            Log.w("MainViewModel", "装入被跳过：${mod.name} 还没解析出目标 bundle")
+            return
+        }
+        _moveState.value = MoveState.Idle
+        batchStartTimeMs = System.currentTimeMillis()
+        _installJobs.value = listOf(InstallJob(RepackJob(hash, mergeWithInstalled(hash, listOf(mod)))))
+        _finalInstallResult.value = null
+        _showInstallDialog.value = true
+        processInstallJobs(context)
+    }
+
+    /**
+     * 长按预览入口：把 mod 的素材收集到临时目录，找到 skel+atlas 后拉起
+     * SpinePreviewActivity。三类来源（产物 / 目录 mod / zip mod）统一收进
+     * [collectPreviewFiles]，完成后走同一套启动逻辑。
+     */
+    fun prepareAndShowPreview(context: Context, modInfo: ModInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val tempDir = File(context.cacheDir, "spine_preview_${System.currentTimeMillis()}")
+            if (!tempDir.mkdirs()) return@launch
+
+            try {
+                val (skelPath, atlasPath) = collectPreviewFiles(context, modInfo, tempDir)
+                if (skelPath != null && atlasPath != null) {
+                    withContext(Dispatchers.Main) {
+                        context.startActivity(Intent(context, SpinePreviewActivity::class.java).apply {
+                            putExtra("skelPath", skelPath)
+                            putExtra("atlasPath", atlasPath)
+                            putExtra("tempDirPath", tempDir.absolutePath)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        })
+                    }
+                    _previewState.value = PreviewState.Idle
+                } else {
+                    // 没有素材可预览要明说 —— 旧版这里是空分支，长按毫无反应，
+                    // 用户分不清是不支持还是坏了
+                    _previewState.value = PreviewState.Failed(
+                        "没找到可预览的骨架文件（需要 .skel 或 .json，外加同名 .atlas）"
+                    )
+                    tempDir.deleteRecursively()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _previewState.value = PreviewState.Failed(
+                    "预览准备失败：${e.message ?: e::class.java.simpleName}"
+                )
+                tempDir.deleteRecursively()
+            }
+        }
+    }
+
+    /**
+     * 把 mod 素材收进临时目录，返回 (skel 路径, atlas 路径)。三类来源：
+     * 产物（先解包）、目录 mod（逐文件拷）、zip mod（逐条解压）。
+     */
+    private suspend fun collectPreviewFiles(
+        context: Context,
+        modInfo: ModInfo,
+        tempDir: File
+    ): Pair<String?, String?> {
+        if (modInfo.kind == ModKind.CONVERTED_BUNDLE) {
+            return unpackConvertedForPreview(context, modInfo, tempDir)
+                ?: run {
+                    if (_previewState.value is PreviewState.Preparing) {
+                        _previewState.value = PreviewState.Failed("无法从产物中取出可预览的素材")
+                    }
+                    tempDir.deleteRecursively()
+                    null to null
+                }
+        }
+
+        var skel: String? = null
+        var atlas: String? = null
+        fun onExtracted(fileName: String, dest: File) {
+            if (fileName.endsWith(".skel") || fileName.endsWith(".json")) skel = dest.absolutePath
+            else if (fileName.endsWith(".atlas")) atlas = dest.absolutePath
+        }
+
+        val previewExts = setOf(".skel", ".json", ".atlas", ".png")
+        if (modInfo.isDirectory) {
+            DocumentFile.fromTreeUri(context, modInfo.uri)?.listFiles()?.forEach { file ->
+                val fileName = file.name ?: ""
+                if (!shouldIgnoreModEntry(fileName) &&
+                    previewExts.any { fileName.endsWith(it) }) {
+                    val dest = File(tempDir, fileName)
+                    context.contentResolver.openInputStream(file.uri)?.use { input ->
+                        dest.outputStream().use { input.copyTo(it) }
+                    }
+                    onExtracted(fileName, dest)
+                }
+            }
+        } else {
+            context.contentResolver.openInputStream(modInfo.uri)?.use { fis ->
+                ZipInputStream(fis).use { zis ->
+                    var entry = zis.nextEntry
+                    while (entry != null) {
+                        val fileName = entry.name.substringAfterLast('/')
+                        if (!entry.isDirectory && !shouldIgnoreModEntry(fileName) &&
+                            previewExts.any { fileName.endsWith(it) }) {
+                            val dest = File(tempDir, fileName)
+                            dest.outputStream().use { zis.copyTo(it) }
+                            onExtracted(fileName, dest)
+                        }
+                        entry = zis.nextEntry
+                    }
+                }
+            }
+        }
+        return skel to atlas
+    }
+
+    /**
+     * **刻意不取消 [installScope]。**
+     *
+     * onCleared 意味着界面没了（用户退出、或系统回收 Activity），但正在跑的转换/装入
+     * 不该跟着断 —— 重打包断在中途会在游戏目录留下半个 __data。那条流程的生命周期
+     * 挂在进程上（[InstallService] 让进程活着），不挂在界面上。
+     *
+     * 代价是 ViewModel 对象会被跑着的协程多留一会儿，跑完自然释放。
+     * 用户反馈的「装 mod 时放着不管容易被杀」正是这两件事一起解决的。
+     */
+    override fun onCleared() {
+        val running = _installJobs.value.count {
+            it.status !is JobStatus.Finished && it.status !is JobStatus.Failed
+        }
+        if (running > 0) {
+            Log.i("MainViewModel", "界面已销毁，但还有 $running 个装入任务在跑，不取消")
+        }
+        super.onCleared()
+    }
+}
