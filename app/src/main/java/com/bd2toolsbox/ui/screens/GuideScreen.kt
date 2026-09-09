@@ -137,6 +137,12 @@ fun GuideScreen(viewModel: GuideViewModel) {
             if (node.expanded) expanded.remove(node.category.id)
             else expanded.add(node.category.id)
         }
+        // 进不进列表看有没有可读内容：自己是目录（contentId == 0）且直属子节点也全是
+        // 目录的，selectNode 会拿不到任何文章、进去就是一页空白——这种大类只当抽屉，
+        // 点行只负责展开/收起。自带内容、或直属子节点里有文章的照旧展开并进入。
+        val enterable = node.category.contentId > 0L ||
+                node.category.children.any { it.contentId > 0L }
+        if (!enterable) return
         viewModel.selectNode(node.category)
         if (narrow) treePane = false   // 竖屏选完分类即回列表页看内容
     }

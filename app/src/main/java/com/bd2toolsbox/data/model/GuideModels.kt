@@ -69,11 +69,20 @@ data class GuideComment(
     val likes: Int
 )
 
-/** 官方兑换的单码结果：成功与否 + 直接给用户看的文案。 */
+/**
+ * 官方兑换的单码结果：成功与否 + 直接给用户看的文案。[retryable] 说的是「下次
+ * 拉到新清单要不要再自动试一次」——网络错误、限流这类值得重试；过期/无效/已
+ * 兑换这类终局判定（以及成功本身）不值得。
+ */
 data class RedeemOutcome(
     val code: String,
     val success: Boolean,
-    val message: String
+    val message: String,
+    val retryable: Boolean = true,
+    /** 这次失败是官方限流（429 或软限流 BadRequest），批量流程据此提前收工。 */
+    val rateLimited: Boolean = false,
+    /** 官方错误码原文（成功为 null）。批量流程用它识别账号级错误（如 IncorrectUser）。 */
+    val errorCode: String? = null
 )
 
 /**
@@ -84,5 +93,7 @@ data class RedeemRecord(
     val code: String,
     val reward: String,
     /** epoch 秒。 */
-    val at: Long
+    val at: Long,
+    /** 给哪个账号换的。单账号时代的老记录为空串，迁移时补上。 */
+    val userId: String = ""
 )
