@@ -346,7 +346,9 @@ private fun StatusTag(entry: SkinEntry) {
  * 用户要在其中挑一个，并成一条就没法选了。
  */
 fun buildSkinEntries(characterName: String, allMods: List<ModInfo>): List<SkinEntry> {
-    val mine = allMods.filter { it.character.trim() == characterName }
+    // 异常条目不进皮肤页：装入入口（installSingle 等）都会拦它，出现在这里只会
+    // 让用户点了「装入」然后毫无反应。角色表更新/用户删源文件后会自然归位。
+    val mine = allMods.filter { it.character.trim() == characterName && it.defect == null }
     if (mine.isEmpty()) return emptyList()
 
     // 每个 bundle 总共被多少 mod 指向（跨角色），用于说明共用关系

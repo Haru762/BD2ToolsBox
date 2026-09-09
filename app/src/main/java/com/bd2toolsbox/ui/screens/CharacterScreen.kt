@@ -294,7 +294,8 @@ private fun AlphabetIndex(letters: List<Char>, onPick: (Char) -> Unit) {
  * 把 mod 列表汇总成角色条目。
  *
  * 角色全量来自角色表，mod 数量从已扫描的 mod 里统计；认不出角色的 mod 不在这里出现
- * （它们归到「全部」视图，见 ModScreen 的未识别分组）。
+ * （它们归到「全部」视图，见 ModScreen 的未识别分组）。扫描判为异常的同样不进 ——
+ * 它连装都没法装，处理入口在「全部」视图顶部的异常区，不是这里。
  */
 fun buildCharacterEntries(
     allCharacters: List<String>,
@@ -305,6 +306,9 @@ fun buildCharacterEntries(
     val installed = HashMap<String, Int>()
     for (m in mods) {
         if (isUnknownCharacter(m.character)) continue
+        // 异常条目同样跳过：它不在任何角色下正常生效，计入只会让「这个角色有几个 mod」
+        // 虚高 —— 处理在「全部」视图顶部的异常区（删除源文件），按角色计数不带它
+        if (m.defect != null) continue
         val name = m.character.trim()
         val cat = categoryOf(m.type, m.costume)
         counts.getOrPut(name) { HashMap() }.merge(cat, 1, Int::plus)

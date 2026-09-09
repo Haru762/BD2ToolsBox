@@ -8,8 +8,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +19,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CardGiftcard
@@ -29,6 +34,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -86,6 +92,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 手势条沉浸：状态栏/导航栏透明，内容画到系统栏后面（各内容区的
+        // 避让交给各自的 statusBarsPadding / NavigationBar / Scaffold）
+        enableEdgeToEdge()
 
         viewModel.initialize(applicationContext)
         // 攻略板块的仓库是懒加载单例，这里顺手把分类树拉起来（进 tab 前就绪）
@@ -205,6 +214,7 @@ class MainActivity : ComponentActivity() {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .statusBarsPadding()
                                     .padding(start = 16.dp, end = 8.dp, top = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -226,7 +236,10 @@ class MainActivity : ComponentActivity() {
                         } else if (currentTab == 2) {
                             // 兑换码页自带标题行（含刷新），顶栏只补一个设置齿轮
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .statusBarsPadding()
+                                    .padding(end = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Spacer(Modifier.weight(1f))
@@ -238,6 +251,7 @@ class MainActivity : ComponentActivity() {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .statusBarsPadding()
                                 .padding(start = 8.dp, end = 8.dp, top = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -338,6 +352,38 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
+                            }
+
+                            // 无信号标识：离线导致 N 个 mod 没做过期检查（截断名/文件头/
+                            // 结构三道本地检查照跑，跳过的只有查表那道）。只在 N>0 时出现，
+                            // 点按重新联网校验，取到表后计数归零、标识自然消失。
+                            val unverifiedCount by viewModel.unverifiedModCount.collectAsState()
+                            if (unverifiedCount > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.14f),
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.clickable { viewModel.retryCatalogValidation() }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(
+                                            start = 8.dp, end = 10.dp, top = 5.dp, bottom = 5.dp
+                                        ),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.WifiOff,
+                                            contentDescription = "$unverifiedCount 个 mod 未联网校验，点按重试",
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            "$unverifiedCount",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(6.dp))
                             }
 
                             Spacer(Modifier.weight(1f))

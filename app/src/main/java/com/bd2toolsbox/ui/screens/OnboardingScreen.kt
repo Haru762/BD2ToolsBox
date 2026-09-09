@@ -47,7 +47,8 @@ fun OnboardingScreen(
     val isLast = pagerState.currentPage == pages.lastIndex
 
     Surface(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        // 全屏浮层盖过主界面，得自己避让状态栏，不然「跳过」会顶进系统栏
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             // 跳过放在顶部右上：想读的人不会误触，不想读的人一眼就能找到
             Row(
                 modifier = Modifier
@@ -93,6 +94,9 @@ fun OnboardingScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // edge-to-edge 后窗口延伸到导航条后面，按钮行得自己避让，
+                    // 不然三键导航下「下一步」会被 scrim 压暗、下半截点不到
+                    .navigationBarsPadding()
                     .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically

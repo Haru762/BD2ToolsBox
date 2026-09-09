@@ -538,6 +538,65 @@ def _process_astc_textures(items, asset_map, report, edited):
     return edited
 
 
+UNITYFS_SIGNATURE = b"UnityFS\x00"
+_UNITYFS_HEAD_WINDOW = 256    # 头解析窗口：签名 + 版本串 + size 足够，不整读大文件
+
+
+def _validate_unityfs_header(path):
+    """校验 path 是结构完整的 UnityFS bundle（.part 落盘后的写前自检）。
+
+    只读文件头（前 256 字节）与文件大小。按 UnityFS 头部布局解析：
+    签名(8B "UnityFS\\x00") + format version(int32 大端) + unity version
+    字符串(null 结尾) + revision 字符串(null 结尾) + size(int64 大端，
+    即 bundle 总长度)，并断言 size == 文件实际字节数。进程中途被杀留下的
+    半个文件必然缺尾部数据，size 对不上即可拦截，不会覆盖好文件。
+
+    返回 (是否有效, 原因)：失败 (False, 中文原因)，成功 (True, "")。
+    """
+    try:
+        actual_size = os.path.getsize(path)
+    except OSError as e:
+        return False, f"无法读取文件大小: {e}"
+    try:
+        with open(path, "rb") as f:
+            head = f.read(_UNITYFS_HEAD_WINDOW)
+    except OSError as e:
+        return False, f"无法读取文件头: {e}"
+
+    if head[:8] != UNITYFS_SIGNATURE:
+        return False, '文件头签名不是 UnityFS（缺 b"UnityFS\\x00" 开头）'
+
+    try:
+        pos = 8
+        int.from_bytes(head[pos:pos + 4], "big")     # format version，只步进不判定
+        pos += 4
+        for field in ("unity version", "unity revision"):
+            end = head.find(b"\x00", pos)
+            if end < 0:
+                return False, (f"文件头中 {field} 字符串未在 "
+                               f"{_UNITYFS_HEAD_WINDOW} 字节窗口内以 \\x00 结尾")
+            pos = end + 1
+        if pos + 8 > len(head):
+            return False, "文件头截断，剩余字节不足 8 字节的 size 字段"
+        declared_size = int.from_bytes(head[pos:pos + 8], "big")
+    except (ValueError, IndexError) as e:
+        return False, f"文件头解析失败: {e}"
+
+    if declared_size != actual_size:
+        return False, (f"UnityFS 头声明的 bundle 总长 {declared_size} 与文件实际"
+                       f"字节数 {actual_size} 不一致，文件不完整")
+    return True, ""
+
+
+def _try_remove(path):
+    """尽力删除残留临时文件；失败不影响主流程的报错信息。"""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
 def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
                   use_astc, progress_callback=None):
     """把 mod 资产替换进原版 bundle，lz4 保存到 output_path。
@@ -666,13 +725,27 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
 
         report("Saving modified game file...")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # 先写 .part 临时文件并自校验，通过后才 os.replace 原子覆盖到最终路径：
+        # 直接覆盖写中途被杀会留半个 __data，游戏加载即闪退。
+        part_path = output_path + ".part"
         try:
-            with open(output_path, "wb") as f:
+            with open(part_path, "wb") as f:
                 env.file.save(f, packer="lz4")
-            report("Saved successfully!")
-            return True, "Repack completed successfully."
         except Exception as e:
+            _try_remove(part_path)
             return False, f"Error saving bundle: {e}"
+        valid, reason = _validate_unityfs_header(part_path)
+        if not valid:
+            _try_remove(part_path)
+            report(f"  Saved bundle failed integrity check, discarded: {reason}")
+            return False, f"Bundle validation failed after save: {reason}"
+        try:
+            os.replace(part_path, output_path)
+        except OSError as e:
+            _try_remove(part_path)
+            return False, f"Error replacing bundle: {e}"
+        report("Saved successfully!")
+        return True, "Repack completed successfully."
 
     except Exception:
         import traceback

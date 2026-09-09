@@ -1,12 +1,16 @@
 package com.bd2toolsbox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -25,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -39,12 +44,17 @@ import com.bd2toolsbox.data.model.ModInfo
 import com.bd2toolsbox.data.model.ModInstallState
 import com.bd2toolsbox.data.model.ModKind
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
+import android.provider.DocumentsContract
 import com.bd2toolsbox.data.model.ModCategory
 import com.bd2toolsbox.data.model.categoryOf
 import com.bd2toolsbox.data.model.isUnknownCharacter
 import com.bd2toolsbox.data.model.ResolutionState
 import com.bd2toolsbox.ui.viewmodel.MainViewModel
 import com.valentinilk.shimmer.shimmer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -69,6 +79,9 @@ fun ModScreen(
     onUnpackRequest: () -> Unit
 ) {
     val modSourceDirectoryUri by viewModel.modSourceDirectoryUri.collectAsState()
+    // 删除守卫要用：异常条目的 uri 若正好是某个源文件夹的根 document，删它等于删整
+    // 个源目录（见下方 pendingDeleteMod 分支）。
+    val modSourceDirs by viewModel.modSourceDirs.collectAsState()
     // 先按 tab 的类型收窄，再做原有的分组。后续所有计数（全选三态、筛选 chip）都基于
     // 这份收窄后的列表，否则会出现「本页看不到的条目也被算进全选」这类错位。
     val modsList = viewModel.filteredModsList.collectAsState().value
@@ -76,9 +89,52 @@ fun ModScreen(
     val allMods = viewModel.modsList.collectAsState().value
         .filter { kindFilter == null || it.kind == kindFilter }
     val stateFilter by viewModel.stateFilter.collectAsState()
-    // 一级按角色、二级按目标 bundle 的两级结构。
+    // —— 三区划分：正常 / 异常 / 未识别 ——
+    // 异常（扫描判出 defect）与未识别（角色表查不到）都不跟正常条目混排：异常的要提示
+    // 用户删源文件、未识别的等角色表更新自动归位，各自成区、默认收起、沉在列表顶部。
+    // 分区对象是 modsList —— 搜索与状态筛选后的同一份数据 —— 搜索命中某条异常 mod 时
+    // 它留在顶部区而不是漏进下方分组，三区的过滤口径才不会错位。
+    val abnormalMods = remember(modsList) { modsList.filter { it.defect != null } }
+    val unknownMods = remember(modsList) {
+        modsList.filter { it.defect == null && isUnknownCharacter(it.character) }
+    }
+    val normalMods = remember(modsList) {
+        modsList.filter { it.defect == null && !isUnknownCharacter(it.character) }
+    }
+    // 状态筛选 chip 的计数只认正常条目 —— 异常/未识别已经有自己的区，把它们算进
+    // 「生效中 N」之类的数字只会让 chip 与「这页能勾选的 mod」对不上。
+    val normalAllMods = remember(allMods) {
+        allMods.filter { it.defect == null && !isUnknownCharacter(it.character) }
+    }
+    // 一级按角色、二级按目标 bundle 的两级结构，只喂 normal —— 另两区已分流，
+    // 组内再带它们等于把同一批条目渲染两遍。
     // 分组本身不便宜（301 条要过好几遍），而列表在选中、滚动时会频繁重组，所以缓存住。
-    val characterGroups = remember(modsList) { buildCharacterGroups(modsList) }
+    val characterGroups = remember(normalMods) { buildCharacterGroups(normalMods) }
+
+    // —— 顶部折叠区：交互状态与新增提醒 ——
+    // 展开状态放 LazyColumn 外 remember：列表滚动/重组时不会跟着重建，
+    // 收起/展开才稳定（GuideScreen 分类树同款）。默认收起 —— 这两区是「需要时再看」，
+    // 摊开只会挡在正常列表前面。
+    var abnormalExpanded by remember { mutableStateOf(false) }
+    var unknownExpanded by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    // 上一轮的异常数；列表是启动扫描后从空填起来的，冷启动时存量异常也会走一次 0→N
+    // —— 这一声就当「顶部多了个折叠区」的指引（否则存量用户根本不知道往哪看）。
+    // 之后只有比上一轮多才算新情况（游戏更新后重扫常会一次多出一批）。
+    // 基准用未筛选的 allMods 计数：搜索词/状态筛选一变，筛选后的 abnormalMods 计数
+    // 会跟着跳，拿它当基准会把「改了下筛选」误报成「新增异常」。
+    var lastAbnormalCount by remember { mutableStateOf(-1) }
+    val abnormalTotal = remember(allMods) { allMods.count { it.defect != null } }
+    LaunchedEffect(abnormalTotal) {
+        if (lastAbnormalCount >= 0 && abnormalTotal > lastAbnormalCount) {
+            snackbarHostState.showSnackbar("新增 ${abnormalTotal - lastAbnormalCount} 个异常 mod，已折叠在顶部")
+        }
+        lastAbnormalCount = abnormalTotal
+    }
+    // 待删源文件的异常条目；非空即弹确认框。删除动的是用户文件、不可恢复，
+    // 任何路径都不允许点了就删（确认框见 ModScreen 末尾）。
+    var pendingDeleteMod by remember { mutableStateOf<ModInfo?>(null) }
+    val scope = rememberCoroutineScope()
     val selectedMods by viewModel.selectedMods.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val showShimmer by viewModel.showShimmer.collectAsState()
@@ -89,11 +145,18 @@ fun ModScreen(
 
 
     val pullToRefreshState = rememberPullToRefreshState()
+    // M3 容器 rest 态的圆停在锚点上方一个身位处，锚点要贴窗口顶端才出得了屏。
+    // 量出本屏内容 Box 距窗口顶端的距离存进来，容器用它做负偏移补偿（见下方
+    // PullToRefreshContainer）；初值取一个必在屏外的量，首帧量测完成前先藏住。
+    var boxTopInWindow by remember { mutableStateOf(10_000f) }
     if (pullToRefreshState.isRefreshing) {
         LaunchedEffect(true) {
             // 下拉刷新重扫的是「记住的所有目录」，不是当前第一个 ——
             // 多目录合并之后，只扫一个会让另外几个目录的 mod 凭空消失。
             viewModel.rescanAllModSources()
+            // 死角：一个目录都没记住时 rescanAllModSources 直接 break、isLoading 根本
+            // 不翻，下面的 endRefresh 等不到触发，转圈会卡死 —— 这里手动收掉。
+            if (viewModel.modSourceDirs.value.isEmpty()) pullToRefreshState.endRefresh()
         }
     }
 
@@ -104,6 +167,8 @@ fun ModScreen(
     }
 
     Scaffold(
+        // snackbar 供两处用：异常数新增提醒（LaunchedEffect）、删除源文件失败提示
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val selectedQuality by viewModel.selectedQuality.collectAsState()
@@ -159,7 +224,11 @@ fun ModScreen(
             // 注意这里不再用「未选目录就整屏显示欢迎页」的写法。
             // 那样会把顶栏的目录入口和设置一起挡掉，用户在选目录之前什么都看不到、也调不了设置。
             // 现在骨架照常渲染，引导只占列表区域（见下方 needsFolder 分支）。
-            Box(modifier = Modifier.nestedScroll(pullToRefreshState.nestedScrollConnection)) {
+            Box(
+                modifier = Modifier
+                    .nestedScroll(pullToRefreshState.nestedScrollConnection)
+                    .onGloballyPositioned { boxTopInWindow = it.positionInWindow().y }
+            ) {
                     Column {
                         Row(
                             modifier = Modifier
@@ -178,8 +247,13 @@ fun ModScreen(
                                     // 必须用 modsList（搜索过滤后的）而不是 allModsList：
                                     // toggleSelectAll() 操作的就是过滤后的列表，若这里拿全量计数，
                                     // 搜索状态下全选会显示成半选态，用户再点一次反而全部取消。
+                                    // 异常条目不参与勾选（在顶部异常区），要挡在分母外 ——
+                                    // STALE 这类异常解析结果仍是 KNOWN，不挡就永远到不了全选态。
+                                    // 未识别的产物（角色表查不到、character="未识别"）也是
+                                    // KNOWN，但渲染在只读的未识别区，同样不算分母。
                                     val allModsCount = modsList.count {
-                                        it.resolutionState == ResolutionState.KNOWN
+                                        it.resolutionState == ResolutionState.KNOWN &&
+                                                it.defect == null && !isUnknownCharacter(it.character)
                                     }
                                     val selectedModsCount = selectedMods.size
                                     val checkboxState = when {
@@ -275,7 +349,7 @@ fun ModScreen(
                         }
 
                         StateFilterRow(
-                            allMods = allMods,
+                            allMods = normalAllMods,
                             current = stateFilter,
                             onSelect = { viewModel.setStateFilter(it) }
                         )
@@ -285,6 +359,9 @@ fun ModScreen(
                         } else if (showShimmer) {
                             ShimmerLoadingScreen()
                         } else if (modsList.isEmpty()) {
+                            // 空态只看 modsList 是否全空：三区是同一份列表的划分，normal 空但
+                            // 顶部异常/未识别区仍有内容时 modsList 必然非空、会走下方 LazyColumn
+                            // —— 顶部有货时弹「还没有任何 mod」反而误导；三区全空才轮到这里。
                             if (searchQuery.isNotEmpty()) {
                                 NoSearchResultsScreen(searchQuery)
                             } else if (stateFilter != null) {
@@ -299,6 +376,50 @@ fun ModScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(vertical = 8.dp)
                             ) {
+                                // —— 顶部折叠区：异常在上、未识别在下 ——
+                                // 各区头带计数，整条可点；N == 0 的区整段不渲染。
+                                if (abnormalMods.isNotEmpty()) {
+                                    item(key = "top-abnormal") {
+                                        CollapsibleSectionHeader(
+                                            label = "异常mod",
+                                            count = abnormalMods.size,
+                                            color = MaterialTheme.colorScheme.error,
+                                            expanded = abnormalExpanded,
+                                            onClick = { abnormalExpanded = !abnormalExpanded }
+                                        )
+                                    }
+                                    if (abnormalExpanded) {
+                                        items(
+                                            items = abnormalMods,
+                                            key = { mod -> "abn:${mod.uri}" }
+                                        ) { mod ->
+                                            AbnormalModRow(
+                                                mod = mod,
+                                                onDelete = { pendingDeleteMod = mod }
+                                            )
+                                        }
+                                    }
+                                }
+                                if (unknownMods.isNotEmpty()) {
+                                    item(key = "top-unknown") {
+                                        CollapsibleSectionHeader(
+                                            label = "未识别",
+                                            count = unknownMods.size,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            expanded = unknownExpanded,
+                                            onClick = { unknownExpanded = !unknownExpanded }
+                                        )
+                                    }
+                                    if (unknownExpanded) {
+                                        items(
+                                            items = unknownMods,
+                                            key = { mod -> "unk:${mod.uri}" }
+                                        ) { mod ->
+                                            UnknownModRow(mod)
+                                        }
+                                    }
+                                }
+
                                 characterGroups.forEach { cg ->
                                     // 只有角色这一级 sticky。两级都 sticky 的话，Compose 会让
                                     // 后出现的 header 把前一个顶走 —— 角色名一滚就没了，
@@ -357,12 +478,116 @@ fun ModScreen(
                             }
                         }
                     }
+                    // M3 容器 rest 态的圆停在锚点上方一个身位处，锚点必须贴窗口顶端
+                    // 才出得了屏；这个 Box 上面压着状态栏+顶栏+搜索栏，rest 圆会漏在
+                    // 顶栏上（edge-to-edge 前靠窗口裁剪遮住，透明系统栏后现形）。用
+                    // boxTopInWindow 做负偏移把锚点补偿回窗口顶端：rest 圆正好滑出
+                    // 屏幕外，下拉时按 M3 原生曲线从屏幕顶边连续滑入，松手回弹/转圈。
                     PullToRefreshContainer(
-                        modifier = Modifier.align(Alignment.TopCenter),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .graphicsLayer { translationY = -boxTopInWindow },
                         state = pullToRefreshState,
                     )
             }
         }
+    }
+
+    // —— 删除源文件确认 ——
+    // 异常条目行尾的删除键只负责「提出请求」：必须在这里二次确认后才动文件。
+    // 删除不可恢复，文案写清后果与边界（只删这一条），不留任何免确认的路径。
+    pendingDeleteMod?.let { mod ->
+        // 条目恰好是某个源文件夹根本身的场景（把「根级就是一堆 skel/png」的目录选成
+        // 了源文件夹）：fromSingleUri 删的是整棵树，确认框里「只删这一个」就成了谎言。
+        // 这种情况不提供删除，指到文件管理器去处理。
+        val isSourceRoot = modSourceDirs.any { tree ->
+            runCatching {
+                DocumentsContract.buildDocumentUriUsingTree(
+                    tree, DocumentsContract.getTreeDocumentId(tree)
+                ) == mod.uri
+            }.getOrDefault(false)
+        }
+        if (isSourceRoot) {
+            AlertDialog(
+                onDismissRequest = { pendingDeleteMod = null },
+                icon = {
+                    Icon(
+                        Icons.Default.FolderOff,
+                        contentDescription = "源文件夹",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = { Text("这个不能在这里删") },
+                text = {
+                    Text(
+                        "「${mod.name}」就是 mod 源文件夹本身，删它会连同整个文件夹" +
+                            "（可能还有别的 mod）一起删掉。要处理它请到文件管理器里操作。",
+                        textAlign = TextAlign.Center
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { pendingDeleteMod = null }) {
+                        Text("知道了")
+                    }
+                }
+            )
+            return@let
+        }
+        AlertDialog(
+            onDismissRequest = { pendingDeleteMod = null },
+            icon = {
+                Icon(
+                    Icons.Default.DeleteForever,
+                    contentDescription = "删除",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("删除源文件？") },
+            text = {
+                Text(
+                    "将永久删除「${mod.name}」的源文件，此操作不可恢复。" +
+                        "只删这一个 mod，同一目录里的其他 mod 不受影响。",
+                    textAlign = TextAlign.Center
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingDeleteMod = null
+                        scope.launch {
+                            // SAF 删除放 IO 线程：异常条目可能是一整个目录，provider 会递归
+                            // 删除，放主线程点确认那一下会卡住。删完让 viewModel 重扫一圈，
+                            // 条目消失与计数刷新都交给扫描，不在本地手改列表。
+                            val ok = withContext(Dispatchers.IO) {
+                                try {
+                                    // PC 目录 / zip / 已转换 bundle 目录记录的
+                                    // 都是 document uri，fromSingleUri 通吃
+                                    DocumentFile.fromSingleUri(context, mod.uri)?.delete() == true
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    false
+                                }
+                            }
+                            if (ok) {
+                                viewModel.rescanAllModSources()
+                            } else {
+                                snackbarHostState.showSnackbar("删除失败，可能没有该目录的写入权限")
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteMod = null }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 }
 
@@ -571,6 +796,135 @@ fun EmptyModsScreen(kind: ModKind?) {
     }
 }
 
+// ==================================================================== 顶部折叠区（异常 / 未识别）
+
+/** 折叠区标题行：计数 + 展开箭头，整行可点。N == 0 的区由调用方整段跳过渲染。 */
+@Composable
+private fun CollapsibleSectionHeader(
+    label: String,
+    count: Int,
+    color: Color,
+    expanded: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$label ($count)",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (expanded) "收起" else "展开",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * 异常区条目。刻意不用 ModCard：异常条目不可勾选，放个永远灰着的勾选框只会让人
+ * 困惑；这里只需要「名字 + 给玩家的原因 + 技术细节」和行尾的删除入口。
+ */
+@Composable
+private fun AbnormalModRow(mod: ModInfo, onDelete: () -> Unit) {
+    // 本区成员必然带缺陷，兜底防御一下，避免空 label 渲染一行白条
+    val defect = mod.defect ?: return
+    ElevatedCard(
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = mod.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                // defect.label 是给玩家看的判断依据（如「游戏已更新，此 mod 已过期…」）；
+                // errorReason 是更底层的技术细节（截断名的 GBK 解释等），只在有时叠第三行
+                Text(
+                    text = defect.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2
+                )
+                if (!mod.errorReason.isNullOrBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = mod.errorReason,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "删除源文件",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 未识别区条目：ModCard 的只读版本 —— 同款名字 + 副标题排版，但没有勾选框、徽章
+ * 与长按菜单。副标题固定：角色表查不到它的角色，写「角色-皮肤」没有意义，一句
+ * 「新角色更新后会归位」比假装知道它属于谁诚实。
+ */
+@Composable
+private fun UnknownModRow(mod: ModInfo) {
+    ElevatedCard(
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = mod.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "角色表未收录，多为新角色，更新后会自动归位",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ModCard(
@@ -583,7 +937,10 @@ fun ModCard(
     onHide: (() -> Unit)? = null,
     onDeleteFolder: (() -> Unit)? = null
 ) {
-    val isSelectable = modInfo.resolutionState == ResolutionState.KNOWN
+    // 异常条目不经过 ModCard（顶部有专用行），这里再挡一层纯属兜底 ——
+    // STALE 这类异常解析结果仍是 KNOWN，不挡就会冒出可勾选的 checkbox。
+    val isSelectable = modInfo.resolutionState == ResolutionState.KNOWN &&
+            modInfo.defect == null
     val elevation by animateDpAsState(if (isSelected) 4.dp else 1.dp, label = "elevation")
     var menuOpen by remember { mutableStateOf(false) }
 

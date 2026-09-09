@@ -77,6 +77,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             "cp -rf /storage/emulated/0/Download/Shared/. " +
             "/storage/emulated/0/Android/data/com.neowizgames.game.browndust2/files/UnityCache/Shared/ " +
             "&& rm -rf /storage/emulated/0/Download/Shared"
+
+        /** UnityFS bundle 文件头的魔数（"UnityFS" + 结尾 NUL，共 8 字节），产物 __data 的损坏判定用。
+         *  用字节字面量而不是字符串：源码字符串里的裸 NUL 既看不见也容易被编辑工具吞掉。 */
+        private val UNITYFS_MAGIC = byteArrayOf(0x55, 0x6E, 0x69, 0x74, 0x79, 0x46, 0x53, 0x00)
     }
 
     private fun shouldIgnoreModEntry(entryName: String?): Boolean {
@@ -892,7 +896,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * "一键恢复原状"该有的语义。
      */
     fun prepareUninstallAll() {
-        val context = appContext ?: return
+        appContext ?: return
         viewModelScope.launch {
             _isUninstallScanning.value = true
             try {
@@ -909,9 +913,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 var fromBackup = 0
                 var needDownload = 0
                 var bytes = 0L
-                val meta = withContext(Dispatchers.IO) {
-                    ModdingService.getBundleMeta(context.filesDir.absolutePath, _selectedQuality.value) { }
-                }
+                // refreshBundleCleanStates 刚取过表并存在 catalogBundleMeta（能走到
+                // 这里说明 cleanScanError 为空、表已到手），直接复用，不再取一遍
+                val meta = catalogBundleMeta
                 for (name in modified) {
                     val hashDir = gameBundleHashes[name]
                     if (hashDir != null && backupRepository.hasBackup(name, hashDir)) {
@@ -1047,7 +1051,12 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      *  不看整体选中数 —— 否则筛出 2 项时永远判不全选，点一下变成「再加一遍」。 */
     fun toggleSelectAll() {
         toggleSelection(filteredModsList.value
-            .filter { it.resolutionState == ResolutionState.KNOWN }
+            .filter {
+                it.resolutionState == ResolutionState.KNOWN && it.defect == null &&
+                        // 未识别产物（查不到角色名但 bundle 有效）也是 KNOWN，但 UI 里
+                        // 渲染在只读区选不到，不排除会让全选数目和可见的勾选框对不上
+                        !isUnknownCharacter(it.character)
+            }
             .map { it.uri }
             .toSet())
     }
@@ -1069,7 +1078,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     /** 同一 bundle 分组的全选/取消全选（只认该组内可装条目）。 */
     fun toggleSelectAllForGroup(groupHash: String) {
         toggleSelection(filteredModsList.value
-            .filter { it.targetHash == groupHash && it.resolutionState == ResolutionState.KNOWN }
+            .filter {
+                it.targetHash == groupHash && it.resolutionState == ResolutionState.KNOWN &&
+                        it.defect == null && !isUnknownCharacter(it.character)
+            }
             .map { it.uri }
             .toSet())
     }
@@ -1146,7 +1158,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         val jobs = mods
             .filter {
                 !it.targetHash.isNullOrBlank() &&
-                    it.resolutionState == ResolutionState.KNOWN
+                    it.resolutionState == ResolutionState.KNOWN &&
+                    // 异常条目（过期/损坏等）拦在装入入口：界面上本就选不到，
+                    // 这里再兜一层，防选中集里混入校验前的旧 uri
+                    it.defect == null
             }
             .groupBy { it.targetHash!! }
             .map { (hash, group) -> RepackJob(hash, mergeWithInstalled(hash, group)) }
@@ -1516,7 +1531,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     fun installConvertedBundles(context: Context, mods: List<ModInfo>) {
-        val targets = mods.filter { it.kind == ModKind.CONVERTED_BUNDLE && it.targetHash != null }
+        // defect 拦截与 startRepackFor 同款语义：UI 分区后本就选不到异常条目，
+        // 这里兜一层，防选中集里混入校验前的旧 uri 直拷进游戏
+        val targets = mods.filter {
+            it.kind == ModKind.CONVERTED_BUNDLE && it.targetHash != null && it.defect == null
+        }
         if (targets.isEmpty()) return
 
         // 先看会不会覆盖掉同包里已装的别的 mod
@@ -1565,6 +1584,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             for (mod in targets) {
                 val bundleName = mod.targetHash!!
                 updateJobStatus(bundleName, JobStatus.Installing("准备装入 ${mod.name}"))
+
+                // 装入前完整校验（外来产物）：扫描期只有头部快检，这里补完整加载
+                // （块解压 + 对象表解析）——「头完好但内部坏」、装进游戏才在特定
+                // 界面崩的文件在这一步拦下，游戏目录一个字节都不动。
+                val verdict = withContext(Dispatchers.IO) { validateConvertedForInstall(context, mod) }
+                if (verdict != null && !verdict.first) {
+                    val msg = "校验未通过，已跳过：${verdict.second}"
+                    failed.add(FailedJobInfo(bundleName, msg))
+                    updateJobStatus(bundleName, JobStatus.Failed(msg, verdict.second))
+                    continue
+                }
 
                 // 直接装入是覆盖式写游戏目录，写完原版就没了。所以先把原版留一份 ——
                 // 这条路径不下载、不重打包，备份只能在这里做（转换流程那边是在拿到
@@ -1616,6 +1646,39 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             } finally {
                 InstallService.stop(svcCtx)
             }
+        }
+    }
+
+    /**
+     * 外来产物装入前的完整校验：SAF 里的 __data 先中转到 cacheDir（python 只认
+     * 文件路径；cacheDir 是 app 私有目录、python 进程可读，不需要 shell 可见的
+     * externalCacheDir），再调 validate_bundle 做头快检 + UnityPy 完整加载。
+     *
+     * 返回 null = 校验的先决条件没就绪（中转读不出来 / python 未启动）——校验是
+     * 防崩溃的纵深防御，缺了它不该反过来拦住装入；放行，让后续真正装文件的
+     * 步骤去报更准确的错。返回非 null 且 first=false 才是真校验失败（截断 /
+     * 结构损坏），调用方据此中止这一个条目。
+     */
+    private fun validateConvertedForInstall(context: Context, mod: ModInfo): Pair<Boolean, String>? {
+        val dataUri = mod.convertedDataUri ?: return null
+        if (!Python.isStarted()) return null
+        val dir = File(context.cacheDir, "install_validate/${mod.targetHash}")
+        val data = File(dir, "__data")
+        return try {
+            dir.deleteRecursively()
+            dir.mkdirs()
+            context.contentResolver.openInputStream(Uri.parse(dataUri))?.use { ins ->
+                data.outputStream().use { ins.copyTo(it) }
+            } ?: return null
+            val (ok, reason) = ModdingService.validateBundle(data.absolutePath)
+            if (ok) Log.d("MainViewModel", "装入前校验通过: ${mod.name}")
+            else Log.w("MainViewModel", "装入前校验未通过: ${mod.name} ($reason)")
+            ok to reason
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        } finally {
+            try { dir.deleteRecursively() } catch (_: Exception) {}
         }
     }
 
@@ -2334,7 +2397,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     }
                     Log.d("MainViewModel", "扫描 ${dirs.size} 个目录，合计 ${mods.size} 个 mod")
                     refreshBundleCleanStates()
-                    val withState = applyInstallState(mods)
+                    // 四道检查在扫描链尾全量跑一遍（缓存命中的条目也重判）—— 每次扫描
+                    // 即复查：游戏更新/画质切换后 catalog 变了，这遍把过期的标出来、
+                    // 恢复有效的摘回来。
+                    val validated = appContext?.let { validateMods(it, mods) } ?: mods
+                    val withState = applyInstallState(validated)
                     withContext(Dispatchers.Main) {
                         _modsList.value = withState
                         _selectedMods.value = emptySet()
@@ -2375,6 +2442,20 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      */
     private var cleanScanDetail: String? = null
 
+    /** 当前画质 catalog 的 bundle 元数据（bundle 名 -> (原版大小, 内容哈希)）。
+     *  null = 这次没拿到（离线且无缓存），查表类的检查只能跳过。 */
+    private var catalogBundleMeta: Map<String, Pair<Long, String>>? = null
+
+    /** 元数据是否来自离线降级（磁盘缓存的旧表）：true 时查表判定仍做，但结果
+     *  可能基于旧版 catalog，[unverifiedModCount] 照亮「未校验」标识提醒用户。 */
+    private var catalogMetaDegraded = false
+
+    /** 因拿不到 catalog 而没做过期检查的 mod 数，>0 时 Mods 顶栏亮「无信号」标识。
+     *  离线降级表查出的异常照常显示 —— 但基于降级表的判定可能误报（游戏刚更新、
+     *  缓存表还是旧版时会把新 mod 也判过期），所以降级时全部查表条目都计为未验证。 */
+    private val _unverifiedModCount = MutableStateFlow(0)
+    val unverifiedModCount: StateFlow<Int> = _unverifiedModCount.asStateFlow()
+
     /** 正在还原的 bundle 名。装入游戏成功后据它清掉对应记账。 */
     private var pendingUninstallTargetHash: String? = null
 
@@ -2392,6 +2473,33 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         val context = appContext ?: return emptyMap()
 
         val local = ShizukuManager.listGameBundles()
+
+        // 画质自检 + 取元数据：先按当前档位取，对不上时换另一档比对比对。
+        // Shizuku 没开也要取 —— 扫描期校验（异常 mod 判定）要查这张表，查表本身
+        // 不依赖游戏目录；只是没了目录实际值，画质自检做不了，按设置档位取。
+        var metaHint: String? = null
+        val metaResult = withContext(Dispatchers.IO) {
+            if (local != null) {
+                detectQualityAndFetchMeta(context, local) { msg ->
+                    Log.d("MainViewModel", "bundleMeta: $msg")
+                    if (msg.contains("失败")) metaHint = msg
+                }
+            } else {
+                ModdingService.getBundleMeta(
+                    context.filesDir.absolutePath, _selectedQuality.value
+                ) { msg ->
+                    Log.d("MainViewModel", "bundleMeta: $msg")
+                    if (msg.contains("失败")) metaHint = msg
+                }
+            }
+        }
+        val meta = metaResult?.first
+        catalogBundleMeta = meta
+        catalogMetaDegraded = metaResult?.second == true
+        if (catalogMetaDegraded) {
+            Log.i("MainViewModel", "bundle 元数据来自磁盘缓存（离线降级），判定结果可能基于旧版 catalog")
+        }
+
         if (local == null) {
             bundleCleanStates = emptyMap()      // 拿不到实际值就不做判断，而非假定干净
             gameBundleHashes = emptyMap()
@@ -2404,14 +2512,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         }
         gameBundleHashes = local.mapValues { it.value.first }
 
-        // 画质自检 + 取元数据：先按当前档位取，对不上时换另一档比对比对。
-        var metaHint: String? = null
-        val meta = withContext(Dispatchers.IO) {
-            detectQualityAndFetchMeta(context, local) { msg ->
-                Log.d("MainViewModel", "bundleMeta: $msg")
-                if (msg.contains("失败")) metaHint = msg
-            }
-        }
         if (meta == null) {
             bundleCleanStates = emptyMap()
             cleanScanError = "无法获取官方资源清单，请检查网络后重试。"
@@ -2463,25 +2563,28 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         context: Context,
         local: Map<String, Pair<String, Long>>,
         onProgress: (String) -> Unit
-    ): Map<String, Pair<Long, String>>? {
+    ): Pair<Map<String, Pair<Long, String>>, Boolean>? {
         val selected = _selectedQuality.value
-        val selectedMeta = ModdingService.getBundleMeta(context.filesDir.absolutePath, selected, onProgress)
+        val selectedResult = ModdingService.getBundleMeta(context.filesDir.absolutePath, selected, onProgress)
             ?: return null
+        val selectedMeta = selectedResult.first
         // 游戏目录还没东西（刚装游戏）或当前档位对得上 —— 不需要判别
         if (local.isEmpty() || hashMatchRatio(local, selectedMeta) > 0.5) {
-            return selectedMeta
+            return selectedResult
         }
 
         // 当前档位对不上：试另一档。对得明显更多才切，避免半更新状态误判。
+        // 画质判别在线下没意义（离线降级表对哪一档都只有一份缓存），直接返回本档。
+        if (selectedResult.second) return selectedResult
         val other = if (selected == "HD") "SD" else "HD"
-        val otherMeta = ModdingService.getBundleMeta(context.filesDir.absolutePath, other) { }
-            ?: return selectedMeta
-        if (hashMatchRatio(local, otherMeta) > hashMatchRatio(local, selectedMeta)) {
+        val otherResult = ModdingService.getBundleMeta(context.filesDir.absolutePath, other) { }
+            ?: return selectedResult
+        if (hashMatchRatio(local, otherResult.first) > hashMatchRatio(local, selectedMeta)) {
             Log.i("MainViewModel", "画质自检：游戏资源是 $other（原设置 $selected），已自动切换")
             setSelectedQuality(other)
-            return otherMeta
+            return otherResult
         }
-        return selectedMeta
+        return selectedResult
     }
 
     /** 游戏目录与 catalog 都有的 bundle 里，内容哈希一致的比例。 */
@@ -2493,6 +2596,152 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         if (common.isEmpty()) return 0.0
         val matched = common.count { name -> local[name]?.first == meta[name]?.second }
         return matched.toDouble() / common.size
+    }
+
+    /**
+     * 对整份 mod 列表跑四道检查（截断名 / 文件头 / catalog 查表 / 结构非法），
+     * 给确定无效的条目标上 [ModDefect]。
+     *
+     * 每次扫描都全量重算，缓存命中的条目也不例外 —— 游戏更新、画质切换后 catalog
+     * 变了，这一遍就是「复查」：过期的进异常区，切回有效画质的自动回正常区。
+     * 顺带把「角色表刷新失败、游戏却已更新」时缓存里存活的过期 targetHash 也
+     * 查了出来 —— 以前这种要拖到转换下载那一步才报错。
+     *
+     * 离线（[catalogBundleMeta] 为 null）只跳过查表那一道，其余三道是纯本地检查
+     * 照跑；本该查表却没查成的条目数进 [unverifiedModCount]（顶栏无信号标识）。
+     */
+    private fun validateMods(context: Context, mods: List<ModInfo>): List<ModInfo> {
+        val meta = catalogBundleMeta
+        // 降级表（离线磁盘缓存）：查表判定照做 —— 截断/损坏/需拆分与网络无关，
+        // STALE 判定也比不判强。但降级表的「过期」可能是假阳性（缓存表是旧版、
+        // 游戏刚更新），所以查过降级表的条目全部计入未验证，亮标识提醒。
+        val degraded = catalogMetaDegraded
+        val nameResolver = BundleNameResolver(context)
+        var unverified = 0
+        val out = mods.map { mod ->
+            val defect = when (mod.kind) {
+                ModKind.CONVERTED_BUNDLE -> {
+                    val bundleName = mod.targetHash.orEmpty()
+                    when {
+                        // ① 目录名残缺：路径对不上，装了也不生效
+                        nameResolver.looksTruncated(bundleName) -> ModDefect.TRUNCATED
+                        // ④ 文件头：半截/损坏的 __data 游戏照常加载 → 特定界面崩
+                        checkUnityFsHeader(context, mod) == false -> ModDefect.CORRUPT
+                        // ②③ 查表：bundle 名不在当前画质 catalog，或 hash 目录
+                        // 与 catalog 的内容哈希不符 → 过期 / 画质错配
+                        meta != null -> {
+                            val expected = meta[bundleName]
+                            if (expected == null || expected.second != mod.convertedHashDir) {
+                                if (degraded) unverified++     // 降级表的 STALE 可能是假阳性
+                                ModDefect.STALE
+                            } else {
+                                if (degraded) unverified++     // 降级表通过也不能算真验证过
+                                null
+                            }
+                        }
+                        // 本地两道过了，但离线没表可查
+                        else -> { unverified++; null }
+                    }
+                }
+                ModKind.PC_SOURCE -> when {
+                    // ⑤ 结构非法：一个文件夹混入了多个 bundle 的文件
+                    mod.resolutionState == ResolutionState.INVALID -> ModDefect.INVALID
+                    // ②③ 查表：已解析出目标 bundle 的，确认它还在当前 catalog 里
+                    mod.targetHash != null && (mod.resolutionState == ResolutionState.KNOWN ||
+                            mod.resolutionState == ResolutionState.MISC) -> {
+                        if (meta == null) { unverified++; null }
+                        else {
+                            if (degraded) unverified++         // 降级表的判定同样不算真验证
+                            if (!meta.containsKey(mod.targetHash)) ModDefect.STALE
+                            else null
+                        }
+                    }
+                    // 没解析出目标（UNKNOWN）→ 「未识别」区，不判异常
+                    else -> null
+                }
+            }
+            if (defect == mod.defect) mod else mod.copy(defect = defect)
+        }
+        _unverifiedModCount.value = unverified
+        val defective = out.count { it.defect != null }
+        if (defective > 0 || unverified > 0) {
+            Log.i("MainViewModel", "扫描期校验：异常 $defective 个，未校验 $unverified 个")
+        }
+        return out
+    }
+
+    /**
+     * 读产物 __data 的文件头判损坏：魔数必须是 UnityFS，且头部声明的 bundle 总长度
+     * 不得超过实际字节数（写了一半的文件：声明长度 > 实际长度）。
+     *
+     * 返回 true=完好 / false=损坏 / **null=读不出来不判**（SAF 开流失败、大小缺失、
+     * 头部声明区没读全）。只把「确定坏」的判成 false —— 把好 mod 误标成损坏，
+     * 用户会照着提示去删好文件。
+     */
+    private fun checkUnityFsHeader(context: Context, mod: ModInfo): Boolean? {
+        val dataUri = mod.convertedDataUri ?: return null
+        val actualSize = mod.convertedDataSize
+        return try {
+            context.contentResolver.openInputStream(Uri.parse(dataUri))?.use { ins ->
+                val head = ByteArray(128)
+                var len = 0
+                while (len < head.size) {
+                    val r = ins.read(head, len, head.size - len)
+                    if (r < 0) break
+                    len += r
+                }
+                if (len < 16 || !head.copyOfRange(0, 8).contentEquals(UNITYFS_MAGIC)) {
+                    return@use false
+                }
+                // 头部布局：魔数(8) + 格式版本 int32 大端 + 两条 null 结尾字符串
+                // + bundle 总长度 int64 大端
+                var p = 12
+                repeat(2) {
+                    while (p < len && head[p].toInt() != 0) p++
+                    p++
+                }
+                if (p + 8 > len) return@use null
+                var declared = 0L
+                for (i in 0 until 8) declared = (declared shl 8) or (head[p + i].toLong() and 0xFF)
+                when {
+                    actualSize <= 0L -> null            // SAF 没报大小，比不了，不判
+                    // 只拒「声明长度超过实际字节数」= 确定的截断。反方向（声明 < 实际）
+                    // 实测存在于外部 repacker 的产物里、且游戏照常加载 —— 那种不判坏，
+                    // 否则用户会照着提示删掉能用的好 mod
+                    declared > actualSize -> false
+                    else -> true
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * 顶栏「无信号」标识的点按动作：重新联网取一次 catalog 元数据，对当前列表重跑校验。
+     *
+     * 不重扫源目录 —— 文件没变，变的只是「这次有没有表可查」：把离线时跳过的
+     * 过期检查补上。取到表后未验证数归零，标识自然消失；仍然取不到就维持现状。
+     */
+    fun retryCatalogValidation() {
+        val context = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = ModdingService.getBundleMeta(
+                    context.filesDir.absolutePath, _selectedQuality.value
+                ) { }
+                if (result == null) return@launch
+                catalogBundleMeta = result.first
+                catalogMetaDegraded = result.second
+                val revalidated = applyInstallState(validateMods(context, _modsList.value))
+                withContext(Dispatchers.Main) {
+                    _modsList.value = revalidated
+                }
+            } catch (e: Exception) {
+                Log.w("MainViewModel", "重新校验失败", e)
+            }
+        }
     }
 
     /**
@@ -2718,12 +2967,16 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      */
     fun installSingle(context: Context, converted: ModInfo?, source: ModInfo?) {
         if (converted != null) {
+            if (converted.defect != null) {
+                Log.w("MainViewModel", "装入被拦截：产物 ${converted.name} 异常（${converted.defect}）")
+                return
+            }
             installConvertedBundles(context, listOf(converted))
             return
         }
         val mod = source ?: return
         val hash = mod.targetHash
-        if (hash.isNullOrBlank() || mod.resolutionState != ResolutionState.KNOWN) {
+        if (hash.isNullOrBlank() || mod.resolutionState != ResolutionState.KNOWN || mod.defect != null) {
             Log.w("MainViewModel", "装入被跳过：${mod.name} 还没解析出目标 bundle")
             return
         }

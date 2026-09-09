@@ -9,9 +9,11 @@
   mod 解析    ensure_asset_index / resolve_mod_files / resolve_mod_batch
   下载与转换  download_bundle / unpack_bundle / restore_bundle / main
   自救工具    merge_spine_assets
+  装入校验    validate_bundle
 """
 import json
 import os
+import struct
 import sys
 import threading
 from pathlib import Path
@@ -125,6 +127,12 @@ def get_bundle_meta(output_dir, quality="HD", progress_callback=None):
     与游戏本地 Shared/<name>/<hash>/__data 的目录名和大小比对，可客观
     判断 bundle 是否原版 —— 不依赖 app 记账，旧工具或手动装入的改动也
     能发现。catalog 走版本化磁盘缓存，常态下几乎零流量零耗时。
+
+    离线降级：CDN 版本号查不到（网络不通）时不再直接判失败 —— 磁盘上
+    有缓存的 catalog/bundle_meta 就用缓存那份（可能略旧，但「过没过期」
+    的判定用它远好于不判）。缓存里的表对不上才作废（比如游戏刚更新、
+    缓存还是上个版本时，查表会把新旧 mod 全判 STALE —— 宁可判「没表」
+    也别把整列表标红）。返回时附上降级标记，Kotlin 侧据此亮未校验标识。
     """
     report = _reporter(progress_callback)
     try:
@@ -133,6 +141,10 @@ def get_bundle_meta(output_dir, quality="HD", progress_callback=None):
         quality = cdn_downloader.normalize_quality(quality)
         version = cdn_downloader.get_cdn_version(quality)
         if not version:
+            degraded, meta = _bundle_meta_from_disk_cache(output_dir, quality)
+            if degraded and meta:
+                report("CDN 版本查询失败，使用磁盘缓存的元数据（可能不是最新版）。")
+                return True, "degraded", meta
             return False, "无法获取 CDN 版本号（可能离线），请检查网络后重试。", None
 
         with catalog_cache_lock:
@@ -140,6 +152,10 @@ def get_bundle_meta(output_dir, quality="HD", progress_callback=None):
         catalog_content, error = cdn_downloader.download_catalog(
             output_dir, quality, version, catalog_cache, catalog_cache_lock, progress_callback)
         if error:
+            degraded, meta = _bundle_meta_from_disk_cache(output_dir, quality)
+            if degraded and meta:
+                report("catalog 下载失败，使用磁盘缓存的元数据（可能不是最新版）。")
+                return True, "degraded", meta
             return False, error, None
 
         meta = catalog_indexer.load_or_build_bundle_meta(output_dir, version, catalog_content)
@@ -149,6 +165,41 @@ def get_bundle_meta(output_dir, quality="HD", progress_callback=None):
         error_message = _fail(None)[1]
         report(f"Error building bundle metadata: {error_message}")
         return False, error_message, None
+
+
+def _bundle_meta_from_disk_cache(output_dir, quality):
+    """离线降级：直接读磁盘上现成的 bundle_meta_{version}.json，不再下载。
+
+    返回 (可用, meta)。只找 normalize 后该画质**任一版本**的缓存文件（离线时
+    拿不到版本号，挑最新的）；文件全没有就返回 (False, None)。不解析 catalog
+    （60MB 那份在磁盘上当然也有，但 bundle_meta 150KB 就够查表）。
+    """
+    quality = cdn_downloader.normalize_quality(quality)
+    candidates = []
+    try:
+        for name in os.listdir(output_dir):
+            if not name.startswith("bundle_meta_") or not name.endswith(".json"):
+                continue
+            stem = name[len("bundle_meta_"):-len(".json")]
+            # 文件名是 bundle_meta_{version}.json；版本与画质无对应字样，
+            # 两个画质的缓存可能并存（HD/SD 各一），全收集、按版本号新→旧挑
+            candidates.append(stem)
+    except OSError:
+        return False, None
+    if not candidates:
+        return False, None
+    candidates.sort(reverse=True)   # 版本号形如 20260825131421，字典序即时间序
+    for stem in candidates:
+        path = os.path.join(output_dir, f"bundle_meta_{stem}.json")
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                root = json.loads(f.read())
+            meta = root.get("bundleMeta") if isinstance(root, dict) else None
+            if isinstance(meta, dict) and meta:
+                return True, meta
+        except Exception:
+            continue
+    return False, None
 
 
 # ---------------------------------------------------------------------------
@@ -353,3 +404,106 @@ def merge_spine_assets(mod_dir_path, progress_callback=None):
         error_message = _fail(None)[1]
         report(f"An error occurred during spine merge: {error_message}")
         return False, error_message
+
+
+# ---------------------------------------------------------------------------
+# 装入校验 —— 外来预转换产物（别人分享的 <bundle>/<hash>/__data）装入前校验
+# ---------------------------------------------------------------------------
+
+# 头部快检与 repacker 侧同名私有实现同构（契约层自包含，允许这份少量重复）：
+# UnityFS 头布局 = 8B 签名 "UnityFS\x00" + 格式版本 int32 大端 + unity 版本串
+# （null 结尾）+ revision 串（null 结尾）+ size int64 大端（声明为 bundle
+# 文件总长，实测与 getsize 完全一致）。格式版本值只按布局消费，不参与判断。
+_UNITYFS_MAGIC = b"UnityFS\x00"
+_HEADER_PEEK = 256      # 头部快检只读前 ~256 字节，不整读
+_HEADER_MIN_SIZE = 64   # 连头部都容不下的文件直接判过小
+
+
+def _brief(e):
+    """异常 → 单行简短文案：压平空白并截断到 ~300 字符（Kotlin 展示用）。"""
+    text = " ".join(str(e).split())
+    if not text:
+        text = type(e).__name__
+    return text[:300] + ("…" if len(text) > 300 else "")
+
+
+def _read_cstr(buf, pos):
+    """从 pos 起读 null 结尾串；peek 范围内找不到结尾时返回 (None, pos)。"""
+    end = buf.find(b"\x00", pos)
+    if end < 0:
+        return None, pos
+    return buf[pos:end].decode("utf-8", "replace"), end + 1
+
+
+def _peek_bundle_header(bundle_path):
+    """UnityFS 头部快检（不整读）：签名合法 + 声明的 bundle 总长不超过实际字节数。
+
+    比对只拒「声明 > 实际」（写了一半的截断文件）。反方向（声明 < 实际）实测
+    存在于外部 repacker 的产物里且游戏照常加载 —— 那种不判坏，否则会把能用的
+    好 mod 误报成损坏。深层内容校验由 validate_bundle 的 UnityPy 完整加载层负责。
+
+    返回 (True, None) 或 (False, 中文原因)。
+    """
+    if not os.path.isfile(bundle_path):
+        return False, "文件不存在或过小"
+    try:
+        actual = os.path.getsize(bundle_path)
+    except OSError:
+        return False, "文件不存在或过小"
+    if actual < _HEADER_MIN_SIZE:
+        return False, "文件不存在或过小"
+    with open(bundle_path, "rb") as f:
+        head = f.read(_HEADER_PEEK)
+    if not head.startswith(_UNITYFS_MAGIC):
+        return False, "不是有效的 UnityFS bundle（头部签名不符，可能不是 Unity 资源）"
+    pos = 8 + 4  # 签名 + 格式版本 int32 大端
+    unity_version, pos = _read_cstr(head, pos)
+    if unity_version is None:
+        return False, "UnityFS 头部损坏（unity 版本串缺失）"
+    revision, pos = _read_cstr(head, pos)
+    if revision is None:
+        return False, "UnityFS 头部损坏（revision 串缺失）"
+    if pos + 8 > len(head):
+        return False, "UnityFS 头部损坏（size 字段缺失）"
+    declared = struct.unpack_from(">q", head, pos)[0]
+    if declared > actual:
+        return False, f"头部声明大小 {declared} B 超过实际 {actual} B（文件被截断）"
+    return True, None
+
+
+def validate_bundle(bundle_path: str):
+    """Kotlin 入口：外来预转换产物装入前完整加载校验。
+
+    分两层：先做头部快检（只读前 256 字节 + 取文件大小，不整读），再交给
+    UnityPy 完整加载（触发块解压与结构解析），随后遍历一次 env.objects
+    （触发对象表解析，只拿对象计数）—— 不深读 typetree、不导出任何数据。
+    返回 (True, "ok") 或 (False, 中文原因消息)。
+    """
+    ok, reason = _peek_bundle_header(bundle_path)
+    if not ok:
+        return False, reason
+
+    env = None
+    try:
+        try:
+            # vendor 路径已在模块顶部入 sys.path；与 restore_bundle 一样延迟导入
+            import UnityPy
+            env = UnityPy.load(bundle_path)
+        except Exception as e:
+            import traceback
+            print(f"validate_bundle failed to load: {e}")
+            print(traceback.format_exc())
+            return False, f"bundle 加载失败：{_brief(e)}"
+        try:
+            object_count = sum(1 for _ in env.objects)
+        except Exception as e:
+            import traceback
+            print(f"validate_bundle failed to parse objects: {e}")
+            print(traceback.format_exc())
+            return False, f"bundle 对象表解析失败：{_brief(e)}"
+        print(f"validate_bundle ok: {object_count} objects")
+        return True, "ok"
+    finally:
+        del env
+        import gc
+        gc.collect()

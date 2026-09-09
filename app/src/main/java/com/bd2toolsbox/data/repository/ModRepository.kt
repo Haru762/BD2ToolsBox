@@ -107,7 +107,9 @@ class ModRepository(
         /** 仅已转换产物：hash 目录名 */
         val hashDir: String? = null,
         /** 仅已转换产物：__data 字节数 */
-        val dataSize: Long = 0L
+        val dataSize: Long = 0L,
+        /** 仅已转换产物：__data 的 document uri，扫描期文件头校验直接开流用 */
+        val dataUri: Uri? = null
     )
 
     // ---------------------------------------------------------------- SAF 遍历
@@ -225,7 +227,8 @@ class ModRepository(
                             fileNames = emptyList(),
                             kind = ModKind.CONVERTED_BUNDLE,
                             hashDir = dirName,
-                            dataSize = dataFile.size
+                            dataSize = dataFile.size,
+                            dataUri = DocumentsContract.buildDocumentUriUsingTree(treeRootUri, dataFile.docId)
                         )
                     )
                 }
@@ -348,7 +351,8 @@ class ModRepository(
                         else null,
                         kind = ModKind.CONVERTED_BUNDLE,
                         convertedHashDir = mod.hashDir,
-                        convertedDataSize = mod.dataSize
+                        convertedDataSize = mod.dataSize,
+                        convertedDataUri = mod.dataUri?.toString()
                     )
                 )
                 continue

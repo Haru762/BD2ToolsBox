@@ -8,6 +8,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -90,6 +93,8 @@ fun GuideScreen(viewModel: GuideViewModel) {
 
     // 下拉刷新：重拉分类树（树每次进入也会自动拉新，这是即时的手动入口）
     val pullToRefreshState = rememberPullToRefreshState()
+    // 与 ModScreen 同款：量出内容 Box 距窗口顶端的距离，给容器做锚点补偿。
+    var boxTopInWindow by remember { mutableStateOf(10_000f) }
     if (pullToRefreshState.isRefreshing) {
         LaunchedEffect(true) { viewModel.refreshTree() }
     }
@@ -136,7 +141,12 @@ fun GuideScreen(viewModel: GuideViewModel) {
         if (narrow) treePane = false   // 竖屏选完分类即回列表页看内容
     }
 
-    Box(Modifier.fillMaxSize().nestedScroll(pullToRefreshState.nestedScrollConnection)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .nestedScroll(pullToRefreshState.nestedScrollConnection)
+            .onGloballyPositioned { boxTopInWindow = it.positionInWindow().y }
+    ) {
     if (narrow && treePane) {
         // ------------------------------------------------ 竖屏：全屏分类树
         Column(Modifier.fillMaxSize()) {
@@ -253,8 +263,12 @@ fun GuideScreen(viewModel: GuideViewModel) {
             }
         }
     }
+        // 与 ModScreen 同款：boxTopInWindow 负偏移把锚点补偿到窗口顶端，rest 圆
+        // 藏在屏幕外，下拉时从屏幕顶边连续滑入（M3 原生曲线），松手回弹/转圈。
         PullToRefreshContainer(
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .graphicsLayer { translationY = -boxTopInWindow },
             state = pullToRefreshState,
         )
     }

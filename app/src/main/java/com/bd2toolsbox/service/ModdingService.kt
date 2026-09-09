@@ -56,7 +56,7 @@ object ModdingService {
      * 离线或 catalog 不可用时返回 null。
      */
     fun getBundleMeta(outputDir: String, quality: String,
-                      onProgress: (String) -> Unit): Map<String, Pair<Long, String>>? {
+                      onProgress: (String) -> Unit): Pair<Map<String, Pair<Long, String>>, Boolean>? {
         val r = callMain("get_bundle_meta", outputDir, quality, progressAdapter(onProgress))
             ?: return null
         if (!r[0].toBoolean()) {
@@ -65,8 +65,10 @@ object ModdingService {
         }
         val meta = r.getOrNull(2) ?: return null
         if (meta.toString() == "None") return null
+        // python 离线降级时 r[1] 是 "degraded"：表来自磁盘缓存、可能不是最新版
+        val degraded = r.getOrNull(1)?.toString() == "degraded"
 
-        return buildMap {
+        val map = buildMap {
             for ((k, v) in meta.asMap()) {
                 val name = k?.toString() ?: continue
                 val pair = v?.asList() ?: continue
@@ -75,6 +77,7 @@ object ModdingService {
                 }
             }
         }
+        return map to degraded
     }
 
     /**
@@ -101,6 +104,18 @@ object ModdingService {
                      onProgress: (String) -> Unit): Pair<Boolean, String> {
         val r = callMain("unpack_bundle", bundlePath, outputDir, progressAdapter(onProgress), fast)
             ?: return Pair(false, "An unknown error occurred in Kotlin during unpack.")
+        return r[0].toBoolean() to r[1].toString()
+    }
+
+    /**
+     * 装入前完整校验一个产物 __data（外来预转换产物用）。
+     *
+     * python 侧分两层：UnityFS 头部快检 + UnityPy 完整加载（块解压、对象表解析）。
+     * 只认文件路径 —— SAF 里的产物由调用方先中转到 app 私有目录再传进来。
+     */
+    fun validateBundle(bundlePath: String): Pair<Boolean, String> {
+        val r = callMain("validate_bundle", bundlePath)
+            ?: return Pair(false, "validate_bundle 调用失败")
         return r[0].toBoolean() to r[1].toString()
     }
 

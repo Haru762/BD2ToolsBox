@@ -110,6 +110,28 @@ enum class ModKind {
 }
 
 /**
+ * 扫描期检查判定的「异常 mod」原因。无缺陷（null）= 四道检查全过。
+ *
+ * 与 [ResolutionState] 的分工：ResolutionState 说的是「文件名解析到了哪个 bundle」
+ * （UNKNOWN 只是没认出来，未必是坏的）；ModDefect 说的是「装进游戏也无法正常工作」，
+ * 只有确定无效才标。带缺陷的条目进 Mods 列表顶部的「异常mod」折叠区，不进正常
+ * 分组，也不可选中 —— 这种 mod 装进游戏要么不被加载、要么在特定界面崩。
+ */
+enum class ModDefect(val label: String) {
+    /** bundle 目录名残缺（拷贝路径编码被截断）—— 路径对不上，装入不会生效 */
+    TRUNCATED("文件名损坏：拷贝时被截断，请重新拷贝"),
+
+    /** 目标 bundle 不在当前画质的 catalog 里 —— 游戏更新后过期，或 HD/SD 错配 */
+    STALE("游戏已更新，此 mod 已过期，装入可能导致特定界面崩溃"),
+
+    /** 产物 __data 文件头对不上（不是 UnityFS / 声明的总长度与实际不符）—— 半截文件 */
+    CORRUPT("文件损坏（截断或不完整），装入会导致游戏崩溃"),
+
+    /** 一个文件夹混入了多个 bundle 的文件，resolver 判定需要拆分 */
+    INVALID("此文件夹混入了多个角色的文件，请拆分后再导入"),
+}
+
+/**
  * mod 按玩家的认知分成哪一类。用于 PC 页「角色 → 类别」的两级导航。
  *
  * 顺序即列表里的展示顺序：过场动画最常被替换，放最前；「其他」兜底垫底。
@@ -174,7 +196,11 @@ data class ModInfo(
     /** 仅 CONVERTED_BUNDLE：产物里的 hash 目录名，装入时要保持这层结构 */
     val convertedHashDir: String? = null,
     /** 仅 CONVERTED_BUNDLE：__data 字节数，用于显示体积与装入前的空间预估 */
-    val convertedDataSize: Long = 0L
+    val convertedDataSize: Long = 0L,
+    /** 仅 CONVERTED_BUNDLE：__data 的 document uri（字符串形态），文件头校验开流用 */
+    val convertedDataUri: String? = null,
+    /** 扫描期检查出的异常原因，null = 检查全过。与 installState 一样每次重算、不进缓存。 */
+    val defect: ModDefect? = null
 )
 
 data class ModCacheInfo(
