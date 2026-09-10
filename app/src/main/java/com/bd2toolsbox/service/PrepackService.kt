@@ -90,30 +90,25 @@ class PrepackService : Service() {
 
         const val ACTION_START = "com.bd2toolsbox.action.PREPACK_START"
         const val ACTION_CANCEL = "com.bd2toolsbox.action.PREPACK_CANCEL"
-        // 目标列表按字段拆成几个等长数组传，而不是把字段拼成一个字符串再分割。
-        // 拼串就得挑一个「数据里绝不会出现」的分隔符，可这里的字段是 SAF 的 URI 和
-        // 用户自己的文件名 —— 逗号、竖线、斜杠都可能出现，挑不出安全的可见字符；
-        // 控制字符倒是安全，但源码里嵌裸控制字符经不起编辑器与 diff 工具的折腾，
-        // 一旦被吃掉就静默退化成空分隔符、整批目标全部解析失败。并行数组没这问题。
-        private const val EXTRA_TREE_URIS = "treeUris"
-        private const val EXTRA_BUNDLE_NAMES = "bundleNames"
-        private const val EXTRA_HASH_DIRS = "hashDirs"
-        private const val EXTRA_SIZES = "sizes"
-        private const val EXTRA_NAMES = "names"
 
         private val _progress = MutableStateFlow<Progress?>(null)
         val progress: StateFlow<Progress?> = _progress.asStateFlow()
 
+        /**
+         * 待办目标的进程内交接。曾经走 Intent extras，但 1044 个目标（URI 里还带
+         * 中文路径的百分号转义）会把 Binder 事务顶过 1MB 上限 —— startForegroundService
+         * 直接抛 TransactionTooLargeException，任务根本起不来。服务与本 app 同进程
+         * （manifest 无 android:process），companion 直传没有任何跨进程代价。
+         * onStartCommand 取走后置空；START_NOT_STICKY 不会被系统重启，没有「重启后
+         * 丢失」的窗口。
+         */
+        @Volatile
+        private var pendingTargets: List<Target>? = null
+
         fun start(context: Context, targets: List<Target>) {
             if (targets.isEmpty()) return
-            val intent = Intent(context, PrepackService::class.java).apply {
-                action = ACTION_START
-                putStringArrayListExtra(EXTRA_TREE_URIS, ArrayList(targets.map { it.treeUri }))
-                putStringArrayListExtra(EXTRA_BUNDLE_NAMES, ArrayList(targets.map { it.bundleName }))
-                putStringArrayListExtra(EXTRA_HASH_DIRS, ArrayList(targets.map { it.hashDir }))
-                putExtra(EXTRA_SIZES, targets.map { it.size }.toLongArray())
-                putStringArrayListExtra(EXTRA_NAMES, ArrayList(targets.map { it.displayName }))
-            }
+            pendingTargets = targets
+            val intent = Intent(context, PrepackService::class.java).apply { action = ACTION_START }
             // API 26+ 起后台启动的服务必须用 startForegroundService，且服务要在 5 秒内
             // 调 startForeground。这里由用户点击触发，app 在前台，不受 Android 12 的
             // 「后台不得启动前台服务」限制。
@@ -160,18 +155,13 @@ class PrepackService : Service() {
             return START_NOT_STICKY
         }
 
-        // 几个数组必须等长才配得起来。取最短的长度，宁可少解几个也不能越界崩溃
-        // （正常情况下由 start() 保证等长，这里只是防御）。
-        val uris = intent?.getStringArrayListExtra(EXTRA_TREE_URIS).orEmpty()
-        val bundles = intent?.getStringArrayListExtra(EXTRA_BUNDLE_NAMES).orEmpty()
-        val hashes = intent?.getStringArrayListExtra(EXTRA_HASH_DIRS).orEmpty()
-        val sizes = intent?.getLongArrayExtra(EXTRA_SIZES) ?: LongArray(0)
-        val names = intent?.getStringArrayListExtra(EXTRA_NAMES).orEmpty()
-        val n = minOf(uris.size, bundles.size, hashes.size, sizes.size, names.size)
-        val targets = (0 until n).map {
-            Target(uris[it], bundles[it], hashes[it], sizes[it], names[it])
-        }
+        // 目标从 companion 取（见 start() 的注释，Intent 装不下大批量）。取走即清，
+        // 重复的 start 意图不会把同一批目标解两遍。
+        val targets = pendingTargets.also { pendingTargets = null }.orEmpty()
         if (targets.isEmpty()) {
+            // 经 startForegroundService 拉起的服务必须先挂通知再退，否则系统按
+            // 「5 秒内没 startForeground」直接判死。这里挂上随即收掉，通知一闪而过。
+            startForeground(NOTIFICATION_ID, buildNotification(0, 0, ""))
             stopSelf()
             return START_NOT_STICKY
         }

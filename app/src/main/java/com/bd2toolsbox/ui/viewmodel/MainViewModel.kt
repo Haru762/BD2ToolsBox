@@ -771,24 +771,34 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         if (plan == null || plan.todo == 0) return
 
         viewModelScope.launch(Dispatchers.IO) {
-            val targets = _modsList.value.filter {
-                it.kind == ModKind.CONVERTED_BUNDLE && it.convertedHashDir != null
-            }.mapNotNull { m ->
-                val n = m.targetHash ?: return@mapNotNull null
-                val h = m.convertedHashDir ?: return@mapNotNull null
-                val s = m.convertedDataSize
-                if (s > 0 && previewCacheRepository.isValid(n, h, s)) return@mapNotNull null
-                PrepackService.Target(
-                    treeUri = m.uri.toString(),
-                    bundleName = n,
-                    hashDir = h,
-                    size = s,
-                    displayName = m.name
-                )
+            try {
+                val targets = _modsList.value.filter {
+                    it.kind == ModKind.CONVERTED_BUNDLE && it.convertedHashDir != null
+                }.mapNotNull { m ->
+                    val n = m.targetHash ?: return@mapNotNull null
+                    val h = m.convertedHashDir ?: return@mapNotNull null
+                    val s = m.convertedDataSize
+                    if (s > 0 && previewCacheRepository.isValid(n, h, s)) return@mapNotNull null
+                    PrepackService.Target(
+                        treeUri = m.uri.toString(),
+                        bundleName = n,
+                        hashDir = h,
+                        size = s,
+                        displayName = m.name
+                    )
+                }
+                if (targets.isEmpty()) return@launch
+                Log.d("MainViewModel", "交给前台服务预解包 ${targets.size} 个")
+                PrepackService.start(context, targets)
+            } catch (e: Exception) {
+                // 这里抛过的最真实事故：大批量目标走 Intent 顶爆 Binder 上限
+                // （TransactionTooLargeException）。目标已改进程内直传，但兜底要留 ——
+                // 启动服务这条路再出任何意外，用户至少能看到一句话而不是无声无息。
+                Log.e("MainViewModel", "预解包启动失败", e)
+                withContext(Dispatchers.Main) {
+                    toast(context, "预解包没能启动：${e.message ?: "未知错误"}")
+                }
             }
-            if (targets.isEmpty()) return@launch
-            Log.d("MainViewModel", "交给前台服务预解包 ${targets.size} 个")
-            PrepackService.start(context, targets)
         }
     }
 
