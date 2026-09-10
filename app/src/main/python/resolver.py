@@ -1,12 +1,22 @@
-"""mod 文件名 → 目标 bundle 的解析（基于本地 bundle 索引）。
+"""mod 文件名 → 目标 bundle 的解析。
 
-这是「从 catalog 解析地址」的简化替代：本地索引里资产按 bundle 内的
-m_Name 登记（如 char000104.png），mod 文件名只需做少量扩展名换算就能
-直接查表：
+三条查表来源，按可用性自动选：
 
-    char000104.png      → 查 char000104.png
-    char000104.json     → 另试 char000104.skel（json 动画 → 骨架 TextAsset）
-    char000104.atlas.txt → 另试 char000104.atlas
+1. **本地扫描索引**（local_bundle_index.json 的 assetToBundles）—— 主路径。
+   索引里资产按 bundle 内的 m_Name 登记（如 char000104.png），mod 文件名
+   只需做少量扩展名换算就能直接查表：
+
+       char000104.png      → 查 char000104.png
+       char000104.json     → 另试 char000104.skel（json 动画 → 骨架 TextAsset）
+       char000104.atlas.txt → 另试 char000104.atlas
+
+2. **catalog 资源地址**（catalogAssetToBundle）—— 没有扫描索引时的兜底。
+   新装 app / 没跑过「扫描游戏资源」的场合只有 CDN catalog 可用；catalog
+   的资源地址末段与 bundle 内 m_Name 是同一套命名（见
+   catalog_indexer.build_catalog_asset_index），所以同一套候选名直接查表。
+   有扫描索引时不走这条路（扫描为主、catalog 只用来收窄多命中）。
+
+3. 两条都没有 → 判 UNKNOWN，交给上层提示去扫描。
 
 流程分三步：每文件查候选 → catalog 映射收窄多命中 → 全部文件求公共
 bundle。返回结构保持与 Kotlin 层的契约不变。
@@ -48,6 +58,31 @@ def _expand_candidates(base_name):
     return candidates
 
 
+def candidate_keys(file_names):
+    """一组 mod 文件名 → 可能命中的资产名集合（小写、去重）。
+
+    给「按需建 catalog 资产索引」用：全量索引太大，先算出这批 mod 真正
+    会查的那些键，让 catalog_indexer 只留命中的。
+    """
+    keys = set()
+    for file_name in file_names or []:
+        keys.update(_expand_candidates(Path(file_name).name))
+    return keys
+
+
+def _as_bundle_names(value):
+    """catalogAssetToBundle 的一条值 → bundle 名列表。
+
+    两个来源形状不同：扫描索引里它是单个字符串（歧义消解的结果），
+    build_catalog_asset_index 给的是列表（同名资产可能落在多个 bundle）。
+    """
+    if not value:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    return tuple(value)
+
+
 def _stem_of(filename):
     """去掉复合/单层扩展名的词干：char000104_2.skel.bytes → char000104。"""
     for ext in _COMPOUND_EXTS:
@@ -77,15 +112,22 @@ def resolve_mod_folder(mod_file_names, local_index):
     """把一个 mod 的全部文件名解析到它们共同所属的 bundle。
 
     local_index 需含 assetToBundles（扫描得到）与 catalogAssetToBundle
-    （catalog 权威映射）。多命中时优先用 catalog 映射收窄——扫描索引分不出
-    同名资产在不同 bundle 里的情况，catalog 能。
+    （catalog 权威映射），两者缺一即按另一条路走：
+
+    - 有 assetToBundles：扫描为主（索引里是 bundle 内 m_Name，最准），
+      多命中时用 catalogAssetToBundle 收窄——扫描索引分不出同名资产在
+      不同 bundle 里的情况，catalog 能。
+    - assetToBundles 空/缺失：catalogAssetToBundle 直接当主表用
+      （catalog 地址末段 → bundle），策略标 CATALOG_ONLY。这条路不依赖
+      游戏目录扫描，是「新装 app / 没扫过资源」时的兜底。
 
     返回结构（Kotlin 契约，勿改）：
       targetHash / resolvedFamilyKey / resolvedTargets / unresolvedFiles /
       resolutionState（KNOWN|UNKNOWN|INVALID）/ errorReason
     """
-    asset_to_bundles = (local_index or {}).get("assetToBundles", {})
-    catalog_asset_to_bundle = (local_index or {}).get("catalogAssetToBundle", {})
+    asset_to_bundles = (local_index or {}).get("assetToBundles") or {}
+    catalog_asset_to_bundle = (local_index or {}).get("catalogAssetToBundle") or {}
+    catalog_only = not asset_to_bundles and bool(catalog_asset_to_bundle)
 
     matches = []      # [{fileName, candidates, candidate, bundles, strategy}]
     unresolved = []
@@ -95,25 +137,38 @@ def resolve_mod_folder(mod_file_names, local_index):
 
         hit_candidate = None
         bundles = set()
-        for candidate in candidates:
-            found = asset_to_bundles.get(candidate)
-            if found:
+        if catalog_only:
+            # catalog 地址末段与 m_Name 同套命名，候选名可直接查表；
+            # 地址是权威登记，同一个名字落在多个 bundle 时无法再收窄，
+            # 全收下来交给下面的公共 bundle 求交集
+            for candidate in candidates:
+                found = _as_bundle_names(catalog_asset_to_bundle.get(candidate))
+                if not found:
+                    continue
                 if hit_candidate is None:
                     hit_candidate = candidate
                 bundles.update(found)
-
-        # 多命中时用 catalog 权威映射收窄到其中一个
-        if len(bundles) > 1:
+            strategy = 'CATALOG_ONLY'
+        else:
             for candidate in candidates:
-                catalog_bundle = catalog_asset_to_bundle.get(candidate)
-                if catalog_bundle and catalog_bundle in bundles:
-                    bundles = {catalog_bundle}
-                    strategy = 'CATALOG_FILTERED'
-                    break
+                found = asset_to_bundles.get(candidate)
+                if found:
+                    if hit_candidate is None:
+                        hit_candidate = candidate
+                    bundles.update(found)
+
+            # 多命中时用 catalog 权威映射收窄到其中一个
+            if len(bundles) > 1:
+                for candidate in candidates:
+                    catalog_bundle = catalog_asset_to_bundle.get(candidate)
+                    if catalog_bundle and catalog_bundle in bundles:
+                        bundles = {catalog_bundle}
+                        strategy = 'CATALOG_FILTERED'
+                        break
+                else:
+                    strategy = 'LOCAL_SCAN'
             else:
                 strategy = 'LOCAL_SCAN'
-        else:
-            strategy = 'LOCAL_SCAN'
 
         if hit_candidate and bundles:
             matches.append({
@@ -133,7 +188,8 @@ def resolve_mod_folder(mod_file_names, local_index):
             'resolvedTargets': [],
             'unresolvedFiles': unresolved,
             'resolutionState': 'UNKNOWN',
-            'errorReason': 'No matching bundle found in local index'
+            'errorReason': ('No matching bundle found in catalog'
+                            if catalog_only else 'No matching bundle found in local index')
         }
 
     # 全部文件求公共 bundle；文件本身命中多个时按字典序取（确定性）

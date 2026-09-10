@@ -81,6 +81,37 @@ object ModdingService {
     }
 
     /**
+     * 取「bundle 目录名(hex) → (角色 file_id, 槽位)」这张推导表。
+     *
+     * catalog 的 download_key 里带着角色号（isolated-cutscene000707-group_…），
+     * 而 UnityCache 的目录名就是 catalog 登记的 bundle 名，所以光凭一份 CDN
+     * catalog 就能把裸 hash 还原成 char000707。给已转换产物命名兜底：不依赖
+     * 游戏目录、也不依赖「扫描游戏资源」。
+     *
+     * 槽位与 characters.json 同套写法（cutscene / idle）。离线且磁盘上没有
+     * 缓存表时返回 null（调用方退回显示 hash）。
+     */
+    fun getBundleHints(outputDir: String, quality: String,
+                       onProgress: (String) -> Unit): Map<String, Pair<String, String>>? {
+        val r = callMain("get_bundle_hints", outputDir, quality, progressAdapter(onProgress))
+            ?: return null
+        if (!r[0].toBoolean()) {
+            onProgress("获取 bundle 命名提示失败：${r[1]}")
+            return null
+        }
+        val hints = r.getOrNull(2) ?: return null
+        if (hints.toString() == "None") return null
+
+        return buildMap {
+            for ((k, v) in hints.asMap()) {
+                val name = k?.toString() ?: continue
+                val pair = v?.asList() ?: continue
+                if (pair.size >= 2) put(name, pair[0].toString() to pair[1].toString())
+            }
+        }
+    }
+
+    /**
      * 把官方原版 bundle 转成游戏缓存格式（卸载 mod 用）。
      *
      * 不能直接拷 CDN 下载的文件：那是压缩包，与 UnityCache 里的 __data 编码不同，

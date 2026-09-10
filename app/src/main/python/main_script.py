@@ -4,7 +4,7 @@
 （ModdingService 等）的硬契约，改动必须两侧同步；内部实现随便换。
 
 分组：
-  角色数据    update_character_data / get_bundle_meta
+  角色数据    update_character_data / get_bundle_meta / get_bundle_hints
   本地扫描    check_scan_needed / scan_single_bundle / finalize_scan
   mod 解析    ensure_asset_index / resolve_mod_files / resolve_mod_batch
   下载与转换  download_bundle / unpack_bundle / restore_bundle / main
@@ -30,16 +30,18 @@ import local_bundle_indexer
 import catalog_indexer
 
 # --- catalog 的进程内缓存 ---
-# 换安装批次（cache_key 变化）即清空；键是版本号。跨批次的复用靠磁盘缓存
-# （download_catalog 自己管），这里只管「一次批次内别重复下载 60MB」。
+# 换安装批次（cache_key 变化）即清空；键是 (画质, 版本)。跨批次的复用靠磁盘
+# 缓存（download_catalog 自己管），这里只管「一次批次内别重复下载 65MB」。
+# 键里必须带画质：HD/SD 的版本号今天恰好不同，一旦撞车，只按版本号存的
+# 内存缓存会把第一档的内容端给第二档，与磁盘缓存那颗雷是同一个。
 catalog_cache = {}
 catalog_cache_lock = threading.Lock()
 current_cache_key = None
 
 
-def _prune_catalog_cache(keep_version=None):
-    for version in [v for v in catalog_cache if v != keep_version]:
-        catalog_cache.pop(version, None)
+def _prune_catalog_cache(keep_key=None):
+    for key in [k for k in catalog_cache if k != keep_key]:
+        catalog_cache.pop(key, None)
 
 
 def _fail(message):
@@ -88,7 +90,7 @@ def _refresh_character_data(output_dir, quality="HD", progress_callback=None):
 
         report(f"Refreshing character data for version {latest_version}...")
         with catalog_cache_lock:
-            _prune_catalog_cache(latest_version)
+            _prune_catalog_cache(cdn_downloader.catalog_cache_key(quality, latest_version))
         catalog_content, error = cdn_downloader.download_catalog(
             output_dir, quality, latest_version, catalog_cache, catalog_cache_lock, progress_callback)
         if error:
@@ -141,24 +143,35 @@ def get_bundle_meta(output_dir, quality="HD", progress_callback=None):
         quality = cdn_downloader.normalize_quality(quality)
         version = cdn_downloader.get_cdn_version(quality)
         if not version:
-            degraded, meta = _bundle_meta_from_disk_cache(output_dir, quality)
+            degraded, meta = _cached_table_from_disk(output_dir, "bundle_meta_", "bundleMeta", quality)
             if degraded and meta:
                 report("CDN 版本查询失败，使用磁盘缓存的元数据（可能不是最新版）。")
                 return True, "degraded", meta
             return False, "无法获取 CDN 版本号（可能离线），请检查网络后重试。", None
 
+        # 派生表已经在盘上就到这儿为止：65MB 的 catalog 一行都不读。
+        # 内存里的 catalog_cache 按 (画质, 版本) 存、且只留一个键，HD 与 SD
+        # 版本号不同 → 干净检测/画质自检两档交替取表时会互相驱逐，每次刷新
+        # 都要从磁盘 json.loads 两遍 65MB。版本查询照发（要判断表是不是当前
+        # 版本），只省掉 catalog 加载。
+        cached = catalog_indexer.load_cached_bundle_meta(output_dir, quality, version)
+        if cached is not None:
+            report(f"Bundle metadata ready: {len(cached)} bundles "
+                   f"(version {version}, from disk cache).")
+            return True, version, cached
+
         with catalog_cache_lock:
-            _prune_catalog_cache(version)
+            _prune_catalog_cache(cdn_downloader.catalog_cache_key(quality, version))
         catalog_content, error = cdn_downloader.download_catalog(
             output_dir, quality, version, catalog_cache, catalog_cache_lock, progress_callback)
         if error:
-            degraded, meta = _bundle_meta_from_disk_cache(output_dir, quality)
+            degraded, meta = _cached_table_from_disk(output_dir, "bundle_meta_", "bundleMeta", quality)
             if degraded and meta:
                 report("catalog 下载失败，使用磁盘缓存的元数据（可能不是最新版）。")
                 return True, "degraded", meta
             return False, error, None
 
-        meta = catalog_indexer.load_or_build_bundle_meta(output_dir, version, catalog_content)
+        meta = catalog_indexer.load_or_build_bundle_meta(output_dir, quality, version, catalog_content)
         report(f"Bundle metadata ready: {len(meta)} bundles (version {version}).")
         return True, version, meta
     except Exception:
@@ -167,36 +180,97 @@ def get_bundle_meta(output_dir, quality="HD", progress_callback=None):
         return False, error_message, None
 
 
-def _bundle_meta_from_disk_cache(output_dir, quality):
-    """离线降级：直接读磁盘上现成的 bundle_meta_{version}.json，不再下载。
+def get_bundle_hints(output_dir, quality="HD", progress_callback=None):
+    """Kotlin 入口：取 UnityCache 的 32 位 hex 目录名 → [角色 file_id, 槽位]。
 
-    返回 (可用, meta)。只找 normalize 后该画质**任一版本**的缓存文件（离线时
-    拿不到版本号，挑最新的）；文件全没有就返回 (False, None)。不解析 catalog
-    （60MB 那份在磁盘上当然也有，但 bundle_meta 150KB 就够查表）。
+    已转换的安卓产物只有 `00044c1c0b4b673e271e…` 这种目录名，而 catalog 的
+    download_key 里带着角色号（isolated-cutscene000707-group_…），所以
+    只靠一份 CDN catalog 就能把它们还原成「char000707 / cutscene」。这条
+    路不依赖游戏目录、也不依赖「扫描游戏资源」，与 characters.json 的
+    hashed_name 那条路互补（那条只覆盖 characters.json 生成时的那批）。
+
+    与 get_bundle_meta 同一套降级与缓存前置检查：查不到版本号 / catalog
+    下不来时退回磁盘上现成的表；表已在盘上时连 catalog 都不读。
     """
-    quality = cdn_downloader.normalize_quality(quality)
-    candidates = []
+    report = _reporter(progress_callback)
+    try:
+        quality = cdn_downloader.normalize_quality(quality)
+        version = cdn_downloader.get_cdn_version(quality)
+        if not version:
+            degraded, hints = _cached_table_from_disk(output_dir, "bundle_hints_", "bundleHints", quality)
+            if degraded and hints:
+                report("CDN 版本查询失败，使用磁盘缓存的 bundle 提示表（可能不是最新版）。")
+                return True, "degraded", hints
+            return False, "无法获取 CDN 版本号（可能离线），请检查网络后重试。", None
+
+        cached = catalog_indexer.load_cached_bundle_hints(output_dir, quality, version)
+        if cached is not None:
+            report(f"Bundle hints ready: {len(cached)} bundles "
+                   f"(version {version}, from disk cache).")
+            return True, version, cached
+
+        with catalog_cache_lock:
+            _prune_catalog_cache(cdn_downloader.catalog_cache_key(quality, version))
+        catalog_content, error = cdn_downloader.download_catalog(
+            output_dir, quality, version, catalog_cache, catalog_cache_lock, progress_callback)
+        if error:
+            degraded, hints = _cached_table_from_disk(output_dir, "bundle_hints_", "bundleHints", quality)
+            if degraded and hints:
+                report("catalog 下载失败，使用磁盘缓存的 bundle 提示表（可能不是最新版）。")
+                return True, "degraded", hints
+            return False, error, None
+
+        hints = catalog_indexer.load_or_build_bundle_hints(output_dir, quality, version, catalog_content)
+        report(f"Bundle hints ready: {len(hints)} bundles (version {version}).")
+        return True, version, hints
+    except Exception:
+        error_message = _fail(None)[1]
+        report(f"Error building bundle hints: {error_message}")
+        return False, error_message, None
+
+
+def _cached_table_from_disk(output_dir, cache_prefix, payload_key, quality):
+    """离线降级：直接读磁盘上现成的派生表，不再下载。
+
+    返回 (可用, 表)。离线时拿不到版本号，只找同画质的
+    {cache_prefix}{画质}_{版本}.json 里最新的一份。**不会去读别的画质** ——
+    跨档的字节数/哈希对不上，用它查表会把整列表误判「待更新」，正是要避免
+    的静默错档；同画质一份都没有时也不用老命名兜底（只有一种例外：盘上还
+    没有任何带画质的表，说明用户还没走过 0.2.2 的迁移，那份老命名就是唯一
+    的家底，离线有表总比没表强）。
+
+    不解析 catalog（65MB 那份磁盘上当然也有，但几百 KB 的派生表就够查了）。
+    """
+    candidates = []     # 本画质：版本号
+    legacy = []         # 0.2.2 之前不带画质的老命名
+    has_quality_tables = False
+    quality_prefix = f"{cache_prefix}{quality}_"
     try:
         for name in os.listdir(output_dir):
-            if not name.startswith("bundle_meta_") or not name.endswith(".json"):
+            if not name.startswith(cache_prefix) or not name.endswith(".json"):
                 continue
-            stem = name[len("bundle_meta_"):-len(".json")]
-            # 文件名是 bundle_meta_{version}.json；版本与画质无对应字样，
-            # 两个画质的缓存可能并存（HD/SD 各一），全收集、按版本号新→旧挑
-            candidates.append(stem)
+            if catalog_indexer.is_legacy_cache_name(name, cache_prefix):
+                legacy.append(name)
+                continue
+            has_quality_tables = True
+            if name.startswith(quality_prefix):
+                # 文件名是 {cache_prefix}{画质}_{版本}.json，按版本号新→旧排
+                candidates.append(name[len(quality_prefix):-len(".json")])
     except OSError:
         return False, None
-    if not candidates:
-        return False, None
+
     candidates.sort(reverse=True)   # 版本号形如 20260825131421，字典序即时间序
-    for stem in candidates:
-        path = os.path.join(output_dir, f"bundle_meta_{stem}.json")
+    paths = [os.path.join(output_dir, f"{quality_prefix}{stem}.json") for stem in candidates]
+    if not candidates and not has_quality_tables:
+        paths += [os.path.join(output_dir, name) for name in sorted(legacy, reverse=True)]
+
+    for path in paths:
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 root = json.loads(f.read())
-            meta = root.get("bundleMeta") if isinstance(root, dict) else None
-            if isinstance(meta, dict) and meta:
-                return True, meta
+            payload = root.get(payload_key) if isinstance(root, dict) else None
+            if isinstance(payload, dict) and payload:
+                return True, payload
         except Exception:
             continue
     return False, None
@@ -231,7 +305,7 @@ def finalize_scan(output_dir, progress_callback=None):
 
 
 # ---------------------------------------------------------------------------
-# mod 解析 —— 基于本地 bundle 索引
+# mod 解析 —— 本地扫描索引为主，没有时退回 catalog 资源地址
 # ---------------------------------------------------------------------------
 
 def ensure_asset_index(output_dir, quality="HD", progress_callback=None):
@@ -250,13 +324,99 @@ def ensure_asset_index(output_dir, quality="HD", progress_callback=None):
         return False, error_message, None
 
 
+def _latest_disk_catalog(output_dir, quality):
+    """磁盘上最新的 catalog 内容；没有或读坏了返回 None。
+
+    离线（拿不到 CDN 版本号）时唯一的 catalog 来源，等价于
+    local_bundle_indexer._parse_catalog_data 的选法。优先本画质的
+    catalog_{画质}_{版本}.json，没有才退回任意一份（含不带画质的老命名）
+    —— 解析 mod 只用得上 bundle 名与资源地址，这两样与画质无关，
+    退而求其次不会给出跨档的错误目标。
+    """
+    try:
+        names = [n for n in os.listdir(output_dir)
+                 if n.startswith("catalog_") and n.endswith(".json")]
+    except OSError:
+        return None
+    if not names:
+        return None
+    preferred = [n for n in names if n.startswith(f"catalog_{quality}_")]
+    for name in sorted(preferred or names,
+                       key=lambda n: os.path.getmtime(os.path.join(output_dir, n)),
+                       reverse=True):
+        try:
+            with open(os.path.join(output_dir, name), 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            continue
+    return None
+
+
+def _resolution_index(output_dir, quality, file_names, report):
+    """解析 mod 用的查表索引。返回 (index, error)，index 为 None 时 error 是原因。
+
+    优先本地扫描索引（最准，含 bundle 内全部 m_Name）；没有（新装 app、
+    没跑过「扫描游戏资源」、清过数据）就现场用 catalog 的资源地址建一份
+    够用的——只保留这批 mod 会查的那些键，几十 KB 而不是 20MB。
+
+    「索引在盘上但资产表是空的」也要走 catalog：finalize_scan 扫到 0 个
+    bundle 也会落盘一份「空但有效」的索引（用户中途放弃扫描、预筛全跳过），
+    只判 `index is not None` 会让兜底永远不触发，表现为整列表 unknown。
+    """
+    index = local_bundle_indexer.load_local_index(output_dir)
+    if index is not None and index.get("assetToBundles"):
+        return index, None
+
+    # 先算出这批 mod 真正会查的键：一个都没有就没必要下 60MB catalog
+    # （空 mod 列表、只有一个预览图之类的场合）
+    wanted = resolver.candidate_keys(file_names)
+    if not wanted:
+        # 空索引原样返回（好过 None：调用方不用区分「没索引」与「没资产」）
+        return index or {"assetToBundles": {}, "catalogAssetToBundle": {}}, None
+
+    quality = cdn_downloader.normalize_quality(quality)
+    version = cdn_downloader.get_cdn_version(quality)
+    catalog_content = None
+    if version:
+        with catalog_cache_lock:
+            _prune_catalog_cache(cdn_downloader.catalog_cache_key(quality, version))
+        catalog_content, error = cdn_downloader.download_catalog(
+            output_dir, quality, version, catalog_cache, catalog_cache_lock, None)
+        if error:
+            catalog_content = None
+
+    if catalog_content is None:
+        # 离线降级：磁盘上那份 catalog 对不上版本也比没有强
+        catalog_content = _latest_disk_catalog(output_dir, quality)
+
+    if not catalog_content:
+        # catalog 也拿不到时，盘上那份空索引仍旧是「什么都没匹配上」的
+        # 正确来源（硬判成「请先扫描」会误导：用户可能已经扫过了）
+        if index is not None:
+            report("No catalog available; falling back to the local bundle index.")
+            return index, None
+        return None, ("Local bundle index not found and no catalog available. "
+                      "Please scan local bundles first.")
+
+    assets = catalog_indexer.build_catalog_asset_index(catalog_content, wanted)
+    reason = ("Local bundle index has no assets" if index is not None
+              else "Local bundle index not found")
+    report(f"{reason}; using catalog addresses instead "
+           f"({len(assets)} candidate assets matched).")
+    # assetToBundles 留空是给 resolver 的信号：走 catalog 主路径而不是
+    # 「扫描为主 + catalog 收窄」。返回结构与扫描索引同一份契约，
+    # ModRepository / resolve_mod_folder 都不用改。
+    return {"assetToBundles": {}, "catalogAssetToBundle": assets}, None
+
+
 def resolve_mod_files(file_names_json, output_dir, quality="HD", progress_callback=None):
     """解析一组 mod 文件名。返回 (成功, 结果 JSON 串或错误)。"""
+    report = _reporter(progress_callback)
     try:
         file_names = json.loads(file_names_json) if isinstance(file_names_json, str) else file_names_json
-        success, version_or_error, index = ensure_asset_index(output_dir, quality, progress_callback)
-        if not success:
-            return False, version_or_error
+        index, error = _resolution_index(output_dir, quality, file_names, report)
+        if index is None:
+            return False, error
         return True, json.dumps(resolver.resolve_mod_folder(file_names, index))
     except Exception:
         return _fail(None)
@@ -264,14 +424,20 @@ def resolve_mod_files(file_names_json, output_dir, quality="HD", progress_callba
 
 def resolve_mod_batch(mods_json, output_dir, quality="HD", progress_callback=None):
     """批量解析（每个 mod 带 id 与 fileNames）。返回 (成功, 结果数组 JSON 串)。"""
+    report = _reporter(progress_callback)
     try:
         mods = json.loads(mods_json) if isinstance(mods_json, str) else mods_json
-        success, version_or_error, index = ensure_asset_index(output_dir, quality, progress_callback)
-        if not success:
-            return False, version_or_error
+        mods = mods or []
+        if not mods:
+            return True, json.dumps([])
+        # 索引按整批的文件名建一次（每个 mod 各建一份会把 catalog 反复扫）
+        all_names = [name for mod in mods for name in (mod.get("fileNames") or [])]
+        index, error = _resolution_index(output_dir, quality, all_names, report)
+        if index is None:
+            return False, error
         results = [{"id": mod.get("id"),
                     "result": resolver.resolve_mod_folder(mod.get("fileNames") or [], index)}
-                   for mod in mods or []]
+                   for mod in mods]
         return True, json.dumps(results)
     except Exception:
         return _fail(None)
@@ -304,7 +470,7 @@ def download_bundle(hashed_name, quality, output_dir, cache_key, progress_callba
 
         report(f"Latest version is {version}. Checking catalog...")
         with catalog_cache_lock:
-            _prune_catalog_cache(version)
+            _prune_catalog_cache(cdn_downloader.catalog_cache_key(download_quality, version))
         catalog_content, error = cdn_downloader.download_catalog(
             output_dir, download_quality, version, catalog_cache, catalog_cache_lock, progress_callback)
         if error:

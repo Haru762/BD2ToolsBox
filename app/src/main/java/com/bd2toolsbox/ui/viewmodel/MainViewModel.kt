@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import android.widget.Toast
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -1055,7 +1056,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 it.resolutionState == ResolutionState.KNOWN && it.defect == null &&
                         // 未识别产物（查不到角色名但 bundle 有效）也是 KNOWN，但 UI 里
                         // 渲染在只读区选不到，不排除会让全选数目和可见的勾选框对不上
-                        !isUnknownCharacter(it.character)
+                        !isUnknownCharacter(it.character) &&
+                        // 「待更新」条目同理：它们渲染在只读的待更新区（更新即治愈），
+                        // 不参与勾选，排除掉全选态才准
+                        it.outdatedCurrentHash == null
             }
             .map { it.uri }
             .toSet())
@@ -1080,7 +1084,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         toggleSelection(filteredModsList.value
             .filter {
                 it.targetHash == groupHash && it.resolutionState == ResolutionState.KNOWN &&
-                        it.defect == null && !isUnknownCharacter(it.character)
+                        it.defect == null && !isUnknownCharacter(it.character) &&
+                        it.outdatedCurrentHash == null
             }
             .map { it.uri }
             .toSet())
@@ -1159,9 +1164,12 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             .filter {
                 !it.targetHash.isNullOrBlank() &&
                     it.resolutionState == ResolutionState.KNOWN &&
-                    // 异常条目（过期/损坏等）拦在装入入口：界面上本就选不到，
+                    // 异常条目（下架/损坏/画质错配等）拦在装入入口：界面上本就选不到，
                     // 这里再兜一层，防选中集里混入校验前的旧 uri
-                    it.defect == null
+                    it.defect == null &&
+                    // 「待更新」同样拦：hash 目录名落后于当前 catalog，重打包出来
+                    // 路径对不上，等于白跑一趟。它得先在待更新区改名治愈。
+                    it.outdatedCurrentHash == null
             }
             .groupBy { it.targetHash!! }
             .map { (hash, group) -> RepackJob(hash, mergeWithInstalled(hash, group)) }
@@ -1533,8 +1541,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     fun installConvertedBundles(context: Context, mods: List<ModInfo>) {
         // defect 拦截与 startRepackFor 同款语义：UI 分区后本就选不到异常条目，
         // 这里兜一层，防选中集里混入校验前的旧 uri 直拷进游戏
+        // 「待更新」同样拦：它的 hash 目录名落后于当前 catalog，直拷进游戏也是白拷，
+        // 先更新（改名）再装。UI 也选不到它们（只读区）。
         val targets = mods.filter {
-            it.kind == ModKind.CONVERTED_BUNDLE && it.targetHash != null && it.defect == null
+            it.kind == ModKind.CONVERTED_BUNDLE && it.targetHash != null && it.defect == null &&
+                    it.outdatedCurrentHash == null
         }
         if (targets.isEmpty()) return
 
@@ -1879,11 +1890,19 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     fun setModAlias(mod: ModInfo, alias: String) {
         val context = appContext ?: return
         val bundleName = mod.targetHash ?: return
-        val resolver = BundleNameResolver(context)
-        resolver.setAlias(bundleName, alias)
-        val shown = resolver.displayName(bundleName)
-        _modsList.value = _modsList.value.map {
-            if (it.uri == mod.uri) it.copy(name = shown) else it
+        // 全程走 IO：这里每次都是**新建** BundleNameResolver 实例，实例级的
+        // 「拉过就不重试」保护跨实例无效 —— 别名没设成时 displayName 会落到
+        // catalog 兜底命名路，冷缓存就是一次 60MB 下载 + 数秒解析，放主线程
+        // 必定 ANR。
+        viewModelScope.launch(Dispatchers.IO) {
+            val resolver = BundleNameResolver(context)
+            resolver.setAlias(bundleName, alias)
+            val shown = resolver.displayName(bundleName)
+            withContext(Dispatchers.Main) {
+                _modsList.value = _modsList.value.map {
+                    if (it.uri == mod.uri) it.copy(name = shown) else it
+                }
+            }
         }
     }
 
@@ -2398,8 +2417,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     Log.d("MainViewModel", "扫描 ${dirs.size} 个目录，合计 ${mods.size} 个 mod")
                     refreshBundleCleanStates()
                     // 四道检查在扫描链尾全量跑一遍（缓存命中的条目也重判）—— 每次扫描
-                    // 即复查：游戏更新/画质切换后 catalog 变了，这遍把过期的标出来、
-                    // 恢复有效的摘回来。
+                    // 即复查：游戏更新/画质切换后 catalog 变了，这遍重新分四类 ——
+                    // 判出缺陷的进异常区、hash 目录名落后的进待更新区、看清画质后
+                    // 依然有效的摘回正常分组（判定表见 validateMods）。
                     val validated = appContext?.let { validateMods(it, mods) } ?: mods
                     val withState = applyInstallState(validated)
                     withContext(Dispatchers.Main) {
@@ -2446,6 +2466,19 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      *  null = 这次没拿到（离线且无缓存），查表类的检查只能跳过。 */
     private var catalogBundleMeta: Map<String, Pair<Long, String>>? = null
 
+    /**
+     * **另一档**画质（HD ↔ SD）的 bundle 元数据，只用于分辨「版本轮换」与「画质错配」。
+     *
+     * 为什么非要有它：实测同代 HD/SD 两档 catalog 有 1412 个 hex 同名不同哈希
+     * （尺寸中位缩放 0.616）。只看当前档的「hash 不符」，分不出这是游戏更新轮换了哈希
+     * 还是产物本来就按另一档转的 —— 判错的代价是把另一档画质的产物改到当前档哈希位，
+     * 游戏照读不误，静默装错画质（见 [ModDefect.QUALITY_MISMATCH]）。
+     *
+     * 只与 [catalogBundleMeta] 成对更新，且要求两者都是新鲜表：null（另一档没取到、
+     * 或当前档本身是降级表）时，hash 不符一律保守按 STALE 拦住，不错改。
+     */
+    private var otherTierBundleMeta: Map<String, Pair<Long, String>>? = null
+
     /** 元数据是否来自离线降级（磁盘缓存的旧表）：true 时查表判定仍做，但结果
      *  可能基于旧版 catalog，[unverifiedModCount] 照亮「未校验」标识提醒用户。 */
     private var catalogMetaDegraded = false
@@ -2479,7 +2512,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // 不依赖游戏目录；只是没了目录实际值，画质自检做不了，按设置档位取。
         var metaHint: String? = null
         val metaResult = withContext(Dispatchers.IO) {
-            if (local != null) {
+            val result = if (local != null) {
                 detectQualityAndFetchMeta(context, local) { msg ->
                     Log.d("MainViewModel", "bundleMeta: $msg")
                     if (msg.contains("失败")) metaHint = msg
@@ -2492,6 +2525,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     if (msg.contains("失败")) metaHint = msg
                 }
             }
+            // 另一档画质的表：判断「版本轮换 vs 画质错配」要用（见 otherTierBundleMeta）。
+            // 画质自检（detectQualityAndFetchMeta）可能刚切过档，所以这里读的是切换后的
+            // _selectedQuality —— 拿到的就是「不是当前档」的那一档。
+            otherTierBundleMeta = fetchOtherTierMeta(context, result)
+            result
         }
         val meta = metaResult?.first
         catalogBundleMeta = meta
@@ -2599,16 +2637,67 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     /**
+     * 取另一档画质（HD ↔ SD）的 bundle 元数据，只用于分辨「版本轮换」与「画质错配」。
+     *
+     * 只在当前档拿到**新鲜**表时才取：当前档是降级表（离线磁盘缓存）或压根没取到时，
+     * 判断依据本身就不可信，没必要再花一次请求；另一档同样要求非降级 —— 两张旧表
+     * 互相印证出的还是旧结论，反而可能把版本轮换的产物误判成画质错配。
+     *
+     * 取不到（离线 / 请求失败 / 只有降级缓存）就返回 null，由 validateMods 走保守分支：
+     * hash 不符的一律按 STALE 拦住，不让「改到当前档哈希」发生在看不清画质的时候。
+     * 不重试、不抛 —— 扫描链不能因为它挂掉。
+     *
+     * **阻塞调用（会走 python 取表），调用方必须已经在 IO 线程上。**
+     */
+    private fun fetchOtherTierMeta(
+        context: Context,
+        currentResult: Pair<Map<String, Pair<Long, String>>, Boolean>?
+    ): Map<String, Pair<Long, String>>? {
+        if (currentResult == null || currentResult.second) return null
+        val other = if (_selectedQuality.value == "HD") "SD" else "HD"
+        return try {
+            val result = ModdingService.getBundleMeta(context.filesDir.absolutePath, other) { }
+            if (result == null || result.second) {
+                Log.i("MainViewModel",
+                    "另一档（$other）catalog 本次不可用：hash 不符的产物分不出画质错配，一律保守拦住")
+                null
+            } else {
+                result.first
+            }
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "取另一档（$other）catalog 失败", e)
+            null
+        }
+    }
+
+    /**
      * 对整份 mod 列表跑四道检查（截断名 / 文件头 / catalog 查表 / 结构非法），
      * 给确定无效的条目标上 [ModDefect]。
      *
      * 每次扫描都全量重算，缓存命中的条目也不例外 —— 游戏更新、画质切换后 catalog
-     * 变了，这一遍就是「复查」：过期的进异常区，切回有效画质的自动回正常区。
+     * 变了，这一遍就是「复查」：判出缺陷的进异常区，切回有效画质/版本的自动回正常区。
      * 顺带把「角色表刷新失败、游戏却已更新」时缓存里存活的过期 targetHash 也
      * 查了出来 —— 以前这种要拖到转换下载那一步才报错。
      *
+     * **「hash 对不上」分三种，别混在一起**（实测：游戏更新后所有 bundle 的内容哈希
+     * 都轮换，但 hex 目录名与内容逐字节不变；而同代 HD/SD 两档有 1412 个 hex 同名
+     * 不同哈希）：
+     *  · hex 名还在当前档、内层 hash 只是落后于版本 → 填
+     *    [ModInfo.outdatedCurrentHash]，**不算缺陷**，进「待更新」区，改名即治愈；
+     *  · hash 目录名对得上**另一档**画质 → [ModDefect.QUALITY_MISMATCH]，进异常区
+     *    （改了等于把另一档画质的内容装进本档，游戏照读不误）；
+     *  · hex 名压根不在 catalog（非标打包 / 已下架）→ STALE，真死，留在异常区。
+     *
+     * 判定优先级：当前档命中（正常）→ 降级表（只报不改）→ 另一档命中（画质错配）
+     * → 另一档表缺失（分不清，保守拦住）→ hex 不在本档表（真死）→ 待更新。
+     * 画质判定**必须排在「hex 不在表」之前**：另一档独有的 bundle 在本档表里查不到，
+     * 顺序反了会被误判成「已从当前游戏移除」。
+     *
      * 离线（[catalogBundleMeta] 为 null）只跳过查表那一道，其余三道是纯本地检查
      * 照跑；本该查表却没查成的条目数进 [unverifiedModCount]（顶栏无信号标识）。
+     * 降级表（离线磁盘缓存）与「另一档没取到」这两种看不清的情形都不填「待更新」，
+     * 且都计入未校验 —— 顶栏「无信号」点按的重试会把两张表一起重取，正是这两条
+     * 的正解（见 [otherTierBundleMeta]）。
      */
     private fun validateMods(context: Context, mods: List<ModInfo>): List<ModInfo> {
         val meta = catalogBundleMeta
@@ -2619,6 +2708,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         val nameResolver = BundleNameResolver(context)
         var unverified = 0
         val out = mods.map { mod ->
+            // 非空 = 「待更新」：hex 目标还在 catalog 里，只是内层 hash 目录名落后了。
+            // 不是缺陷，进 Mods 列表的「待更新」区，改名即可治愈（见 updateOutdatedMod）。
+            var outdated: String? = null
             val defect = when (mod.kind) {
                 ModKind.CONVERTED_BUNDLE -> {
                     val bundleName = mod.targetHash.orEmpty()
@@ -2627,16 +2719,49 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                         nameResolver.looksTruncated(bundleName) -> ModDefect.TRUNCATED
                         // ④ 文件头：半截/损坏的 __data 游戏照常加载 → 特定界面崩
                         checkUnityFsHeader(context, mod) == false -> ModDefect.CORRUPT
-                        // ②③ 查表：bundle 名不在当前画质 catalog，或 hash 目录
-                        // 与 catalog 的内容哈希不符 → 过期 / 画质错配
+                        // ②③ 查表：先看 hex 名还在不在当前画质 catalog，再看内层 hash
                         meta != null -> {
                             val expected = meta[bundleName]
-                            if (expected == null || expected.second != mod.convertedHashDir) {
-                                if (degraded) unverified++     // 降级表的 STALE 可能是假阳性
-                                ModDefect.STALE
-                            } else {
-                                if (degraded) unverified++     // 降级表通过也不能算真验证过
-                                null
+                            // 另一档画质下同一个 hex 的哈希：用来分辨版本轮换与画质错配
+                            val otherHash = otherTierBundleMeta?.get(bundleName)?.second
+                            when {
+                                // 当前档命中 = 正常。这一条必须排在降级判断之前：降级表
+                                // 也可能「通过」，那种情况按老规矩算正常但计未校验，
+                                // 不能因为表旧就把好 mod 判成缺陷。
+                                expected != null && expected.second == mod.convertedHashDir -> {
+                                    if (degraded) unverified++
+                                    null
+                                }
+                                // 降级表（离线磁盘缓存）：哈希可能整个是旧版的，拿它当
+                                // 改名目标可能把好 mod 改坏 —— 只报不改，计未校验提醒
+                                degraded -> {
+                                    unverified++
+                                    ModDefect.STALE
+                                }
+                                // 画质错配：本档哈希对不上，但对得上**另一档** —— 这个产物
+                                // 本来就是按另一档转的。绝不能按待更新去改名：那是把另一档
+                                // 画质（贴图尺寸都不对）的内容塞进本档哈希位，游戏照读不误，
+                                // 静默装错画质比装不上更糟。**排在死目标判定之前**：
+                                // 另一档独有的 bundle 在本档表里查不到，不先看另一档就会被
+                                // 误判成「已从当前游戏移除」。
+                                mod.convertedHashDir != null && otherHash == mod.convertedHashDir ->
+                                    ModDefect.QUALITY_MISMATCH
+                                // 另一档的表没取到 → 分不清是版本轮换还是画质错配，
+                                // 宁可不改。计未校验：顶栏「无信号」亮起来，点它重试正好
+                                // 会把另一档也重取一遍，这条就能落到确定答案上。
+                                otherTierBundleMeta == null -> {
+                                    unverified++
+                                    ModDefect.STALE
+                                }
+                                // hex 名不在本档表里、也不在另一档 = 这一档清单里确实
+                                // 没有它（下架/移除）—— 无从更新，是死目标，留在异常区
+                                expected == null -> ModDefect.STALE
+                                // hash 目录名落后：内容与 hex 名都没变，改名即治愈。
+                                // 不算缺陷 —— 它没有装不进去的问题，只是名字旧了。
+                                else -> {
+                                    outdated = expected.second
+                                    null
+                                }
                             }
                         }
                         // 本地两道过了，但离线没表可查
@@ -2660,7 +2785,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     else -> null
                 }
             }
-            if (defect == mod.defect) mod else mod.copy(defect = defect)
+            // 「待更新」只属于已转换产物：PC 源没有 hash 目录可改
+            if (mod.kind != ModKind.CONVERTED_BUNDLE) outdated = null
+            if (defect == mod.defect && outdated == mod.outdatedCurrentHash) mod
+            else mod.copy(defect = defect, outdatedCurrentHash = outdated)
         }
         _unverifiedModCount.value = unverified
         val defective = out.count { it.defect != null }
@@ -2734,14 +2862,292 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 if (result == null) return@launch
                 catalogBundleMeta = result.first
                 catalogMetaDegraded = result.second
+                // 与这张表成对更新：判画质错配要看另一档（见 otherTierBundleMeta）。
+                // 不跟着刷的话，离线时没取到的那一档会一直缺着，hash 不符的产物
+                // 联网后仍然全按保守的 STALE 处理 —— 用户点了「重试」却没变化。
+                otherTierBundleMeta = fetchOtherTierMeta(context, result)
                 val revalidated = applyInstallState(validateMods(context, _modsList.value))
+                // 这一遍可能把原本正常的条目判成异常/待更新（离线时表是旧的、看不出来），
+                // 而选中集是上一轮的 —— 不清掉的话，批量转换会把已经失效的产物照单收下。
+                val invalid = revalidated
+                    .filter { it.defect != null || it.outdatedCurrentHash != null }
+                    .map { it.uri }
+                    .toSet()
                 withContext(Dispatchers.Main) {
                     _modsList.value = revalidated
+                    if (invalid.isNotEmpty()) {
+                        _selectedMods.value = _selectedMods.value - invalid
+                    }
                 }
             } catch (e: Exception) {
                 Log.w("MainViewModel", "重新校验失败", e)
             }
         }
+    }
+
+    // ---------------------------------------------------------------- 待更新（hash 目录改名）
+
+    /**
+     * 一批 hash 目录改名的结果。**跳过与失败必须分开**：跳过（目标名已存在）不是错误，
+     * 是在那种情形下唯一安全的选择，报成失败只会让用户以为坏了、反复重试。
+     */
+    private sealed class HashRenameResult {
+        /** 改好了（或本来就已经是新哈希，无需改）。 */
+        object Renamed : HashRenameResult()
+
+        /** 同目录里已经有一个同名（新哈希）目录，没动任何东西。 */
+        object TargetExists : HashRenameResult()
+
+        /**
+         * 游戏目录里这个 bundle 还停在别的哈希上（[gameBundleHashes] 有据可查）——
+         * 用户还没进游戏把资源更新到 catalog 这一版。这时改名是改早了：改完游戏
+         * 根本不读，mod 静默失效，正是最坏的失败模式。宁可不改，让用户先更新资源。
+         */
+        object GameBehindCatalog : HashRenameResult()
+
+        data class Failed(val reason: String) : HashRenameResult()
+    }
+
+    /** 「待更新」区在更新期间置 true：按钮置灰防重复点。 */
+    private val _isUpdatingOutdated = MutableStateFlow(false)
+    val isUpdatingOutdated: StateFlow<Boolean> = _isUpdatingOutdated.asStateFlow()
+
+    /** 改名任务的防并发标志：单点与一键共用，同一时刻只允许一个跑。只在主线程读写。 */
+    private var outdatedUpdateBusy = false
+
+    /**
+     * 单点更新：把一条「待更新」产物的内层 hash 目录改名成当前 catalog 的哈希。
+     *
+     * 成功后就地更新这一条（改成新 hash 名、清掉待更新标记），它会自动从「待更新」区
+     * 回到正常分组 —— 不必为一条重扫整个源目录（重扫会让列表闪一下、还白跑一遍 python）。
+     */
+    fun updateOutdatedMod(context: Context, mod: ModInfo) {
+        val newHash = mod.outdatedCurrentHash?.takeIf { it.isNotBlank() } ?: return
+        if (outdatedUpdateBusy) return
+        outdatedUpdateBusy = true
+        _isUpdatingOutdated.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = try {
+                renameOutdatedHashDir(context, mod, newHash)
+            } catch (e: Exception) {
+                // 兜底：改名本身已逐段 try，但别让任何意外把 busy 卡住
+                Log.w("MainViewModel", "更新意外失败: ${mod.uri}", e)
+                HashRenameResult.Failed(e.message ?: e.javaClass.simpleName)
+            }
+            withContext(Dispatchers.Main) {
+                outdatedUpdateBusy = false
+                _isUpdatingOutdated.value = false
+                when (result) {
+                    HashRenameResult.Renamed -> {
+                        _modsList.value = _modsList.value.map { m ->
+                            if (m.uri == mod.uri) {
+                                m.copy(
+                                    convertedHashDir = newHash,
+                                    outdatedCurrentHash = null,
+                                    // 旧的 __data document uri 指向改名前的路径，
+                                    // 已经作废；置空等下次扫描重新发现（文件头校验
+                                    // 拿到 null 只会跳过，不会误判成损坏）
+                                    convertedDataUri = null
+                                )
+                            } else m
+                        }
+                        toast(context, "已更新「${mod.name}」，现在可以正常装入了")
+                    }
+                    HashRenameResult.TargetExists ->
+                        toast(context, "「${mod.name}」已有同版本目录，未改动")
+                    HashRenameResult.GameBehindCatalog ->
+                        toast(context, "「${mod.name}」暂不能更新：游戏资源还是旧版本，请先打开游戏更新资源")
+                    is HashRenameResult.Failed ->
+                        toast(context, "更新「${mod.name}」失败：${result.reason}")
+                }
+            }
+        }
+    }
+
+    /**
+     * 一键更新：把所有「待更新」条目逐个改名。
+     *
+     * 跑完统一重扫一次 —— 批量改名动的是磁盘上的目录名，列表得从源目录重新读一遍
+     * （复用已有的扫描刷新机制，成功的条目自动回归正常分组）。
+     */
+    fun updateAllOutdatedMods(context: Context) {
+        if (outdatedUpdateBusy) return
+        val targets = _modsList.value.filter {
+            it.kind == ModKind.CONVERTED_BUNDLE && it.defect == null &&
+                    it.outdatedCurrentHash != null
+        }
+        if (targets.isEmpty()) return
+        outdatedUpdateBusy = true
+        _isUpdatingOutdated.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            var updated = 0
+            var skipped = 0
+            var gameBehind = 0
+            val failures = ArrayList<String>()
+            try {
+                for (mod in targets) {
+                    val newHash = mod.outdatedCurrentHash?.takeIf { it.isNotBlank() } ?: continue
+                    when (val r = renameOutdatedHashDir(context, mod, newHash)) {
+                        HashRenameResult.Renamed -> updated++
+                        HashRenameResult.TargetExists -> skipped++
+                        HashRenameResult.GameBehindCatalog -> gameBehind++
+                        is HashRenameResult.Failed -> {
+                            failures += "${mod.name}：${r.reason}"
+                            Log.w("MainViewModel", "更新失败：${mod.name} —— ${r.reason}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // 兜底同上：一条出意外不该让整批无声中断、busy 卡死
+                Log.w("MainViewModel", "一键更新中断", e)
+                failures += "意外中断：${e.message ?: e.javaClass.simpleName}"
+            }
+            withContext(Dispatchers.Main) {
+                outdatedUpdateBusy = false
+                _isUpdatingOutdated.value = false
+                toast(context, buildUpdateSummary(updated, skipped, gameBehind, failures))
+                if (updated > 0) rescanAllModSources()
+            }
+        }
+    }
+
+    /** 一键更新的结果文案。失败逐条进日志，Toast 里只带一条时的具体原因（多了放不下）。 */
+    private fun buildUpdateSummary(
+        updated: Int,
+        skipped: Int,
+        gameBehind: Int,
+        failures: List<String>
+    ): String {
+        val parts = ArrayList<String>(4)
+        if (updated > 0) parts += "已更新 $updated 个"
+        if (skipped > 0) parts += "跳过 $skipped 个（已有同版本目录）"
+        if (gameBehind > 0) {
+            // 游戏目录还停在旧哈希上：现在改名游戏不会读，必须先把游戏资源更新到
+            // catalog 这一版（打开游戏让它下载）再来更新，所以这里要说清先后顺序
+            parts += "$gameBehind 个暂不能更新：先打开游戏更新资源后再更新 mod"
+        }
+        if (failures.isNotEmpty()) {
+            parts += if (failures.size == 1) "1 个失败：${failures[0]}" else "${failures.size} 个失败"
+        }
+        return if (parts.isEmpty()) "没有需要更新的 mod" else parts.joinToString("，")
+    }
+
+    /**
+     * 把一个产物的内层 hash 目录改名成 [newHash]。返回结果而不是抛异常，调用方按结果
+     * 分别计数/提示。
+     *
+     * 为什么改名就够：游戏更新时 bundle 的内容与 hex 目录名都没变，变的只是 catalog 里
+     * 的内容哈希（Unity 按哈希命名缓存目录），实测内容逐字节相同 —— 所以把旧哈希目录
+     * 原地改名即可，零下载、零拷贝。
+     *
+     * SAF 层级（见 ModRepository.discoverMods）：条目 uri 指向 **bundle 那一层**
+     * （hex 名目录），hash 目录是它的直接子目录，结构是 `<bundle>/<hash>/__data`。
+     * 导航刻意不用 DocumentFile：`fromSingleUri` 拿到的 SingleDocumentFile 的
+     * listFiles/renameTo 都会抛 UnsupportedOperationException（拿不到子项、改不了名），
+     * 而 `fromTreeUri` 取的是**所选源目录树的根**（getTreeDocumentId），条目嵌在子目录
+     * 里时会指到错误的层。所以直接走 DocumentsContract —— 与 ModRepository 遍历目录
+     * 用的是同一套 API，深浅层级都正确（预览那条路踩过 fromTreeUri 的坑）。
+     *
+     * 动手前还有一道**游戏目录校验**（[gameBundleHashes]）：游戏资源还停在旧哈希上时
+     * 直接返回 [HashRenameResult.GameBehindCatalog] 不碰文件 —— 那种状态改名等于让 mod
+     * 静默失效。详见函数内注释。
+     */
+    private fun renameOutdatedHashDir(
+        context: Context,
+        mod: ModInfo,
+        newHash: String
+    ): HashRenameResult {
+        val oldHash = mod.convertedHashDir?.takeIf { it.isNotBlank() }
+            ?: return HashRenameResult.Failed("读不到产物的 hash 目录名")
+        if (oldHash == newHash) return HashRenameResult.Renamed   // 已经是对的了
+
+        val bundleName = mod.targetHash?.takeIf { it.isNotBlank() }
+            ?: return HashRenameResult.Failed("读不到产物的目标 bundle 名")
+
+        // —— 游戏目录校验：游戏资源还落后于 catalog 时不许改 ——
+        // gameBundleHashes 是干净检测（refreshBundleCleanStates）从游戏目录读到的
+        // 「bundle 名 -> 实际 hash 目录名」，只在 Shizuku 可用时有内容。
+        // 表里没有这个 bundle → 放行。两种情形都安全：游戏还没下载过它（预放在当前
+        // 哈希位，游戏下次下载正好命中），或整表为空（Shizuku 没开、无从校验）。
+        // 表里有、但不是 catalog 这一版 → 用户还没进游戏更新资源，此刻改名游戏根本
+        // 不会读，mod 静默失效 —— 宁可不改，让用户先把游戏资源更新到这一版。
+        val gameHash = gameBundleHashes[bundleName]
+        if (gameHash != null && gameHash != newHash) return HashRenameResult.GameBehindCatalog
+
+        val resolver = context.contentResolver
+        val bundleDocId = try {
+            DocumentsContract.getDocumentId(mod.uri)
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "读不到产物目录的 document id: ${mod.uri}", e)
+            null
+        } ?: return HashRenameResult.Failed("读不到产物目录的标识")
+
+        // bundle 目录的直接子项：找旧 hash 目录，并顺带看新名字是否已被占用
+        var oldDirDocId: String? = null
+        var targetNameTaken = false
+        try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(mod.uri, bundleDocId)
+            resolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null, null, null
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (cursor.moveToNext()) {
+                    val docId = cursor.getString(idCol) ?: continue
+                    val name = cursor.getString(nameCol) ?: continue
+                    val isDir = mimeCol >= 0 &&
+                            cursor.getString(mimeCol) == DocumentsContract.Document.MIME_TYPE_DIR
+                    if (!isDir) continue
+                    if (name == oldHash) oldDirDocId = docId
+                    if (name == newHash) targetNameTaken = true
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "列出产物目录失败: ${mod.uri}", e)
+            return HashRenameResult.Failed("读不到产物目录的内容")
+        }
+        val oldDirUri = oldDirDocId
+            ?: return HashRenameResult.Failed("找不到 hash 目录 $oldHash")
+        // 目标名已存在：同一个 bundle 目录里已经躺着一份对齐到新哈希的产物（更新前后
+        // 两份堆在一起，或上次改名只成功了一半）。撞名硬改会失败，也可能留下半截状态 ——
+        // 跳过，让用户去文件管理器自己收拾。
+        if (targetNameTaken) return HashRenameResult.TargetExists
+
+        val renamedUri = try {
+            DocumentsContract.renameDocument(
+                resolver,
+                DocumentsContract.buildDocumentUriUsingTree(mod.uri, oldDirUri),
+                newHash
+            )
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "hash 目录改名失败: ${mod.uri}", e)
+            null
+        }
+        if (renamedUri == null) return HashRenameResult.Failed("改名失败，可能没有该目录的写入权限")
+
+        // 预览缓存的键就是 hash 目录名，旧名下那份再也对不上（内容没变，但键变了），
+        // 留着只会白占空间，直到用户手动清缓存
+        if (::previewCacheRepository.isInitialized) {
+            try {
+                previewCacheRepository.delete(bundleName, oldHash)
+            } catch (e: Exception) {
+                Log.w("MainViewModel", "清理旧哈希的预览缓存失败", e)
+            }
+        }
+        Log.d("MainViewModel", "待更新治愈：$oldHash -> $newHash（${mod.name}）")
+        return HashRenameResult.Renamed
+    }
+
+    /** Toast 统一走 application context：更新可能跑过界面销毁那一刻。 */
+    private fun toast(context: Context, text: String) {
+        Toast.makeText(context.applicationContext, text, Toast.LENGTH_LONG).show()
     }
 
     /**
@@ -2967,8 +3373,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      */
     fun installSingle(context: Context, converted: ModInfo?, source: ModInfo?) {
         if (converted != null) {
-            if (converted.defect != null) {
-                Log.w("MainViewModel", "装入被拦截：产物 ${converted.name} 异常（${converted.defect}）")
+            if (converted.defect != null || converted.outdatedCurrentHash != null) {
+                Log.w("MainViewModel", "装入被拦截：产物 ${converted.name} 异常（${converted.defect}）" +
+                        "或待更新（hash=${converted.outdatedCurrentHash}）")
                 return
             }
             installConvertedBundles(context, listOf(converted))

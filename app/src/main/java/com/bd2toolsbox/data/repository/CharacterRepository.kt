@@ -15,16 +15,34 @@ import java.io.File
  * characters.json 由 python 侧从 catalog + 角色元数据网站生成，这里管三件事：
  * 触发刷新（[updateCharacterData]）、解析成 file_id → 角色信息的查找表、
  * 以及把 mod 文件名匹配到具体角色皮肤（[findBestMatch]）。
+ *
+ * 生产路径之外还有一条兜底：随包带着一份对照表（assets/characters.json），
+ * filesDir 里没有时由 [seedCharactersJsonFromAssets] 铺过去。刷新逻辑不变 ——
+ * 在线刷新成功照样覆盖它。
  */
 class CharacterRepository(private val context: Context) {
 
     companion object {
         private const val CHARACTERS_JSON = "characters.json"
         private const val MOD_CACHE = "mod_cache.json"
+
+        /** 随包兜底副本的 assets 路径。 */
+        private const val ASSET_CHARACTERS_JSON = "characters.json"
+
+        /** 铺底只落一次盘；并发进来的调用在这里排队。 */
+        private val seedLock = Any()
     }
 
     /** file_id → 该角色的全部皮肤条目（idle / cutscene 各一条）。 */
     private var characterLut: Map<String, List<CharacterInfo>> = emptyMap()
+
+    init {
+        // 构造即铺底。读取方不止这里：BundleNameResolver 也直接读 filesDir 那份，
+        // 而它的查找表是懒加载后长期缓存的（invalidate() 全工程没有调用方），
+        // 所以铺底必须早于任何读取方第一次取值 —— 晚一步，那个实例就会一直
+        // 拿着空表显示「未识别」，直到进程重启。
+        seedCharactersJsonFromAssets()
+    }
 
     /**
      * 刷新角色表。返回 "SUCCESS" / "SKIPPED" / "FAILED"。
@@ -68,15 +86,77 @@ class CharacterRepository(private val context: Context) {
         status
     }
 
-    fun hasLocalCharactersJson(): Boolean =
-        File(context.filesDir, CHARACTERS_JSON).exists()
+    fun hasLocalCharactersJson(): Boolean {
+        // 先铺底再看：新装 app 断网首启时，这一步就是「有表可读」的唯一来源
+        seedCharactersJsonFromAssets()
+        return File(context.filesDir, CHARACTERS_JSON).length() > 0L
+    }
+
+    /**
+     * 把随包的 characters.json 铺到 filesDir，只在本地没有时。
+     *
+     * 这份表原本完全靠运行时生成：抓 browndust2modding.pages.dev 的角色表格 +
+     * 下载 CDN catalog 拼装。新装的 app 一旦断网、或者那个站点挂了，filesDir
+     * 里就是空的，角色名全塌成「未识别」，「按角色浏览」整页空白。随包带一份
+     * 等于把「联网」从首启的必需项降级成可选项：有网照常刷新覆盖，没网也有
+     * 数据可读。
+     *
+     * 已有副本一律不动 —— 用户手上那份可能比随包的更新。随包文件自身也要能
+     * 解析出非空 characters 数组才落盘：一个损坏的 assets 若被原样铺过去，
+     * 上层会以为「本地有表」，反而把兜底逻辑短路掉，比不铺更糟。
+     *
+     * 随包那份的来路：拿一份本地 catalog 喂 character_scraper 的
+     * scrape_and_save_from_catalog，产物覆盖 assets/characters.json。`version`
+     * 要填该 catalog 对应的真实 CDN 版本号 —— 首启时在线刷新会拿它跟 CDN 当前
+     * 版本比对，一致就直接 SKIPPED，连 63 MB 的 catalog 都省了；填假值则会每次
+     * 首启都白下一遍。游戏大版本更新后重跑一次即可。
+     */
+    private fun seedCharactersJsonFromAssets() {
+        val target = File(context.filesDir, CHARACTERS_JSON)
+        if (target.length() > 0L) return
+        synchronized(seedLock) {
+            if (target.length() > 0L) return
+            val text = try {
+                context.assets.open(ASSET_CHARACTERS_JSON).bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                // assets 里没有或读不动：维持原状，仍旧走运行时生成
+                e.printStackTrace()
+                return
+            }
+            val count = try {
+                JSONObject(text).optJSONArray("characters")?.length() ?: 0
+            } catch (e: Exception) {
+                e.printStackTrace()
+                0
+            }
+            if (count == 0) {
+                println("内置 $ASSET_CHARACTERS_JSON 解析不出条目，跳过铺底")
+                return
+            }
+            try {
+                // 先写临时文件再重命名：中途被打断也不会留下半截角色表
+                val tmp = File(context.filesDir, "$CHARACTERS_JSON.tmp")
+                tmp.writeText(text)
+                if (!tmp.renameTo(target)) {
+                    tmp.copyTo(target, overwrite = true)
+                    tmp.delete()
+                }
+                println("已从 assets 铺入内置角色表：$count 条")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     /**
      * 解析 characters.json 为查找表。兼容两种历史格式：
      * 新版 {version, characters: [...]}、旧版裸数组。
+     *
+     * 刷新失败（离线 / 站点挂）时文件仍是随包铺下的那份，查找表照样有值。
      */
     private suspend fun parseCharacterJson(): Map<String, List<CharacterInfo>> =
         withContext(Dispatchers.IO) {
+            seedCharactersJsonFromAssets()
             val file = File(context.filesDir, CHARACTERS_JSON)
             if (!file.exists()) return@withContext emptyMap()
             val text = try {

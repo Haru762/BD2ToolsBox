@@ -1,6 +1,7 @@
 package com.bd2toolsbox.data.repository
 
 import android.content.Context
+import com.bd2toolsbox.service.ModdingService
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.json.JSONObject
@@ -20,9 +21,11 @@ import java.io.File
  *   → 「Eclipse - Beach Vacation（过场动画）」
  * ```
  *
- * `scannedBundles` 本身就是 `{bundle名: {hash, assets}}` 的正向索引，所以是 O(1) 查询，
- * 不需要为此再建反向表。实测 176 个产物里 173 个能自动命名（98%），剩下的是角色表还没收录的
- * 新角色 —— 那些退回显示 hash，交给用户手动重命名。
+ * 三条自动命名路，越靠前越优先、越不花钱：
+ *   1. characters.json 的 `hashed_name` 直查 —— 一步到位，实测 176 个产物里 172 个命中（98%）
+ *   2. catalog 的 download_key 推导（[ModdingService.getBundleHints]）—— 要下 60MB catalog，
+ *      但**不依赖游戏目录、也不依赖「扫描游戏资源」**，是新装 / 无游戏 / 清过数据时的兜底
+ *   3. scannedBundles 里的资源名 —— 最准（看的是 bundle 真实内容），但要先跑完几分钟的扫描
  *
  * 显示优先级：**用户别名 > 自动命名 > bundle hash**。
  */
@@ -62,6 +65,41 @@ class BundleNameResolver(private val context: Context) {
      * 表现为所有产物都显示「未识别」。实测 176 个产物里这条路命中 172 个（98%）。
      */
     private var charactersByBundle: Map<String, Triple<String, String, String>>? = null
+
+    /**
+     * bundle 名 -> (角色 file_id, 槽位)。来自 catalog 的 download_key 推导。
+     *
+     * 第二条路，也是唯一一条**连 characters.json 的 hashed_name 和游戏目录都不需要**
+     * 的路：catalog 是从 CDN 拉的，新装 app、没装游戏、没跑过「扫描游戏资源」时照样
+     * 能用。代价是要下 60MB catalog（磁盘上有缓存时就是白拿），所以只在路线一落空时
+     * 懒加载一次。
+     */
+    private var bundleHints: Map<String, Pair<String, String>>? = null
+
+    /** 拉过一次就不再重试（网络失败时别在每个产物上都重来一遍）。 */
+    private var hintsLoadAttempted = false
+
+    private fun loadBundleHints(): Map<String, Pair<String, String>> {
+        bundleHints?.let { return it }
+        if (hintsLoadAttempted) return emptyMap()
+        hintsLoadAttempted = true
+        // 画质：HD 与 SD 的过场包目录名实测完全一致（168/168 同 hex），
+        // 所以这里读用户设置只是为了让日志/缓存文件对上，不影响结果
+        val quality = try {
+            context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                .getString("selected_quality", "HD") ?: "HD"
+        } catch (e: Exception) {
+            "HD"
+        }
+        val hints = try {
+            ModdingService.getBundleHints(context.filesDir.absolutePath, quality) { }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        } ?: emptyMap()
+        bundleHints = hints
+        return hints
+    }
 
     private fun loadCharactersByBundle(): Map<String, Triple<String, String, String>> {
         charactersByBundle?.let { return it }
@@ -154,6 +192,9 @@ class BundleNameResolver(private val context: Context) {
         charactersByBundle = null
         allCharacters = null
         npcCharacters = null
+        // 提示表也要重来：拉失败过一次的可能只是当时没网
+        bundleHints = null
+        hintsLoadAttempted = false
     }
 
     /** 角色表里的全部角色名，已排序、已去重。 */
@@ -166,7 +207,7 @@ class BundleNameResolver(private val context: Context) {
      * 给「按角色浏览」的主界面用 —— 它要显示全部角色（包括你还没有 mod 的），
      * 所以不能只从已扫描到的 mod 里凑。
      *
-     * 会剔除 `Unknown Character` 这类占位值（实测角色表 411 条里有 27 条是它），
+     * 会剔除 `Unknown Character` 这类占位值（实测角色表 424 条里有 23 条是它），
      * 那不是真角色，混进列表只会多出一个点开必然为空的条目。
      */
     fun listAllCharacters(): List<String> {
@@ -262,8 +303,26 @@ class BundleNameResolver(private val context: Context) {
             return Resolved(info.first, info.second, kind, null, matched = true)
         }
 
-        // 路线二：从游戏资源索引里翻出这个 bundle 装了哪些资源，再按 file_id 查角色表。
-        // 能补上 hashed_name 没覆盖到的那部分，但前提是用户扫描过游戏资源。
+        // 路线二：catalog 的 download_key 推出来的角色。同样不依赖游戏目录，
+        // 但覆盖面比路线一宽一点：hashed_name 只认 characters.json 生成时那批，
+        // 这条认的是当前 catalog 里全部按角色隔离的过场包。
+        loadBundleHints()[bundleName]?.let { hint ->
+            val info = loadCharacters()[hint.first]
+            val kind = when {
+                hint.second.equals("cutscene", true) -> "过场动画"
+                info?.third.equals("idle", true) -> "立绘"
+                else -> info?.third ?: hint.second
+            }
+            if (info != null) {
+                return Resolved(info.first, info.second, kind, null, matched = true)
+            }
+            // 角色表里没有这个 file_id（新角色还没收录）时也别退回裸 hash ——
+            // 显示出 char000707 已经比 32 位 hex 有用得多
+            return Resolved("未识别", hint.first, kind, null, matched = false)
+        }
+
+        // 路线三：从游戏资源索引里翻出这个 bundle 装了哪些资源，再按 file_id 查角色表。
+        // 能补上前面都没覆盖到的那部分，但前提是用户扫描过游戏资源。
         val assets = loadBundleAssets()[bundleName].orEmpty()
         // .skel 最能代表这个 bundle 改的是谁；没有就退而看其他资源
         val ordered = assets.filter { it.endsWith(".skel", true) } +

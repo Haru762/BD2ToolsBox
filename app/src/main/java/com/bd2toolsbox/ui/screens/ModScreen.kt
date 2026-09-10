@@ -89,22 +89,33 @@ fun ModScreen(
     val allMods = viewModel.modsList.collectAsState().value
         .filter { kindFilter == null || it.kind == kindFilter }
     val stateFilter by viewModel.stateFilter.collectAsState()
-    // —— 三区划分：正常 / 异常 / 未识别 ——
+    // —— 四区划分：正常 / 异常 / 待更新 / 未识别 ——
     // 异常（扫描判出 defect）与未识别（角色表查不到）都不跟正常条目混排：异常的要提示
     // 用户删源文件、未识别的等角色表更新自动归位，各自成区、默认收起、沉在列表顶部。
+    // 「待更新」（游戏更新后内层 hash 目录名落后于当前 catalog）同样另成一区、默认
+    // 收起：它不是坏，改名即可治愈，但装进去照样不生效，所以也不能混在正常条目里被勾选。
     // 分区对象是 modsList —— 搜索与状态筛选后的同一份数据 —— 搜索命中某条异常 mod 时
-    // 它留在顶部区而不是漏进下方分组，三区的过滤口径才不会错位。
+    // 它留在顶部区而不是漏进下方分组，四区的过滤口径才不会错位。
+    val outdatedMods = remember(modsList) {
+        modsList.filter { it.defect == null && it.outdatedCurrentHash != null }
+    }
     val abnormalMods = remember(modsList) { modsList.filter { it.defect != null } }
     val unknownMods = remember(modsList) {
-        modsList.filter { it.defect == null && isUnknownCharacter(it.character) }
+        modsList.filter {
+            it.defect == null && it.outdatedCurrentHash == null && isUnknownCharacter(it.character)
+        }
     }
     val normalMods = remember(modsList) {
-        modsList.filter { it.defect == null && !isUnknownCharacter(it.character) }
+        modsList.filter {
+            it.defect == null && it.outdatedCurrentHash == null && !isUnknownCharacter(it.character)
+        }
     }
-    // 状态筛选 chip 的计数只认正常条目 —— 异常/未识别已经有自己的区，把它们算进
+    // 状态筛选 chip 的计数只认正常条目 —— 异常/待更新/未识别已经有自己的区，把它们算进
     // 「生效中 N」之类的数字只会让 chip 与「这页能勾选的 mod」对不上。
     val normalAllMods = remember(allMods) {
-        allMods.filter { it.defect == null && !isUnknownCharacter(it.character) }
+        allMods.filter {
+            it.defect == null && it.outdatedCurrentHash == null && !isUnknownCharacter(it.character)
+        }
     }
     // 一级按角色、二级按目标 bundle 的两级结构，只喂 normal —— 另两区已分流，
     // 组内再带它们等于把同一批条目渲染两遍。
@@ -113,9 +124,10 @@ fun ModScreen(
 
     // —— 顶部折叠区：交互状态与新增提醒 ——
     // 展开状态放 LazyColumn 外 remember：列表滚动/重组时不会跟着重建，
-    // 收起/展开才稳定（GuideScreen 分类树同款）。默认收起 —— 这两区是「需要时再看」，
+    // 收起/展开才稳定（GuideScreen 分类树同款）。默认收起 —— 这几区是「需要时再看」，
     // 摊开只会挡在正常列表前面。
     var abnormalExpanded by remember { mutableStateOf(false) }
+    var outdatedExpanded by remember { mutableStateOf(false) }
     var unknownExpanded by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     // 上一轮的异常数；列表是启动扫描后从空填起来的，冷启动时存量异常也会走一次 0→N
@@ -131,12 +143,26 @@ fun ModScreen(
         }
         lastAbnormalCount = abnormalTotal
     }
+    // 「待更新」区同样默认收起，且它往往是游戏更新后**突然**多出一大批 ——
+    // 不指一下的话，用户只会看到正常列表里少了东西，不知道顶部有个一键修复。
+    var lastOutdatedCount by remember { mutableStateOf(-1) }
+    val outdatedTotal = remember(allMods) { allMods.count { it.outdatedCurrentHash != null } }
+    LaunchedEffect(outdatedTotal) {
+        if (lastOutdatedCount >= 0 && outdatedTotal > lastOutdatedCount) {
+            snackbarHostState.showSnackbar(
+                "检测到 ${outdatedTotal - lastOutdatedCount} 个 mod 待更新，可在顶部一键修复"
+            )
+        }
+        lastOutdatedCount = outdatedTotal
+    }
     // 待删源文件的异常条目；非空即弹确认框。删除动的是用户文件、不可恢复，
     // 任何路径都不允许点了就删（确认框见 ModScreen 末尾）。
     var pendingDeleteMod by remember { mutableStateOf<ModInfo?>(null) }
     val scope = rememberCoroutineScope()
     val selectedMods by viewModel.selectedMods.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    // 待更新区正在改名：按钮置灰，防重复点（改名本身很快，不需要进度条）
+    val isUpdatingOutdated by viewModel.isUpdatingOutdated.collectAsState()
     val showShimmer by viewModel.showShimmer.collectAsState()
     val context = LocalContext.current
     val isSearchActive by viewModel.isSearchActive.collectAsState()
@@ -251,9 +277,13 @@ fun ModScreen(
                                     // STALE 这类异常解析结果仍是 KNOWN，不挡就永远到不了全选态。
                                     // 未识别的产物（角色表查不到、character="未识别"）也是
                                     // KNOWN，但渲染在只读的未识别区，同样不算分母。
+                                    // 待更新的产物也是 KNOWN、也渲染在只读区（更新即治愈），
+                                    // 同样挡在分母外，否则全选态永远到不了。
                                     val allModsCount = modsList.count {
                                         it.resolutionState == ResolutionState.KNOWN &&
-                                                it.defect == null && !isUnknownCharacter(it.character)
+                                                it.defect == null &&
+                                                it.outdatedCurrentHash == null &&
+                                                !isUnknownCharacter(it.character)
                                     }
                                     val selectedModsCount = selectedMods.size
                                     val checkboxState = when {
@@ -376,7 +406,7 @@ fun ModScreen(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(vertical = 8.dp)
                             ) {
-                                // —— 顶部折叠区：异常在上、未识别在下 ——
+                                // —— 折叠区：异常 → 待更新 → 未识别 ——
                                 // 各区头带计数，整条可点；N == 0 的区整段不渲染。
                                 if (abnormalMods.isNotEmpty()) {
                                     item(key = "top-abnormal") {
@@ -396,6 +426,44 @@ fun ModScreen(
                                             AbnormalModRow(
                                                 mod = mod,
                                                 onDelete = { pendingDeleteMod = mod }
+                                            )
+                                        }
+                                    }
+                                }
+                                // 待更新紧跟异常区后面：两者都是「现在装不进去」的条目，
+                                // 但这一区是能自愈的 —— 每行一个「更新」，区头一键全修。
+                                if (outdatedMods.isNotEmpty()) {
+                                    item(key = "top-outdated") {
+                                        CollapsibleSectionHeader(
+                                            label = "待更新",
+                                            count = outdatedMods.size,
+                                            // 用 tertiary 而非 error：这不是坏，是游戏更新后
+                                            // 要顺手点一下的事，不该和真异常一样刺眼
+                                            color = MaterialTheme.colorScheme.tertiary,
+                                            expanded = outdatedExpanded,
+                                            onClick = { outdatedExpanded = !outdatedExpanded },
+                                            trailing = {
+                                                TextButton(
+                                                    onClick = { viewModel.updateAllOutdatedMods(context) },
+                                                    enabled = !isUpdatingOutdated
+                                                ) {
+                                                    Text(
+                                                        "一键更新",
+                                                        style = MaterialTheme.typography.labelMedium
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                    if (outdatedExpanded) {
+                                        items(
+                                            items = outdatedMods,
+                                            key = { mod -> "out:${mod.uri}" }
+                                        ) { mod ->
+                                            OutdatedModRow(
+                                                mod = mod,
+                                                updating = isUpdatingOutdated,
+                                                onUpdate = { viewModel.updateOutdatedMod(context, mod) }
                                             )
                                         }
                                     }
@@ -796,16 +864,22 @@ fun EmptyModsScreen(kind: ModKind?) {
     }
 }
 
-// ==================================================================== 顶部折叠区（异常 / 未识别）
+// ==================================================================== 顶部折叠区（异常 / 待更新 / 未识别）
 
-/** 折叠区标题行：计数 + 展开箭头，整行可点。N == 0 的区由调用方整段跳过渲染。 */
+/**
+ * 折叠区标题行：计数 + 展开箭头，整行可点。N == 0 的区由调用方整段跳过渲染。
+ *
+ * [trailing] 给区头放一个动作按钮（如「待更新」的「一键更新」）：按钮自己吃掉点击，
+ * 不会连带触发展开/收起。
+ */
 @Composable
 private fun CollapsibleSectionHeader(
     label: String,
     count: Int,
     color: Color,
     expanded: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -821,6 +895,7 @@ private fun CollapsibleSectionHeader(
             color = color,
             modifier = Modifier.weight(1f)
         )
+        trailing?.invoke()
         Icon(
             imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
             contentDescription = if (expanded) "收起" else "展开",
@@ -857,7 +932,7 @@ private fun AbnormalModRow(mod: ModInfo, onDelete: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))
-                // defect.label 是给玩家看的判断依据（如「游戏已更新，此 mod 已过期…」）；
+                // defect.label 是给玩家看的判断依据（如「该资源已从当前游戏移除…」）；
                 // errorReason 是更底层的技术细节（截断名的 GBK 解释等），只在有时叠第三行
                 Text(
                     text = defect.label,
@@ -886,6 +961,49 @@ private fun AbnormalModRow(mod: ModInfo, onDelete: () -> Unit) {
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(20.dp)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 待更新区条目。与异常行同款（不可勾选、不用 ModCard）：这里只需要「名字 + 为什么
+ * 要更新」和行尾的「更新」按钮。
+ *
+ * 文案必须点明代价为零 —— 用户看到「更新」的第一反应是「又要下一遍？」，而这里其实
+ * 只是把产物内层的 hash 目录改个名（见 MainViewModel.updateOutdatedMod）。
+ */
+@Composable
+private fun OutdatedModRow(mod: ModInfo, updating: Boolean, onUpdate: () -> Unit) {
+    ElevatedCard(
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = mod.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "游戏更新换了资源版本号，更新只需改名：不下载、不改内容",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            TextButton(onClick = onUpdate, enabled = !updating) {
+                Text("更新", style = MaterialTheme.typography.labelMedium)
             }
         }
     }
@@ -937,10 +1055,10 @@ fun ModCard(
     onHide: (() -> Unit)? = null,
     onDeleteFolder: (() -> Unit)? = null
 ) {
-    // 异常条目不经过 ModCard（顶部有专用行），这里再挡一层纯属兜底 ——
+    // 异常/待更新条目不经过 ModCard（顶部各有专用行），这里再挡一层纯属兜底 ——
     // STALE 这类异常解析结果仍是 KNOWN，不挡就会冒出可勾选的 checkbox。
     val isSelectable = modInfo.resolutionState == ResolutionState.KNOWN &&
-            modInfo.defect == null
+            modInfo.defect == null && modInfo.outdatedCurrentHash == null
     val elevation by animateDpAsState(if (isSelected) 4.dp else 1.dp, label = "elevation")
     var menuOpen by remember { mutableStateOf(false) }
 

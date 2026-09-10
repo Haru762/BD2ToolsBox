@@ -109,7 +109,7 @@ fun CharacterScreen(
                         CharacterFilter.MALE -> "没有匹配的男性角色"
                         CharacterFilter.FEMALE -> "没有匹配的女性角色"
                         CharacterFilter.COLLAB -> "没有匹配的联动角色"
-                        else -> "角色表还没准备好\n首次启动需要联网下载一次"
+                        else -> "角色表读取失败，请重启应用重试"
                     },
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -307,8 +307,10 @@ fun buildCharacterEntries(
     for (m in mods) {
         if (isUnknownCharacter(m.character)) continue
         // 异常条目同样跳过：它不在任何角色下正常生效，计入只会让「这个角色有几个 mod」
-        // 虚高 —— 处理在「全部」视图顶部的异常区（删除源文件），按角色计数不带它
-        if (m.defect != null) continue
+        // 虚高 —— 处理在「全部」视图顶部的异常区（删除源文件），按角色计数不带它。
+        // 「待更新」（游戏更新后 hash 目录名落后）也一样：它的处理入口是「全部」视图
+        // 的待更新区（一键改名），在这里既看不见更新按钮、装入又会被拦。
+        if (m.defect != null || m.outdatedCurrentHash != null) continue
         val name = m.character.trim()
         val cat = categoryOf(m.type, m.costume)
         counts.getOrPut(name) { HashMap() }.merge(cat, 1, Int::plus)

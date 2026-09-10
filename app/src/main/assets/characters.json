@@ -1,12 +1,2973 @@
 {
-    "version": "0000000000",
+    "version": "20260904214954",
     "characters": [
         {
-            "character": "",
-            "file_id": "",
-            "costume": "",
-            "type": "",
-            "hashed_name": ""
+            "character": "Olivier",
+            "file_id": "illust_dating16",
+            "costume": "Retired Legend / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000101",
+            "costume": "Medicinal Herb Tracker",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000101",
+            "costume": "Medicinal Herb Tracker",
+            "type": "cutscene",
+            "hashed_name": "530bdf055940dda2c6710e310c213bc5"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000103",
+            "costume": "Homunculus",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000103",
+            "costume": "Homunculus",
+            "type": "cutscene",
+            "hashed_name": "68191f55ebe25d585bdfcef1f7def70c"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000201",
+            "costume": "Knight of Blood",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000201",
+            "costume": "Knight of Blood",
+            "type": "cutscene",
+            "hashed_name": "77ad6b1188c04eb91ac08e10cc6f9e07"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000202",
+            "costume": "White Reaper",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000202",
+            "costume": "White Reaper",
+            "type": "cutscene",
+            "hashed_name": "e1b68154ac0f03d1ea8fe6d2b4d2c639"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000203",
+            "costume": "Blood Glutton",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000203",
+            "costume": "Blood Glutton",
+            "type": "cutscene",
+            "hashed_name": "44892ce6e6b0d94a2012d7b998da9b98"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000204",
+            "costume": "Kendo Club",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000204",
+            "costume": "Kendo Club",
+            "type": "cutscene",
+            "hashed_name": "06863e9f954ae22ab4c6a4bcffe4d14e"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000206",
+            "costume": "Pool Party",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000206",
+            "costume": "Pool Party",
+            "type": "cutscene",
+            "hashed_name": "437a37dbbf7932e462aca919f577e556"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000296",
+            "costume": "Hot Summer Dream",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Justia",
+            "file_id": "char000296",
+            "costume": "Hot Summer Dream",
+            "type": "cutscene",
+            "hashed_name": "3d138647d52e4f7cb0ab615ed1c67892"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000301",
+            "costume": "The Lapis Witch",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000301",
+            "costume": "The Lapis Witch",
+            "type": "cutscene",
+            "hashed_name": "7688b127e216f64ae364d084e3785eca"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000303",
+            "costume": "The Magic School Professor",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000303",
+            "costume": "The Magic School Professor",
+            "type": "cutscene",
+            "hashed_name": "8bd791d966239d727c19c95c456ad015"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000304",
+            "costume": "Code Name S",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000304",
+            "costume": "Code Name S",
+            "type": "cutscene",
+            "hashed_name": "5276b829724e46e0b5d9d07318c24d8b"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000306",
+            "costume": "Pool Party",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000306",
+            "costume": "Pool Party",
+            "type": "cutscene",
+            "hashed_name": "a344ea78f75c7ffaf4d738d575c8d2e6"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000396",
+            "costume": "Deliberate Ace",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "char000396",
+            "costume": "Deliberate Ace",
+            "type": "cutscene",
+            "hashed_name": "772c7c1e5f9b2b0d4b572181f0e15c58"
+        },
+        {
+            "character": "Gray",
+            "file_id": "char000401",
+            "costume": "The Sharpshooter of the Mist",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Gray",
+            "file_id": "char000401",
+            "costume": "The Sharpshooter of the Mist",
+            "type": "cutscene",
+            "hashed_name": "8ef6b8ad52a4bba09fd05279f508d753"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000501",
+            "costume": "White Cat",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000501",
+            "costume": "White Cat",
+            "type": "cutscene",
+            "hashed_name": "2a3091e6d104e930689377ae63348619"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000502",
+            "costume": "Red Hat",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000502",
+            "costume": "Red Hat",
+            "type": "cutscene",
+            "hashed_name": "5a6e864d3dd33585aca2e69de2e339a0"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000504",
+            "costume": "Nature's Claw",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000504",
+            "costume": "Nature's Claw",
+            "type": "cutscene",
+            "hashed_name": "c495b973e0763ca27c3e4487347976a0"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000506",
+            "costume": "Stray Cat",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Rou",
+            "file_id": "char000506",
+            "costume": "Stray Cat",
+            "type": "cutscene",
+            "hashed_name": "6d4603e47021bb74f11dd764c5a5adb5"
+        },
+        {
+            "character": "Olstein",
+            "file_id": "char000604",
+            "costume": "Sage of Blue Clouds",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Olstein",
+            "file_id": "char000604",
+            "costume": "Sage of Blue Clouds",
+            "type": "cutscene",
+            "hashed_name": "601028b0f6bb0fef149c52683ef1a29e"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000701",
+            "costume": "The Dimesion Witch",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000701",
+            "costume": "The Dimesion Witch",
+            "type": "cutscene",
+            "hashed_name": "dde133044094e8460cf627740cb18506"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000706",
+            "costume": "Nightmare Bunny",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000706",
+            "costume": "Nightmare Bunny",
+            "type": "cutscene",
+            "hashed_name": "3cc1fca21d13bf0ce9dd8f7e29225317"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000707",
+            "costume": "Beach Vacation",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000707",
+            "costume": "Beach Vacation",
+            "type": "cutscene",
+            "hashed_name": "00044c1c0b4b673e127e271e219f70b2"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000708",
+            "costume": "Dream Bride",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "char000708",
+            "costume": "Dream Bride",
+            "type": "cutscene",
+            "hashed_name": "af509faa9607f05ba35b775166e37982"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000801",
+            "costume": "Thorn of the Desert",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000801",
+            "costume": "Thorn of the Desert",
+            "type": "cutscene",
+            "hashed_name": "8ec6b013660f6e223db702ec75b17fe0"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000804",
+            "costume": "The Empress of the Ocean",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000804",
+            "costume": "The Empress of the Ocean",
+            "type": "cutscene",
+            "hashed_name": "ac2109bfe2377fa91aaa5601a442f145"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000806",
+            "costume": "Maid Name C",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000806",
+            "costume": "Maid Name C",
+            "type": "cutscene",
+            "hashed_name": "1acba06f3b5501fd9570c94e62d88cc6"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000807",
+            "costume": "Maid Bikini",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Rubia",
+            "file_id": "char000807",
+            "costume": "Maid Bikini",
+            "type": "cutscene",
+            "hashed_name": "811bd8561c74651cbd3a59f8a506591a"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001001",
+            "costume": "Desert Flower",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001001",
+            "costume": "Desert Flower",
+            "type": "cutscene",
+            "hashed_name": "d7952d0095d36af07cd2d597812c2b97"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001002",
+            "costume": "The Sword Queen",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001002",
+            "costume": "The Sword Queen",
+            "type": "cutscene",
+            "hashed_name": "4f6fe9405cb7662e0433384abb362032"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001004",
+            "costume": "Admiral",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001004",
+            "costume": "Admiral",
+            "type": "cutscene",
+            "hashed_name": "46890ed97d72c244ece0603b453a35fe"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001006",
+            "costume": "Bikini Agent",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001006",
+            "costume": "Bikini Agent",
+            "type": "cutscene",
+            "hashed_name": "80be6e9ecc139f3812089f96fd7acfa0"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001092",
+            "costume": "Crimson Lotus",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "char001092",
+            "costume": "Crimson Lotus",
+            "type": "cutscene",
+            "hashed_name": "3ef306c15312897258b5a9e988dbd942"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001101",
+            "costume": "Angel of Destruction",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001101",
+            "costume": "Angel of Destruction",
+            "type": "cutscene",
+            "hashed_name": "d9767f0d5c9ed7baa730ed740fec5c95"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001106",
+            "costume": "Medical Club",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001106",
+            "costume": "Medical Club",
+            "type": "cutscene",
+            "hashed_name": "be1923d42c12b3c0744760254242fb10"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001107",
+            "costume": "Beachside Angel",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001107",
+            "costume": "Beachside Angel",
+            "type": "cutscene",
+            "hashed_name": "d483875c9716cbe0c4bd830146f7b659"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001197",
+            "costume": "Milky Bikini",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "char001197",
+            "costume": "Milky Bikini",
+            "type": "cutscene",
+            "hashed_name": "9c2a5b5ddcc63cb09f4eedb15e4602fc"
+        },
+        {
+            "character": "Liatris",
+            "file_id": "char001201",
+            "costume": "Rodev's Star",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Liatris",
+            "file_id": "char001201",
+            "costume": "Rodev's Star",
+            "type": "cutscene",
+            "hashed_name": "e96c72d55c649e964d038d6329c272d3"
+        },
+        {
+            "character": "Liatris",
+            "file_id": "char001206",
+            "costume": "Neon Stalker",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Liatris",
+            "file_id": "char001206",
+            "costume": "Neon Stalker",
+            "type": "cutscene",
+            "hashed_name": "37d6b3a66b55cd545dd250c7775b69de"
+        },
+        {
+            "character": "Liatris",
+            "file_id": "char001207",
+            "costume": "Maid Name R",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Liatris",
+            "file_id": "char001207",
+            "costume": "Maid Name R",
+            "type": "cutscene",
+            "hashed_name": "e1602f16d90b321b2257df7edad53bf3"
+        },
+        {
+            "character": "Diana",
+            "file_id": "char002401",
+            "costume": "Adventurer of the Unknown",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Diana",
+            "file_id": "char002401",
+            "costume": "Adventurer of the Unknown",
+            "type": "cutscene",
+            "hashed_name": "ac5044ce5d0d73fc3fc18c6924c658ae"
+        },
+        {
+            "character": "Diana",
+            "file_id": "char002403",
+            "costume": "Magical Innovator",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Diana",
+            "file_id": "char002403",
+            "costume": "Magical Innovator",
+            "type": "cutscene",
+            "hashed_name": "4162b6310da6307b7bd63d1ae23618aa"
+        },
+        {
+            "character": "Diana",
+            "file_id": "char002406",
+            "costume": "Anti-dystopia",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Diana",
+            "file_id": "char002406",
+            "costume": "Anti-dystopia",
+            "type": "cutscene",
+            "hashed_name": "59fe7f9a6e136abbecd5111297834892"
+        },
+        {
+            "character": "Elpis",
+            "file_id": "char003101",
+            "costume": "Hand of Salvation",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Elpis",
+            "file_id": "char003101",
+            "costume": "Hand of Salvation",
+            "type": "cutscene",
+            "hashed_name": "f114b9efa9bb204fb8c1d2828811ac69"
+        },
+        {
+            "character": "Loen",
+            "file_id": "char003201",
+            "costume": "Last Hope",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Loen",
+            "file_id": "char003201",
+            "costume": "Last Hope",
+            "type": "cutscene",
+            "hashed_name": "f47e860c40596fedb3242d2fd9f3f26f"
+        },
+        {
+            "character": "Loen",
+            "file_id": "char003202",
+            "costume": "Track and Field Team",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Loen",
+            "file_id": "char003202",
+            "costume": "Track and Field Team",
+            "type": "cutscene",
+            "hashed_name": "f167eea70ed1ee9ee5b23370807b668b"
+        },
+        {
+            "character": "Loen",
+            "file_id": "char003203",
+            "costume": "Celebrity Bunny",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Loen",
+            "file_id": "char003203",
+            "costume": "Celebrity Bunny",
+            "type": "cutscene",
+            "hashed_name": "bba68da648caae18e907ce6f44ec35a4"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003301",
+            "costume": "Labyrinth Gatekeeper",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003301",
+            "costume": "Labyrinth Gatekeeper",
+            "type": "cutscene",
+            "hashed_name": "d847ed7714b593eb68c64213e184a47f"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003302",
+            "costume": "Laid-back Lifeguard",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003302",
+            "costume": "Laid-back Lifeguard",
+            "type": "cutscene",
+            "hashed_name": "95542d87742bbc87cee3c86f848434ee"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003303",
+            "costume": "New Hire",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003303",
+            "costume": "New Hire",
+            "type": "cutscene",
+            "hashed_name": "87d45b72b40ee394843478dc11b44362"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003392",
+            "costume": "Lucky Bikini",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "char003392",
+            "costume": "Lucky Bikini",
+            "type": "cutscene",
+            "hashed_name": "7798a147d8c6fc4c7851e015f53a837f"
+        },
+        {
+            "character": "Morpeah",
+            "file_id": "char003401",
+            "costume": "Beach Vacation",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Morpeah",
+            "file_id": "char003401",
+            "costume": "Beach Vacation",
+            "type": "cutscene",
+            "hashed_name": "d1393f404c89bac5d65410ce1c307442"
+        },
+        {
+            "character": "Morpeah",
+            "file_id": "char003402",
+            "costume": "Daydream Bunny",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Morpeah",
+            "file_id": "char003402",
+            "costume": "Daydream Bunny",
+            "type": "cutscene",
+            "hashed_name": "0f57bf90fa5a5c8de0cbae885bfc1633"
+        },
+        {
+            "character": "Morpeah",
+            "file_id": "char003403",
+            "costume": "Apostle",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Morpeah",
+            "file_id": "char003403",
+            "costume": "Apostle",
+            "type": "cutscene",
+            "hashed_name": "54490828e3f0f9d83c383e5a64724632"
+        },
+        {
+            "character": "Sacred Justia",
+            "file_id": "char003501",
+            "costume": "Reclaimed Destiny",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Sacred Justia",
+            "file_id": "char003501",
+            "costume": "Reclaimed Destiny",
+            "type": "cutscene",
+            "hashed_name": "1077b3fe952f236c3b557ffa743d6d47"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003601",
+            "costume": "Faithful Wings",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003601",
+            "costume": "Faithful Wings",
+            "type": "cutscene",
+            "hashed_name": "665f9097adf6d518cd74fda67a5b25df"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003602",
+            "costume": "Apostle",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003602",
+            "costume": "Apostle",
+            "type": "cutscene",
+            "hashed_name": "44ea095e6b01e48c0e999a88a8fa22c5"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003603",
+            "costume": "Fallen Wings",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003603",
+            "costume": "Fallen Wings",
+            "type": "cutscene",
+            "hashed_name": "673b43b598148e470c8159551855f738"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003604",
+            "costume": "Retired Legend",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Olivier",
+            "file_id": "char003604",
+            "costume": "Retired Legend",
+            "type": "cutscene",
+            "hashed_name": "d12230b913d2721c1738ce8f446aa609"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003701",
+            "costume": "Apostle",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003701",
+            "costume": "Apostle",
+            "type": "cutscene",
+            "hashed_name": "ce5daee72b44d5175451e1b9922dc5cf"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003702",
+            "costume": "Onsen Swordfighter",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003702",
+            "costume": "Onsen Swordfighter",
+            "type": "cutscene",
+            "hashed_name": "fe8849f645dbcdf13cb3b2ed409c5b00"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003703",
+            "costume": "Young Lady",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003703",
+            "costume": "Young Lady",
+            "type": "cutscene",
+            "hashed_name": "495884652334afaa9c8711583b7155e8"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003793",
+            "costume": "Tender Dream",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Blade",
+            "file_id": "char003793",
+            "costume": "Tender Dream",
+            "type": "cutscene",
+            "hashed_name": "0b00ed352b078f04aebdf6facbb3fdae"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003801",
+            "costume": "Dark Saintess",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003801",
+            "costume": "Dark Saintess",
+            "type": "cutscene",
+            "hashed_name": "b9e9c704a8628ed6a40df037f9ce12c0"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003802",
+            "costume": "Onsen Manager",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003802",
+            "costume": "Onsen Manager",
+            "type": "cutscene",
+            "hashed_name": "0fb54a5f786930f073b9b6fdffa3e86a"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003803",
+            "costume": "Miracle Rose",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003803",
+            "costume": "Miracle Rose",
+            "type": "cutscene",
+            "hashed_name": "8cd0e0453a5223b9a9bc5eac051906d3"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003892",
+            "costume": "Hedonist",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "char003892",
+            "costume": "Hedonist",
+            "type": "cutscene",
+            "hashed_name": "ed5af61a403f5483598c4f29538d1f8a"
+        },
+        {
+            "character": "Sonya",
+            "file_id": "char003901",
+            "costume": "Shadowed Dream",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Sonya",
+            "file_id": "char003901",
+            "costume": "Shadowed Dream",
+            "type": "cutscene",
+            "hashed_name": "c9d08b1160d1347abff7e9177ed7be3c"
+        },
+        {
+            "character": "Sonya",
+            "file_id": "char003902",
+            "costume": "Little Pumpkin Girl",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Sonya",
+            "file_id": "char003902",
+            "costume": "Little Pumpkin Girl",
+            "type": "cutscene",
+            "hashed_name": "440cdab2b4c93b8388adccdb8c0c8612"
+        },
+        {
+            "character": "Darian",
+            "file_id": "char004001",
+            "costume": "Prophetic Dream",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Darian",
+            "file_id": "char004001",
+            "costume": "Prophetic Dream",
+            "type": "cutscene",
+            "hashed_name": "df3bd15fe8d94f9a1e07fa0dc60675b2"
+        },
+        {
+            "character": "Darian",
+            "file_id": "char004002",
+            "costume": "Bittersweet Bunny",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Darian",
+            "file_id": "char004002",
+            "costume": "Bittersweet Bunny",
+            "type": "cutscene",
+            "hashed_name": "9b8eea8f4ebc77a120a921f69323eaf4"
+        },
+        {
+            "character": "Darian",
+            "file_id": "char004091",
+            "costume": "Herald of Enlightenment",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Darian",
+            "file_id": "char004091",
+            "costume": "Herald of Enlightenment",
+            "type": "cutscene",
+            "hashed_name": "f4721b1b52ef57353222708210fe29a2"
+        },
+        {
+            "character": "Tyr",
+            "file_id": "char004101",
+            "costume": "Starlight Guardian",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Tyr",
+            "file_id": "char004101",
+            "costume": "Starlight Guardian",
+            "type": "cutscene",
+            "hashed_name": "153e693a858a66b3dd717f485046553e"
+        },
+        {
+            "character": "Tyr",
+            "file_id": "char004102",
+            "costume": "Innocent Bunny",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Tyr",
+            "file_id": "char004102",
+            "costume": "Innocent Bunny",
+            "type": "cutscene",
+            "hashed_name": "21f7856145801b110515788d607ad308"
+        },
+        {
+            "character": "Palette",
+            "file_id": "char004201",
+            "costume": "Shattered Dream",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Palette",
+            "file_id": "char004201",
+            "costume": "Shattered Dream",
+            "type": "cutscene",
+            "hashed_name": "d12230b913d2721c1738ce8f446aa609"
+        },
+        {
+            "character": "Palette",
+            "file_id": "char004202",
+            "costume": "Miracle Violet",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Palette",
+            "file_id": "char004202",
+            "costume": "Miracle Violet",
+            "type": "cutscene",
+            "hashed_name": "db6756ff1ca7c3387ed2c31938ae35d6"
+        },
+        {
+            "character": "Nekyndalia",
+            "file_id": "char004301",
+            "costume": "Deadeye",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Nekyndalia",
+            "file_id": "char004301",
+            "costume": "Deadeye",
+            "type": "cutscene",
+            "hashed_name": "371525638464b6f2db597dfde31d187c"
+        },
+        {
+            "character": "Eris",
+            "file_id": "char020001",
+            "costume": "Esteemed Adventurer",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Eris",
+            "file_id": "char020001",
+            "costume": "Esteemed Adventurer",
+            "type": "cutscene",
+            "hashed_name": "875935e57cad646ffd5d61247bdead4e"
+        },
+        {
+            "character": "Eris",
+            "file_id": "char020002",
+            "costume": "Your Very Own Cat",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Eris",
+            "file_id": "char020002",
+            "costume": "Your Very Own Cat",
+            "type": "cutscene",
+            "hashed_name": "73b4cb9bb25e9d1203ae1ee664ba8b0d"
+        },
+        {
+            "character": "Roxy",
+            "file_id": "char020101",
+            "costume": "Respected Master",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Roxy",
+            "file_id": "char020101",
+            "costume": "Respected Master",
+            "type": "cutscene",
+            "hashed_name": "211d7ab8f446d4319400b942d85a5d41"
+        },
+        {
+            "character": "Roxy",
+            "file_id": "char020102",
+            "costume": "Emerging Desire",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Roxy",
+            "file_id": "char020102",
+            "costume": "Emerging Desire",
+            "type": "cutscene",
+            "hashed_name": "5fd42a11085fff50fdfa17dbc525971f"
+        },
+        {
+            "character": "Yomi",
+            "file_id": "char020201",
+            "costume": "Gentle Destroyer",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Yomi",
+            "file_id": "char020201",
+            "costume": "Gentle Destroyer",
+            "type": "cutscene",
+            "hashed_name": "d65891af2739f6ad0e1ded3cf345b3c2"
+        },
+        {
+            "character": "Yozakura",
+            "file_id": "char020301",
+            "costume": "Fist of Conviction",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Yozakura",
+            "file_id": "char020301",
+            "costume": "Fist of Conviction",
+            "type": "cutscene",
+            "hashed_name": "e3ca4137e916c5069fdfe3b4b812643e"
+        },
+        {
+            "character": "Yumi",
+            "file_id": "char020401",
+            "costume": "Dancing Snowflake",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Yumi",
+            "file_id": "char020401",
+            "costume": "Dancing Snowflake",
+            "type": "cutscene",
+            "hashed_name": "b0dde8527c3cbe8ea27169a78573fd43"
+        },
+        {
+            "character": "Hikage",
+            "file_id": "char020501",
+            "costume": "Kind Ruthlessness",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Hikage",
+            "file_id": "char020501",
+            "costume": "Kind Ruthlessness",
+            "type": "cutscene",
+            "hashed_name": "11c470899f350d887a13ece21f0c655a"
+        },
+        {
+            "character": "Goblin Slayer",
+            "file_id": "char020601",
+            "costume": "Orcbolg",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Goblin Slayer",
+            "file_id": "char020601",
+            "costume": "Orcbolg",
+            "type": "cutscene",
+            "hashed_name": "afff68372369257c70ec0af641457d1a"
+        },
+        {
+            "character": "Priestess",
+            "file_id": "char020701",
+            "costume": "Earth Mother Believer",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Priestess",
+            "file_id": "char020701",
+            "costume": "Earth Mother Believer",
+            "type": "cutscene",
+            "hashed_name": "0a87fc55b07f096188d7b944acb787b3"
+        },
+        {
+            "character": "High Elf Archer",
+            "file_id": "char020801",
+            "costume": "Daughter of Starwind",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "High Elf Archer",
+            "file_id": "char020801",
+            "costume": "Daughter of Starwind",
+            "type": "cutscene",
+            "hashed_name": "2504244882de5a73bbe6061a7573f9f1"
+        },
+        {
+            "character": "Sword Maiden",
+            "file_id": "char020901",
+            "costume": "Supreme God Archbishop",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Sword Maiden",
+            "file_id": "char020901",
+            "costume": "Supreme God Archbishop",
+            "type": "cutscene",
+            "hashed_name": "23697c5692ce39f0bed96a8dfe27be9a"
+        },
+        {
+            "character": "Ikaruga",
+            "file_id": "char021001",
+            "costume": "Noble Flame",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Ikaruga",
+            "file_id": "char021001",
+            "costume": "Noble Flame",
+            "type": "cutscene",
+            "hashed_name": "f17153c53963e8c49ee6f18b978cbc80"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char021101",
+            "costume": "Unknown (char021101)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char021101",
+            "costume": "Unknown (char021101)",
+            "type": "cutscene",
+            "hashed_name": "49d4fbf8b75a5fc6df2cbc7c473d1936"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char021201",
+            "costume": "Unknown (char021201)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char021201",
+            "costume": "Unknown (char021201)",
+            "type": "cutscene",
+            "hashed_name": "4b79d29b334a54b02658c9a60b2da843"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char021291",
+            "costume": "Unknown (char021291)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char021291",
+            "costume": "Unknown (char021291)",
+            "type": "cutscene",
+            "hashed_name": "bc043c379a9d785f82a1a9b94b02b25f"
+        },
+        {
+            "character": "Celia",
+            "file_id": "char060401",
+            "costume": "The Curse",
+            "type": "cutscene",
+            "hashed_name": "da474c481a680f21935f726bb9d7b437"
+        },
+        {
+            "character": "Celia",
+            "file_id": "char060402",
+            "costume": "Descendant of the Great Witch",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Celia",
+            "file_id": "char060402",
+            "costume": "Descendant of the Great Witch",
+            "type": "cutscene",
+            "hashed_name": "4d4ce3e1decebf39f10688d6a22b1246"
+        },
+        {
+            "character": "Celia",
+            "file_id": "char060403",
+            "costume": "Masquerade Bunny",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Celia",
+            "file_id": "char060403",
+            "costume": "Masquerade Bunny",
+            "type": "cutscene",
+            "hashed_name": "d7d3f9b0118398dc5f91dd3f57acace1"
+        },
+        {
+            "character": "Anastasia",
+            "file_id": "char060501",
+            "costume": "Gentle Maid",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Anastasia",
+            "file_id": "char060501",
+            "costume": "Gentle Maid",
+            "type": "cutscene",
+            "hashed_name": "6b1dd018e1643d9d298067cc00fcc735"
+        },
+        {
+            "character": "Anastasia",
+            "file_id": "char060502",
+            "costume": "Fire Graffiti",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Anastasia",
+            "file_id": "char060502",
+            "costume": "Fire Graffiti",
+            "type": "cutscene",
+            "hashed_name": "b94c6ec79fb8493311e87351b4108be5"
+        },
+        {
+            "character": "Lecliss",
+            "file_id": "char060601",
+            "costume": "Killer Doll",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Lecliss",
+            "file_id": "char060601",
+            "costume": "Killer Doll",
+            "type": "cutscene",
+            "hashed_name": "79116abf9e0ac76b8f76dc76aeac3397"
+        },
+        {
+            "character": "Lecliss",
+            "file_id": "char060602",
+            "costume": "Android Queen",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Lecliss",
+            "file_id": "char060602",
+            "costume": "Android Queen",
+            "type": "cutscene",
+            "hashed_name": "c52ff83c17c900b46a0a092b24adbfc6"
+        },
+        {
+            "character": "Rafina",
+            "file_id": "char060701",
+            "costume": "Steel Engine",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Rafina",
+            "file_id": "char060701",
+            "costume": "Steel Engine",
+            "type": "cutscene",
+            "hashed_name": "f61733b429634240e33fe3a0bed1ce51"
+        },
+        {
+            "character": "Rafina",
+            "file_id": "char060702",
+            "costume": "Code Name A",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Rafina",
+            "file_id": "char060702",
+            "costume": "Code Name A",
+            "type": "cutscene",
+            "hashed_name": "89a9be8a09b184d9a2ca7c8e79f7bd9f"
+        },
+        {
+            "character": "Rafina",
+            "file_id": "char060706",
+            "costume": "Game Club",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Rafina",
+            "file_id": "char060706",
+            "costume": "Game Club",
+            "type": "cutscene",
+            "hashed_name": "fb68da383fb541ba8693ef203819db67"
+        },
+        {
+            "character": "Elise",
+            "file_id": "char060801",
+            "costume": "Lovely Lady",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Elise",
+            "file_id": "char060801",
+            "costume": "Lovely Lady",
+            "type": "cutscene",
+            "hashed_name": "17ca8240ccf72c55ebd783f934de83f8"
+        },
+        {
+            "character": "Elise",
+            "file_id": "char060802",
+            "costume": "Code Name O",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Elise",
+            "file_id": "char060802",
+            "costume": "Code Name O",
+            "type": "cutscene",
+            "hashed_name": "57de94e3642a4cbd7517052fc7eb05bf"
+        },
+        {
+            "character": "Elise",
+            "file_id": "char060804",
+            "costume": "Naive Lady",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Elise",
+            "file_id": "char060804",
+            "costume": "Naive Lady",
+            "type": "cutscene",
+            "hashed_name": "e518d42970e92bd84c8be3d903d4db1f"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061001",
+            "costume": "Top Idol",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061001",
+            "costume": "Top Idol",
+            "type": "cutscene",
+            "hashed_name": "1afbaa382a343abda7dabdaa98fb45c1"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061002",
+            "costume": "B-Rank Idol",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061002",
+            "costume": "B-Rank Idol",
+            "type": "cutscene",
+            "hashed_name": "576df6a7554eb02d95fa6243b3b27f2f"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061003",
+            "costume": "Sunny Inn Hand",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061003",
+            "costume": "Sunny Inn Hand",
+            "type": "cutscene",
+            "hashed_name": "9a724350b1ffdecfe75633956468be32"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061092",
+            "costume": "Rising Star",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Helena",
+            "file_id": "char061092",
+            "costume": "Rising Star",
+            "type": "cutscene",
+            "hashed_name": "d3bdd509b2df97b40155a039639a7415"
+        },
+        {
+            "character": "Eleaneer",
+            "file_id": "char061101",
+            "costume": "Piercing Magic Bow",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Eleaneer",
+            "file_id": "char061101",
+            "costume": "Piercing Magic Bow",
+            "type": "cutscene",
+            "hashed_name": "ebf1886f4d0f8a90c66e3de45babcbe2"
+        },
+        {
+            "character": "Eleaneer",
+            "file_id": "char061102",
+            "costume": "B-Rank Idol",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Eleaneer",
+            "file_id": "char061102",
+            "costume": "B-Rank Idol",
+            "type": "cutscene",
+            "hashed_name": "62bfb2129b397dc34bc02be8018fc36e"
+        },
+        {
+            "character": "Eleaneer",
+            "file_id": "char061103",
+            "costume": "Shadow Bunny",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Eleaneer",
+            "file_id": "char061103",
+            "costume": "Shadow Bunny",
+            "type": "cutscene",
+            "hashed_name": "1cbe0aafb596d01e0b1e84a0b2073057"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061302",
+            "costume": "Bright Moon",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061302",
+            "costume": "Bright Moon",
+            "type": "cutscene",
+            "hashed_name": "374fa0324a7454903423dcea432b76fe"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061305",
+            "costume": "Summer Vacation",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061305",
+            "costume": "Summer Vacation",
+            "type": "cutscene",
+            "hashed_name": "94d07d7215a40881d0e9c2f99243c642"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061306",
+            "costume": "Tricky Lover",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061306",
+            "costume": "Tricky Lover",
+            "type": "cutscene",
+            "hashed_name": "5807e41624428dcafab4bfb2411e9e48"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061392",
+            "costume": "Butterfly Dream",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "char061392",
+            "costume": "Butterfly Dream",
+            "type": "cutscene",
+            "hashed_name": "2d4979ccf85e33e66fcee4a54bd1b17a"
+        },
+        {
+            "character": "Zenith",
+            "file_id": "char061402",
+            "costume": "Robin Hood",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Zenith",
+            "file_id": "char061402",
+            "costume": "Robin Hood",
+            "type": "cutscene",
+            "hashed_name": "4038946fa35d6e60cdf3834881975afa"
+        },
+        {
+            "character": "Zenith",
+            "file_id": "char061404",
+            "costume": "Poolside Guardian",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Zenith",
+            "file_id": "char061404",
+            "costume": "Poolside Guardian",
+            "type": "cutscene",
+            "hashed_name": "bc918a4268b0a3f07bb2f9f1c97c4ea2"
+        },
+        {
+            "character": "Zenith",
+            "file_id": "char061492",
+            "costume": "Stranger Bunny",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Zenith",
+            "file_id": "char061492",
+            "costume": "Stranger Bunny",
+            "type": "cutscene",
+            "hashed_name": "213bcaaa6f027ed010ad895e09eeb738"
+        },
+        {
+            "character": "Yuri",
+            "file_id": "char065102",
+            "costume": "Whitebolt",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Yuri",
+            "file_id": "char065102",
+            "costume": "Whitebolt",
+            "type": "cutscene",
+            "hashed_name": "d2848620a80a5eb1674a46cbd9be8038"
+        },
+        {
+            "character": "Yuri",
+            "file_id": "char065103",
+            "costume": "Comeback Idol",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Yuri",
+            "file_id": "char065103",
+            "costume": "Comeback Idol",
+            "type": "cutscene",
+            "hashed_name": "98dd103f81b52e27eceb36c9cf296520"
+        },
+        {
+            "character": "Yuri",
+            "file_id": "char065193",
+            "costume": "Forever Mascot",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Yuri",
+            "file_id": "char065193",
+            "costume": "Forever Mascot",
+            "type": "cutscene",
+            "hashed_name": "37be606176c8662148236688366669bf"
+        },
+        {
+            "character": "Nartas",
+            "file_id": "char065802",
+            "costume": "Anonymous Sage",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Nartas",
+            "file_id": "char065802",
+            "costume": "Anonymous Sage",
+            "type": "cutscene",
+            "hashed_name": "54c41b5cb166fa270b01c51d1753fc06"
+        },
+        {
+            "character": "Angelica",
+            "file_id": "char066401",
+            "costume": "The Fallen",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Angelica",
+            "file_id": "char066401",
+            "costume": "The Fallen",
+            "type": "cutscene",
+            "hashed_name": "08994bcd105a53be4fef557b280b98b0"
+        },
+        {
+            "character": "Angelica",
+            "file_id": "char066402",
+            "costume": "Pool Party",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Angelica",
+            "file_id": "char066402",
+            "costume": "Pool Party",
+            "type": "cutscene",
+            "hashed_name": "26a2d834e059381298d0d224fec46ead"
+        },
+        {
+            "character": "Angelica",
+            "file_id": "char066403",
+            "costume": "Neon Savior",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Angelica",
+            "file_id": "char066403",
+            "costume": "Neon Savior",
+            "type": "cutscene",
+            "hashed_name": "ef4885aeb0d190f4a05c115b3186995b"
+        },
+        {
+            "character": "Refithea",
+            "file_id": "char066801",
+            "costume": "The Gluttonous",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Refithea",
+            "file_id": "char066801",
+            "costume": "The Gluttonous",
+            "type": "cutscene",
+            "hashed_name": "81008492e01d81b3f152a34b19e976a7"
+        },
+        {
+            "character": "Refithea",
+            "file_id": "char066802",
+            "costume": "Pure White Blessing",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Refithea",
+            "file_id": "char066802",
+            "costume": "Pure White Blessing",
+            "type": "cutscene",
+            "hashed_name": "b1646b94724b133d893104eb287f4ad9"
+        },
+        {
+            "character": "Refithea",
+            "file_id": "char066803",
+            "costume": "Poolside Fairy",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Refithea",
+            "file_id": "char066803",
+            "costume": "Poolside Fairy",
+            "type": "cutscene",
+            "hashed_name": "fbef8986b8cf615dacce56848fafbc78"
+        },
+        {
+            "character": "Glacia",
+            "file_id": "char066902",
+            "costume": "Alice",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Glacia",
+            "file_id": "char066902",
+            "costume": "Alice",
+            "type": "cutscene",
+            "hashed_name": "e7f626fa0f5600da1a50050bcbeb08dc"
+        },
+        {
+            "character": "Glacia",
+            "file_id": "char066906",
+            "costume": "Disciplinary Committee",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Glacia",
+            "file_id": "char066906",
+            "costume": "Disciplinary Committee",
+            "type": "cutscene",
+            "hashed_name": "fc791a96e8328af5e9d6eb16b018e84e"
+        },
+        {
+            "character": "Glacia",
+            "file_id": "char066907",
+            "costume": "Heavenly Guardian Successor",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Glacia",
+            "file_id": "char066907",
+            "costume": "Heavenly Guardian Successor",
+            "type": "cutscene",
+            "hashed_name": "0621bf238105feb553ffa0eba8e2c48b"
+        },
+        {
+            "character": "Ventana",
+            "file_id": "char067002",
+            "costume": "Snow White",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Ventana",
+            "file_id": "char067002",
+            "costume": "Snow White",
+            "type": "cutscene",
+            "hashed_name": "119ff02c56daa5c2023d8ad47c2f949d"
+        },
+        {
+            "character": "Ventana",
+            "file_id": "char067003",
+            "costume": "Comeback Idol",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Ventana",
+            "file_id": "char067003",
+            "costume": "Comeback Idol",
+            "type": "cutscene",
+            "hashed_name": "a851a2a9c67a90e506c7b9e705f84128"
+        },
+        {
+            "character": "Ventana",
+            "file_id": "char067004",
+            "costume": "Onsen Practitioner",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Ventana",
+            "file_id": "char067004",
+            "costume": "Onsen Practitioner",
+            "type": "cutscene",
+            "hashed_name": "c82b1335c1944995198ff94c4ed2838c"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067101",
+            "costume": "The Void",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067101",
+            "costume": "The Void",
+            "type": "cutscene",
+            "hashed_name": "3978837b22ee8be225d459e5806be70a"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067102",
+            "costume": "Comeback Idol",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067102",
+            "costume": "Comeback Idol",
+            "type": "cutscene",
+            "hashed_name": "2a70f185a319b002085749bea9ea6c51"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067103",
+            "costume": "Boo Ghost",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067103",
+            "costume": "Boo Ghost",
+            "type": "cutscene",
+            "hashed_name": "3dfcdc93277b75f820c3a9b228368bd8"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067104",
+            "costume": "Combat Medic",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "char067104",
+            "costume": "Combat Medic",
+            "type": "cutscene",
+            "hashed_name": "d2991c5ec83882fd121d701db55a3139"
+        },
+        {
+            "character": "Venaka",
+            "file_id": "char067201",
+            "costume": "DJ",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Venaka",
+            "file_id": "char067201",
+            "costume": "DJ",
+            "type": "cutscene",
+            "hashed_name": "d0686a9fba80205c0267c6b0b1588f7b"
+        },
+        {
+            "character": "Venaka",
+            "file_id": "char067202",
+            "costume": "Wind Dancer",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Venaka",
+            "file_id": "char067202",
+            "costume": "Wind Dancer",
+            "type": "cutscene",
+            "hashed_name": "7b80c9b3e50d03243d9417bee3cb9d9e"
+        },
+        {
+            "character": "Levia",
+            "file_id": "char067301",
+            "costume": "Track and Field Captain",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Levia",
+            "file_id": "char067301",
+            "costume": "Track and Field Captain",
+            "type": "cutscene",
+            "hashed_name": "b5d6d38addce6abc4b93012283a9422c"
+        },
+        {
+            "character": "Levia",
+            "file_id": "char067302",
+            "costume": "Night of Jealousy",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Levia",
+            "file_id": "char067302",
+            "costume": "Night of Jealousy",
+            "type": "cutscene",
+            "hashed_name": "d86e72172024e1c8467fddd5f97eba7a"
+        },
+        {
+            "character": "Levia",
+            "file_id": "char067303",
+            "costume": "OverHeat",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Levia",
+            "file_id": "char067303",
+            "costume": "OverHeat",
+            "type": "cutscene",
+            "hashed_name": "1d503f70cdd7be9528b66de8a6da8687"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067401",
+            "costume": "Beachside Justice",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067401",
+            "costume": "Beachside Justice",
+            "type": "cutscene",
+            "hashed_name": "c89da2991e021b84c8e42c43f291b40e"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067402",
+            "costume": "Queen of Signatures",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067402",
+            "costume": "Queen of Signatures",
+            "type": "cutscene",
+            "hashed_name": "ab1d0a46b3d7e935bb2cacf5e9e9ff8c"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067403",
+            "costume": "Acting Archbishop",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067403",
+            "costume": "Acting Archbishop",
+            "type": "cutscene",
+            "hashed_name": "cff7f5d22c31e8697e36e5ea6bd10073"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067491",
+            "costume": "True Liberation",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Michaela",
+            "file_id": "char067491",
+            "costume": "True Liberation",
+            "type": "cutscene",
+            "hashed_name": "b6041a8851ee8fde374bc0d528718930"
+        },
+        {
+            "character": "Luvencia",
+            "file_id": "char067502",
+            "costume": "Deal Snatcher",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Luvencia",
+            "file_id": "char067502",
+            "costume": "Deal Snatcher",
+            "type": "cutscene",
+            "hashed_name": "ede8fd9e26251d368d6b77faaecf0611"
+        },
+        {
+            "character": "Luvencia",
+            "file_id": "char067503",
+            "costume": "Wild Dog",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Luvencia",
+            "file_id": "char067503",
+            "costume": "Wild Dog",
+            "type": "cutscene",
+            "hashed_name": "bdf89388b12f91a0f9f6db5423759612"
+        },
+        {
+            "character": "Luvencia",
+            "file_id": "char067504",
+            "costume": "Ocean Vanguard",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Luvencia",
+            "file_id": "char067504",
+            "costume": "Ocean Vanguard",
+            "type": "cutscene",
+            "hashed_name": "e285988b547801030d9aa2444d977fb8"
+        },
+        {
+            "character": "Wilhelmina",
+            "file_id": "char067601",
+            "costume": "Iron Monarch",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Wilhelmina",
+            "file_id": "char067601",
+            "costume": "Iron Monarch",
+            "type": "cutscene",
+            "hashed_name": "d18cb8d108208830afa7403eebf754a3"
+        },
+        {
+            "character": "Wilhelmina",
+            "file_id": "char067603",
+            "costume": "Water Park Queen",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Wilhelmina",
+            "file_id": "char067603",
+            "costume": "Water Park Queen",
+            "type": "cutscene",
+            "hashed_name": "851d3f681dc69cf3652a647de96be03b"
+        },
+        {
+            "character": "Wilhelmina",
+            "file_id": "char067604",
+            "costume": "Frozen Queen",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Wilhelmina",
+            "file_id": "char067604",
+            "costume": "Frozen Queen",
+            "type": "cutscene",
+            "hashed_name": "a7b95a6d400d08085688e8870fa98fbf"
+        },
+        {
+            "character": "Granadair",
+            "file_id": "char067701",
+            "costume": "Shrine Maiden of Purification",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Granadair",
+            "file_id": "char067701",
+            "costume": "Shrine Maiden of Purification",
+            "type": "cutscene",
+            "hashed_name": "9e07d2edad3daf4e65b52745877924da"
+        },
+        {
+            "character": "Granadair",
+            "file_id": "char067702",
+            "costume": "Queen of Gluttis",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Granadair",
+            "file_id": "char067702",
+            "costume": "Queen of Gluttis",
+            "type": "cutscene",
+            "hashed_name": "88a1f2b08927bd450c72ec31c2692035"
+        },
+        {
+            "character": "Mamonir",
+            "file_id": "char067801",
+            "costume": "Night of Death",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Mamonir",
+            "file_id": "char067801",
+            "costume": "Night of Death",
+            "type": "cutscene",
+            "hashed_name": "a6c63b8bde52c2bfe1fc1a116ae16899"
+        },
+        {
+            "character": "Mamonir",
+            "file_id": "char067803",
+            "costume": "Miracle Marine",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Mamonir",
+            "file_id": "char067803",
+            "costume": "Miracle Marine",
+            "type": "cutscene",
+            "hashed_name": "1f91696c3008b1c7b2886957b261e7f9"
+        },
+        {
+            "character": "Aquila",
+            "file_id": "char067901",
+            "costume": "Savage Warrior",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Aquila",
+            "file_id": "char067901",
+            "costume": "Savage Warrior",
+            "type": "cutscene",
+            "hashed_name": "2f453d6ed8ed80d0154d9f18c821922c"
+        },
+        {
+            "character": "Wiggle",
+            "file_id": "char100501",
+            "costume": "Bomb Fanatic",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Wiggle",
+            "file_id": "char100501",
+            "costume": "Bomb Fanatic",
+            "type": "cutscene",
+            "hashed_name": "56e8b2003758463abccf096bd05a0a71"
+        },
+        {
+            "character": "Seir",
+            "file_id": "char101101",
+            "costume": "Demon's Daughter",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Seir",
+            "file_id": "char101101",
+            "costume": "Demon's Daughter",
+            "type": "cutscene",
+            "hashed_name": "d40c0fc61f9fc55e6fa059bad34cc7e6"
+        },
+        {
+            "character": "Seir",
+            "file_id": "char101102",
+            "costume": "B-Rank Idol",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Seir",
+            "file_id": "char101102",
+            "costume": "B-Rank Idol",
+            "type": "cutscene",
+            "hashed_name": "98c5d801fb0ee5ac8129e3d97d190004"
+        },
+        {
+            "character": "Seir",
+            "file_id": "char101103",
+            "costume": "New Hire",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Seir",
+            "file_id": "char101103",
+            "costume": "New Hire",
+            "type": "cutscene",
+            "hashed_name": "edfed470e8cd2150778de92a0a731f57"
+        },
+        {
+            "character": "Carlson",
+            "file_id": "char103201",
+            "costume": "The Mercenary Knight",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Carlson",
+            "file_id": "char103201",
+            "costume": "The Mercenary Knight",
+            "type": "cutscene",
+            "hashed_name": "3fd6b46f9f96351ec788d609103a02e4"
+        },
+        {
+            "character": "Lydia",
+            "file_id": "char103301",
+            "costume": "Apprentice Spearman",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Lydia",
+            "file_id": "char103301",
+            "costume": "Apprentice Spearman",
+            "type": "cutscene",
+            "hashed_name": "b0920c28789c308256ede841f1b74757"
+        },
+        {
+            "character": "Rigenette",
+            "file_id": "char103401",
+            "costume": "Little Hunter",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Rigenette",
+            "file_id": "char103401",
+            "costume": "Little Hunter",
+            "type": "cutscene",
+            "hashed_name": "fbd23e7d1786d6d5c6757da00cb07aa6"
+        },
+        {
+            "character": "Beatrice",
+            "file_id": "char103501",
+            "costume": "The Mighty Warrior of the Tribe",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Beatrice",
+            "file_id": "char103501",
+            "costume": "The Mighty Warrior of the Tribe",
+            "type": "cutscene",
+            "hashed_name": "f9a2e485223c5d46db99b919861186bf"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000102",
+            "costume": "Lonely Survivor",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000104",
+            "costume": "Dark Knight",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000105",
+            "costume": "Promise of Vengance",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Lathel",
+            "file_id": "char000106",
+            "costume": "Pool Party",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Gray",
+            "file_id": "char000402",
+            "costume": "B-Rank Manager",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Gray",
+            "file_id": "char000403",
+            "costume": "Vanguard",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Gray",
+            "file_id": "char000406",
+            "costume": "Pool Party",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Olstein",
+            "file_id": "char000601",
+            "costume": "The Fiend Scholar",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Layla",
+            "file_id": "char003001",
+            "costume": "Anvil of Creation",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char021301",
+            "costume": "Unknown (char021301)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Alec",
+            "file_id": "char060301",
+            "costume": "The Destruction",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Alec",
+            "file_id": "char060302",
+            "costume": "Sword Breaker",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Andrew",
+            "file_id": "char062001",
+            "costume": "Loyal Butler",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Andrew",
+            "file_id": "char062002",
+            "costume": "Specialist",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Ingrid",
+            "file_id": "char063001",
+            "costume": "Kardis' Bullet",
+            "type": "idle",
+            "hashed_name": "428add3d31186da0dd10e7b3378749f9"
+        },
+        {
+            "character": "Cynthia",
+            "file_id": "char063301",
+            "costume": "Warmth within the Severe Cold",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Julie",
+            "file_id": "char063401",
+            "costume": "Healer",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Gynt",
+            "file_id": "char100101",
+            "costume": "Lupo Hunter",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Fred",
+            "file_id": "char100201",
+            "costume": "Lugo Defense Force",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Lisianne",
+            "file_id": "char100301",
+            "costume": "Wandering Priest",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Remnunt",
+            "file_id": "char100401",
+            "costume": "Combat Doctor",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Wiggle",
+            "file_id": "char100502",
+            "costume": "Bomb in the Hoodie",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Lucrezia",
+            "file_id": "char100601",
+            "costume": "Seductive Wings",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Bernie",
+            "file_id": "char100801",
+            "costume": "Righteous Raider Girl",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Jayden",
+            "file_id": "char101201",
+            "costume": "Beautiful Girl Devotee",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Jayden",
+            "file_id": "char101202",
+            "costume": "Manga Research Club",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Emma",
+            "file_id": "char101301",
+            "costume": "Haggard Delinquent",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Emma",
+            "file_id": "char101302",
+            "costume": "School Queen",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Samay",
+            "file_id": "char101401",
+            "costume": "Kind Liberator",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Samay",
+            "file_id": "char101402",
+            "costume": "Kind Student",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Kry",
+            "file_id": "char101501",
+            "costume": "Liberated Marauder",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Kry",
+            "file_id": "char101502",
+            "costume": "Violent Student",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Celia",
+            "file_id": "char101601",
+            "costume": "The Curse",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Maria",
+            "file_id": "char103601",
+            "costume": "Archmage",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Arines",
+            "file_id": "char103701",
+            "costume": "Priest of Vitality",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "char704001",
+            "costume": "Unknown (char704001)",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "illust_dating1",
+            "costume": "New Hire / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Angelica",
+            "file_id": "illust_dating10",
+            "costume": "Neon Savior / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Eclipse",
+            "file_id": "illust_dating11",
+            "costume": "Nightmare Bunny / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Zenith",
+            "file_id": "illust_dating12",
+            "costume": "Stranger Bunny / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Tyr",
+            "file_id": "illust_dating13",
+            "costume": "Innocent Bunny / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Liberta",
+            "file_id": "illust_dating14",
+            "costume": "Hedonist / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Ventana",
+            "file_id": "illust_dating15",
+            "costume": "Onsen Practitioner / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Palette",
+            "file_id": "illust_dating17",
+            "costume": "Miracle Violet / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Scheherazade",
+            "file_id": "illust_dating18",
+            "costume": "Deliberate Ace / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Granhildr",
+            "file_id": "illust_dating19",
+            "costume": "Combat Medic / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Morpeah",
+            "file_id": "illust_dating2",
+            "costume": "Daydream Bunny / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Dalvi",
+            "file_id": "illust_dating20",
+            "costume": "Bright Moon / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Yuri",
+            "file_id": "illust_dating21",
+            "costume": "Forever Mascot / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Loen",
+            "file_id": "illust_dating3",
+            "costume": "Celebrity Bunny / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "illust_dating4",
+            "costume": "Medical Club / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Elise",
+            "file_id": "illust_dating5",
+            "costume": "Code Name O / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Wilhelmina",
+            "file_id": "illust_dating6",
+            "costume": "Water Park Queen / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Justia",
+            "file_id": "illust_dating7",
+            "costume": "Hot Summer Dream / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Sylvia",
+            "file_id": "illust_dating8",
+            "costume": "Bikini Agent / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Teresse",
+            "file_id": "illust_dating9",
+            "costume": "Milky Bikini / DATING SIM",
+            "type": "idle",
+            "hashed_name": "f17229717fff2baf0b72e1eb98e19b91"
+        },
+        {
+            "character": "Roche",
+            "file_id": "npc000001",
+            "costume": "NPC / Shop",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Ailee",
+            "file_id": "npc000004",
+            "costume": "NPC / UR Weapon Summon",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Eleanor",
+            "file_id": "npc000005",
+            "costume": "NPC / UR Character Summon",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Darian Silverstein",
+            "file_id": "npc000011",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc000301",
+            "costume": "Unknown (npc000301)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc000401",
+            "costume": "Unknown (npc000401)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc000501",
+            "costume": "Unknown (npc000501)",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc000601",
+            "costume": "Unknown (npc000601)",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc000701",
+            "costume": "Unknown (npc000701)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc000801",
+            "costume": "Unknown (npc000801)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc001001",
+            "costume": "Unknown (npc001001)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Nebris",
+            "file_id": "npc0033",
+            "costume": "NPC / Labyrinth Gatekeeper",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc060401",
+            "costume": "Unknown (npc060401)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Female Researcher",
+            "file_id": "npc200551",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "8694e765647d0199971944cc3b23805a"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc300103",
+            "costume": "Unknown (npc300103)",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc300104",
+            "costume": "Unknown (npc300104)",
+            "type": "idle",
+            "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Elpis",
+            "file_id": "npc300302",
+            "costume": "NPC / Tower of Salvation",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Loen",
+            "file_id": "npc300501",
+            "costume": "Last Hope",
+            "type": "idle",
+            "hashed_name": "07c275c9ef99bbd497449e15a08ca456"
+        },
+        {
+            "character": "Guild Girl",
+            "file_id": "npc300601",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
+        },
+        {
+            "character": "Veila",
+            "file_id": "npc300701",
+            "costume": "NPC / Glupy Diner",
+            "type": "idle",
+            "hashed_name": "e5d0d6b0fb7920d034a81c9ca06aa43a"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc300702",
+            "costume": "Unknown (npc300702)",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Young Liberta",
+            "file_id": "npc400001",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "1c03e1384dd43aabcc02109e68119d82"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc400002",
+            "costume": "Unknown (npc400002)",
+            "type": "idle",
+            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+        },
+        {
+            "character": "Granadair",
+            "file_id": "npc400019",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "3732c5e0a75fe3c3483dc868b6e35ce4"
+        },
+        {
+            "character": "Greta",
+            "file_id": "npc400034",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "5a613f849e93a961f4467edfb84b6583"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc400049",
+            "costume": "Unknown (npc400049)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Spatti",
+            "file_id": "npc400050",
+            "costume": "NPC / Fishing",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc400056",
+            "costume": "Unknown (npc400056)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Valze",
+            "file_id": "npc400064",
+            "costume": "NPC (Ace Hunter)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Nekyndalia",
+            "file_id": "npc400070",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Unknown Character",
+            "file_id": "npc400091",
+            "costume": "Unknown (npc400091)",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Rudina",
+            "file_id": "npc400098",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Rudina",
+            "file_id": "npc400100",
+            "costume": "NPC / Soul-Wager Shop",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Valze",
+            "file_id": "npc400123",
+            "costume": "NPC",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
         }
     ]
 }

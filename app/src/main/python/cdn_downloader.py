@@ -121,33 +121,66 @@ def _maintenance_via_java():
     return base64.b64decode(json.loads("".join(chunks))['data'])
 
 
+def catalog_file_name(quality, version):
+    """catalog 磁盘缓存文件名：catalog_{画质}_{版本}.json。
+
+    画质段不能省。CDN 的 URL 是按画质取的（{CDN_BASE}/{quality}/{version}/
+    catalog_alpha.json），HD/SD 的版本号今天恰好不同，但一旦两档共用一个
+    版本串，不带画质的文件名会让第二档直接命中第一档那份 —— 跨档产物的
+    字节数/哈希全对不上，会被整片误判「待更新」并改名（静默错档）。
+    与 catalog_indexer 的 {前缀}{画质}_{版本}.json 同一套命名。
+    """
+    return f"catalog_{quality}_{version}.json"
+
+
+def is_legacy_catalog_name(name):
+    """是否是 0.2.2 之前那种不带画质的老命名 catalog_{版本}.json。
+
+    版本号是纯数字，所以 catalog_HD_2026….json 不会被误判成老命名。
+    """
+    if not name.startswith("catalog_") or not name.endswith(".json"):
+        return False
+    return name[len("catalog_"):-len(".json")].isdigit()
+
+
+def catalog_cache_key(quality, version):
+    """catalog 内存缓存的键：(画质, 版本)。
+
+    与磁盘文件名同理，画质段不能省 —— 只按版本号存的话，两档撞到同一个
+    版本串时第二次调用会直接拿到第一档的内容。调用方（main_script 的
+    _prune_catalog_cache）必须用同一个键去裁剪。
+    """
+    return (normalize_quality(quality), version)
+
+
 def download_catalog(output_dir, quality, version, cache, lock, progress_callback=None):
     """下载 catalog（带内存 + 磁盘两级缓存），返回 (content, error)。
 
     catalog 约 60MB，而内存缓存每换一个安装批次就会被清空（见
     download_bundle 的 cache_key 逻辑），所以同版本优先复用磁盘上那份。
-    文件名按 version 命名，不存在读到旧版本的风险。
+    文件名按「画质 + version」命名，既不会读到旧版本，也不会跨档互相命中。
     """
     quality = normalize_quality(quality)
+    cache_key = (quality, version)
     report = (lambda m: progress_callback(m)) if progress_callback else None
 
-    if version in cache:
+    if cache_key in cache:
         report and report(f"Catalog for version {version} found in memory cache.")
-        return cache[version], None
+        return cache[cache_key], None
 
     with lock:
         # 双检：等锁期间别的线程可能已填充
-        if version in cache:
+        if cache_key in cache:
             report and report(f"Catalog for version {version} found in memory cache after lock.")
-            return cache[version], None
+            return cache[cache_key], None
 
-        filename = os.path.join(output_dir, f"catalog_{version}.json")
+        filename = os.path.join(output_dir, catalog_file_name(quality, version))
 
         if os.path.exists(filename):
             try:
                 with open(filename, 'rb') as f:
                     catalog_content = json.loads(f.read())
-                cache[version] = catalog_content
+                cache[cache_key] = catalog_content
                 report and report(f"Catalog for version {version} loaded from disk cache.")
                 return catalog_content, None
             except Exception as e:
@@ -168,20 +201,27 @@ def download_catalog(output_dir, quality, version, cache, lock, progress_callbac
                 f.write(response.content)
             catalog_content = json.loads(response.content)
             os.replace(part_path, filename)
-            # 磁盘上保留最近两份 catalog（HD 与 SD 各一）：画质自检会同时用到
-            # 两档，互删会让另一档每次进入都重下 60MB。更旧的（游戏更新换代
-            # 换了版本号）才清掉。
+            # 落盘后清场，两件事：
+            #  - 同画质的旧版本（游戏更新换代换了版本号，旧那份没用了）
+            #  - 不带画质前缀的老命名 catalog_{版本}.json（0.2.2 迁移）：
+            #    内容属于哪一档已无从考证，宁可让它重下一次，也不能挂着
+            #    错误画质的名字继续用
+            # 别的画质一律不动 —— 画质自检会同时用 HD 与 SD 两档，互删会让
+            # 另一档每次进入都重下 65MB。
             try:
                 kept = sorted(
                     (f for f in os.listdir(output_dir)
-                     if f.startswith("catalog_") and f.endswith(".json")),
+                     if f.startswith(f"catalog_{quality}_") and f.endswith(".json")),
                     key=lambda f: os.path.getmtime(os.path.join(output_dir, f)),
                     reverse=True)
-                for old in kept[2:]:
+                for old in kept[1:]:
                     os.remove(os.path.join(output_dir, old))
+                for name in os.listdir(output_dir):
+                    if is_legacy_catalog_name(name):
+                        os.remove(os.path.join(output_dir, name))
             except OSError as e:
                 report and report(f"Error removing old catalog: {e}")
-            cache[version] = catalog_content
+            cache[cache_key] = catalog_content
             report and report("Catalog downloaded and cached successfully.")
             return catalog_content, None
         except requests.exceptions.RequestException as e:

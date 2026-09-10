@@ -121,8 +121,27 @@ enum class ModDefect(val label: String) {
     /** bundle 目录名残缺（拷贝路径编码被截断）—— 路径对不上，装入不会生效 */
     TRUNCATED("文件名损坏：拷贝时被截断，请重新拷贝"),
 
-    /** 目标 bundle 不在当前画质的 catalog 里 —— 游戏更新后过期，或 HD/SD 错配 */
-    STALE("游戏已更新，此 mod 已过期，装入可能导致特定界面崩溃"),
+    /**
+     * 目标 bundle 的 **hex 目录名**压根不在当前画质的 catalog 里 —— 资源被下架/移除，
+     * 或这一代 catalog 里就没有它。这类无从更新（连目标都没了），只能删源文件。
+     *
+     * 注意与另两种「hash 对不上」区分：
+     *  · hex 名还在、只是内层 hash 目录名落后于当前版本 → **不是异常**，进「待更新」
+     *    区，改名即治愈（见 [ModInfo.outdatedCurrentHash]）；
+     *  · hash 目录名对得上**另一档**画质 → 那是 [QUALITY_MISMATCH]，不是这里。
+     */
+    STALE("该资源已从当前游戏移除，无法更新或装入"),
+
+    /**
+     * 产物的内层 hash 目录名与**另一档**画质（HD ↔ SD）的 catalog 对得上 —— 它是按
+     * 另一档转换的，被装进了当前档。
+     *
+     * 必须与「待更新」分开：实测同代 HD/SD 两档 catalog 有 1412 个 hex 同名不同哈希
+     * （尺寸中位缩放 0.616），只看当前档的「hash 不符」根本分不出是版本轮换还是画质错配。
+     * 若按待更新去改名，等于把另一档画质的产物（贴图尺寸都不对）塞进当前档的哈希位，
+     * 游戏照读不误 —— 静默装错画质，比装不上更糟。
+     */
+    QUALITY_MISMATCH("画质不匹配"),
 
     /** 产物 __data 文件头对不上（不是 UnityFS / 声明的总长度与实际不符）—— 半截文件 */
     CORRUPT("文件损坏（截断或不完整），装入会导致游戏崩溃"),
@@ -200,7 +219,16 @@ data class ModInfo(
     /** 仅 CONVERTED_BUNDLE：__data 的 document uri（字符串形态），文件头校验开流用 */
     val convertedDataUri: String? = null,
     /** 扫描期检查出的异常原因，null = 检查全过。与 installState 一样每次重算、不进缓存。 */
-    val defect: ModDefect? = null
+    val defect: ModDefect? = null,
+    /**
+     * 仅 CONVERTED_BUNDLE：内层 hash 目录名落后于当前 catalog 时的**当前官方哈希**。
+     * 非空 = 「待更新」，不是异常 —— 游戏更新只轮换了内容哈希，bundle 的 hex 名与内容
+     * 都没变，把这个 hash 目录原地改名即可救活，零下载。
+     *
+     * 与 [defect] 一样每次重算、不进缓存。取不到可信 catalog 时（离线/降级表）一律为
+     * null：降级表的哈希来自旧版 catalog，拿它当改名目标可能把好 mod 改坏。
+     */
+    val outdatedCurrentHash: String? = null
 )
 
 data class ModCacheInfo(
