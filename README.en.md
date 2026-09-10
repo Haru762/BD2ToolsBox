@@ -32,7 +32,7 @@
 ### Installation
 
 1.  Download the latest `.apk` from the [Releases page](https://github.com/Haru762/BD2ToolsBox/releases). On emulators, force the x86_64 ABI or the app will crash under ARM translation:
-    `adb install --abi x86_64 BD2_ToolsBox_debug.apk`
+    `adb install --abi x86_64 BD2ToolsBox-0.2.2-android-universal.apk`
 2.  Start Shizuku and follow the onboarding to grant access.
 3.  Tap **"Add mod folder"** and pick the directory where you keep your mods.
 
