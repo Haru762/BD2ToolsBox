@@ -32,7 +32,7 @@
 ### 安装
 
 1.  从 [Releases](https://github.com/Haru762/BD2ToolsBox/releases) 下载最新 APK 安装。模拟器上务必强制 x86_64，否则会走 ARM 转译闪退：
-    `adb install --abi x86_64 BD2ToolsBox-0.2.2-android-universal.apk`
+    模拟器装 `BD2ToolsBox-<版本>-android-x86_64.apk`（手机装 arm64-v8a 版；universal 通用包在模拟器上仍需 `--abi x86_64`）
 2.  启动 Shizuku，按首次引导完成授权。
 3.  点「**添加 mod 文件夹**」，选到你放 mod 的目录。
 

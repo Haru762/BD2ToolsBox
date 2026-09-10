@@ -33,6 +33,18 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // v0.2.2 起发分架构 APK：手机装 arm64-v8a、模拟器装 x86_64，
+        // 各自只含对应架构的 Chaquopy 原生库（体积约减半），模拟器也不会
+        // 再被 PackageManager 挑成 arm64 走 libhoudini 转译。通用包继续出。
+        splits {
+            abi {
+                isEnable = true
+                reset()
+                include("arm64-v8a", "x86_64")
+                isUniversalApk = true
+            }
+        }
         
         ndk {
             abiFilters.addAll(listOf("x86_64", "arm64-v8a"))
