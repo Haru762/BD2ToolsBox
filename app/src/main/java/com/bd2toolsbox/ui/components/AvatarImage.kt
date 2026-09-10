@@ -32,15 +32,21 @@ import kotlinx.coroutines.withContext
 /**
  * 角色头像（列表里那个方块）。
  *
+ * 图来自 `ui/illust/illust_inven_char/` 的立绘半身像 —— 早先这里是 Q 版小人图标
+ * （128 px 的一张小脸），换成立绘是因为角色列表里要答的是「这个人是谁」。
+ * 立绘的覆盖也更全：随包数据里 190 套皮肤一套不落。
+ *
  * 三种状态刻意分开呈现，否则用户分不清「没图」和「网慢」：
  *   有图        → 画图
  *   还在取      → 灰人形图标
  *   确定没有图  → 角色名首字母
  *
  * 「确定没有」是真实存在的情况：那 12 个 file_id 为 `npc*` 的剧情 NPC
- * （Ailee、Guild Girl、Darian Silverstein 等）在角色图鉴数据里没有条目，
- * 图源仓库也没有 `icon_npc` 目录 —— 客观上取不到，不是加载失败。
- * 下载失败（没网、被墙）也归到这一类，同样是「最终没有图」。
+ * （Ailee、Guild Girl、Darian Silverstein 等）在随包的角色附加信息里没有条目，
+ * 也就没有可拼的图片文件名 —— 图源仓库里其实有 `illust_npc*` 那套，但「NPC 名 ->
+ * npc 编号」的对照表不在随包数据里，取不到就是取不到，不是加载失败。
+ * 下载失败（没网、被墙）也归到这一类，同样是「最终没有图」；整趟都失败时
+ * 列表上会有一句「请检查网络」（见 CharacterScreen）。
  */
 @Composable
 fun CharacterAvatar(
@@ -55,15 +61,15 @@ fun CharacterAvatar(
     // 初值走 peek 那条不建表、不解码的快路：附加数据表已就绪且图已解码时，
     // 首帧就能直接画出来，来回滚动不会每次先闪一下占位图。
     val initial = remember(characterName) {
-        repo.peekHead(characterName)?.let { (key, _) -> repo.peek(key) }
+        repo.peekAvatar(characterName)?.let { (key, _) -> repo.peek(key) }
     }
     var image by remember(characterName) { mutableStateOf(initial) }
     var settled by remember(characterName) { mutableStateOf(initial != null) }
 
     LaunchedEffect(characterName) {
         if (image == null) {
-            // headFor 可能要建表（读 52 KB assets json），所以放 IO 上
-            val resolved = withContext(Dispatchers.IO) { repo.headFor(characterName) }
+            // avatarFor 可能要建表（读 52 KB assets json），所以放 IO 上
+            val resolved = withContext(Dispatchers.IO) { repo.avatarFor(characterName) }
             image = resolved?.let { repo.load(it.first, it.second) }
             settled = true
         }

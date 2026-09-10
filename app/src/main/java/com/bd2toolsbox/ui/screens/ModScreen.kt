@@ -44,17 +44,13 @@ import com.bd2toolsbox.data.model.ModInfo
 import com.bd2toolsbox.data.model.ModInstallState
 import com.bd2toolsbox.data.model.ModKind
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
-import android.provider.DocumentsContract
 import com.bd2toolsbox.data.model.ModCategory
 import com.bd2toolsbox.data.model.categoryOf
 import com.bd2toolsbox.data.model.isUnknownCharacter
 import com.bd2toolsbox.data.model.ResolutionState
 import com.bd2toolsbox.ui.viewmodel.MainViewModel
 import com.valentinilk.shimmer.shimmer
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -79,9 +75,6 @@ fun ModScreen(
     onUnpackRequest: () -> Unit
 ) {
     val modSourceDirectoryUri by viewModel.modSourceDirectoryUri.collectAsState()
-    // 删除守卫要用：异常条目的 uri 若正好是某个源文件夹的根 document，删它等于删整
-    // 个源目录（见下方 pendingDeleteMod 分支）。
-    val modSourceDirs by viewModel.modSourceDirs.collectAsState()
     // 先按 tab 的类型收窄，再做原有的分组。后续所有计数（全选三态、筛选 chip）都基于
     // 这份收窄后的列表，否则会出现「本页看不到的条目也被算进全选」这类错位。
     val modsList = viewModel.filteredModsList.collectAsState().value
@@ -158,11 +151,15 @@ fun ModScreen(
     // 待删源文件的异常条目；非空即弹确认框。删除动的是用户文件、不可恢复，
     // 任何路径都不允许点了就删（确认框见 ModScreen 末尾）。
     var pendingDeleteMod by remember { mutableStateOf<ModInfo?>(null) }
+    // 「全部删除」的确认框开关（异常区头按钮）。同样必须先确认再动文件。
+    var showDeleteAllAbnormal by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val selectedMods by viewModel.selectedMods.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     // 待更新区正在改名：按钮置灰，防重复点（改名本身很快，不需要进度条）
     val isUpdatingOutdated by viewModel.isUpdatingOutdated.collectAsState()
+    // 异常区正在整批删除：区头「全部删除」置灰，防重入
+    val isDeletingAbnormal by viewModel.isDeletingAbnormal.collectAsState()
     val showShimmer by viewModel.showShimmer.collectAsState()
     val context = LocalContext.current
     val isSearchActive by viewModel.isSearchActive.collectAsState()
@@ -415,7 +412,22 @@ fun ModScreen(
                                             count = abnormalMods.size,
                                             color = MaterialTheme.colorScheme.error,
                                             expanded = abnormalExpanded,
-                                            onClick = { abnormalExpanded = !abnormalExpanded }
+                                            onClick = { abnormalExpanded = !abnormalExpanded },
+                                            trailing = {
+                                                // 异常条目本就没法装进游戏（下架/损坏/画质错配），
+                                                // 攒着只是占地方 —— 留一个整批删源文件的入口，
+                                                // 省得几十条一个个点。删除范围=当前区里看得见的
+                                                // 这些（区头计数就是这个数）。
+                                                TextButton(
+                                                    onClick = { showDeleteAllAbnormal = true },
+                                                    enabled = !isDeletingAbnormal
+                                                ) {
+                                                    Text(
+                                                        if (isDeletingAbnormal) "删除中…" else "全部删除",
+                                                        style = MaterialTheme.typography.labelMedium
+                                                    )
+                                                }
+                                            }
                                         )
                                     }
                                     if (abnormalExpanded) {
@@ -526,7 +538,7 @@ fun ModScreen(
                                                 modInfo = modInfo,
                                                 isSelected = modInfo.uri in selectedMods,
                                                 onToggleSelection = { viewModel.toggleModSelection(modInfo.uri) },
-                                                onLongPress = { viewModel.prepareAndShowPreview(context, modInfo) },
+                                                onPreview = { viewModel.prepareAndShowPreview(context, modInfo) },
                                                 // 只有确实生效中的才给移除入口 —— 未装的没什么可移除，
                                                 // 状态未知时贸然还原反而可能盖掉别的东西
                                                 onRemove = if (modInfo.installState == ModInstallState.INSTALLED) {
@@ -566,18 +578,13 @@ fun ModScreen(
     // 删除不可恢复，文案写清后果与边界（只删这一条），不留任何免确认的路径。
     pendingDeleteMod?.let { mod ->
         // 条目恰好是某个源文件夹根本身的场景（把「根级就是一堆 skel/png」的目录选成
-        // 了源文件夹）：fromSingleUri 删的是整棵树，确认框里「只删这一个」就成了谎言。
+        // 了源文件夹）：删它删的是整棵树，确认框里「只删这一个」就成了谎言。
         // 这种情况不提供删除，指到文件管理器去处理。
-        val isSourceRoot = modSourceDirs.any { tree ->
-            runCatching {
-                DocumentsContract.buildDocumentUriUsingTree(
-                    tree, DocumentsContract.getTreeDocumentId(tree)
-                ) == mod.uri
-            }.getOrDefault(false)
-        }
+        val isSourceRoot = viewModel.isModSourceRoot(mod.uri)
         if (isSourceRoot) {
             AlertDialog(
                 onDismissRequest = { pendingDeleteMod = null },
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 icon = {
                     Icon(
                         Icons.Default.FolderOff,
@@ -603,6 +610,9 @@ fun ModScreen(
         }
         AlertDialog(
             onDismissRequest = { pendingDeleteMod = null },
+            // M3 1.2.1 的 AlertDialog 默认底色取自 colorScheme.surface，壁纸模式下
+            // 那是透明的（见 Theme 的 transparentBackground），这里显式给不透明的
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             icon = {
                 Icon(
                     Icons.Default.DeleteForever,
@@ -621,26 +631,13 @@ fun ModScreen(
             confirmButton = {
                 Button(
                     onClick = {
+                        val target = mod
                         pendingDeleteMod = null
-                        scope.launch {
-                            // SAF 删除放 IO 线程：异常条目可能是一整个目录，provider 会递归
-                            // 删除，放主线程点确认那一下会卡住。删完让 viewModel 重扫一圈，
-                            // 条目消失与计数刷新都交给扫描，不在本地手改列表。
-                            val ok = withContext(Dispatchers.IO) {
-                                try {
-                                    // PC 目录 / zip / 已转换 bundle 目录记录的
-                                    // 都是 document uri，fromSingleUri 通吃
-                                    DocumentFile.fromSingleUri(context, mod.uri)?.delete() == true
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    false
-                                }
-                            }
-                            if (ok) {
-                                viewModel.rescanAllModSources()
-                            } else {
-                                snackbarHostState.showSnackbar("删除失败，可能没有该目录的写入权限")
-                            }
+                        // 删除交给 ViewModel：它先把条目摘掉、账本同步销账（乐观更新，
+                        // SAF 删目录要几秒，不能让界面看着像没反应），真删在后台跑，
+                        // 失败会把条目放回来并回报 —— 成功/失败都说一声。
+                        viewModel.deleteModFolder(context, target) { _, msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -652,6 +649,57 @@ fun ModScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteMod = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // —— 一键删除异常 mod 确认 ——
+    // 与单条删除同一条底线：动用户文件、不可恢复，必须先确认。这里删的是一批，
+    // 文案要把「删几个、删的是什么、边界在哪」写清楚。
+    if (showDeleteAllAbnormal) {
+        val targets = abnormalMods
+        // 搜索/状态筛选会把上面的区头计数收窄，此时「全部删除」删的就是这些看得见的
+        // —— 与计数一致；但要明说，免得用户以为删的是「所有异常」。
+        val narrowed = searchQuery.isNotEmpty() || stateFilter != null
+        AlertDialog(
+            onDismissRequest = { showDeleteAllAbnormal = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Icon(
+                    Icons.Default.DeleteSweep,
+                    contentDescription = "全部删除",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("删除 ${targets.size} 个异常 mod？") },
+            text = {
+                Text(
+                    buildString {
+                        append("将永久删除这 ${targets.size} 个条目的源文件，此操作不可恢复。")
+                        if (narrowed) append("当前列表有搜索或筛选条件，只删看得见的这些。")
+                        append("它们都装不进游戏（资源已下架、文件损坏等），删掉可让列表清爽；")
+                        append("同一目录里的其他 mod 不受影响。")
+                    },
+                    textAlign = TextAlign.Center
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteAllAbnormal = false
+                        viewModel.deleteAbnormalMods(context, targets)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("全部删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllAbnormal = false }) {
                     Text("取消")
                 }
             }
@@ -752,13 +800,6 @@ fun NoFilterResultsScreen() {
         Icon(Icons.Default.FilterAltOff, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
         Spacer(modifier = Modifier.height(24.dp))
         Text("该状态下没有 mod", style = MaterialTheme.typography.headlineSmall)
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "点上方的「全部」可以取消筛选。",
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -1049,7 +1090,7 @@ fun ModCard(
     modInfo: ModInfo,
     isSelected: Boolean,
     onToggleSelection: () -> Unit,
-    onLongPress: () -> Unit,
+    onPreview: () -> Unit,
     onRemove: (() -> Unit)? = null,
     onRename: (() -> Unit)? = null,
     onHide: (() -> Unit)? = null,
@@ -1126,8 +1167,12 @@ fun ModCard(
                 }
                 Spacer(Modifier.width(4.dp))
             }
+            // 类别徽章也能点：已转换产物点它直接进预览 —— 这枚 chip 长得就像个入口，
+            // 点下去没反应反而像坏了。PC 源没有可直接预览的产物，点了不动作（仍吞掉这次
+            // 点击，不会连带勾选整卡）。chip 自己是 clickable，点击被它消费掉，
+            // 与同一行里的勾选框/移除键一样不会穿透到整卡的 detectTapGestures。
             AssistChip(
-                onClick = {},
+                onClick = { if (modInfo.kind == ModKind.CONVERTED_BUNDLE) onPreview() },
                 label = {
                     Text(
                         text = if (modInfo.kind == ModKind.CONVERTED_BUNDLE) "已转换"
@@ -1149,7 +1194,7 @@ fun ModCard(
         ModCardMenu(
             expanded = menuOpen,
             onDismiss = { menuOpen = false },
-            onPreview = onLongPress,
+            onPreview = onPreview,
             onRename = onRename,
             onRemove = onRemove,
             onHide = onHide,

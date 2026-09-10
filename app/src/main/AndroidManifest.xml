@@ -13,6 +13,9 @@
          权限 —— 拒绝只会让进度看不见，前台服务的保活效果不受影响。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- 应用内自更新：拉起系统安装器装下载好的 APK（Android 8+ 还需用户在
+         系统设置里授予「安装未知应用」） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -53,6 +56,18 @@
             android:name=".service.InstallService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 更新包安装：DownloadManager 下的 APK 在应用专属目录里，交给系统
+             安装器读需要走 FileProvider 授权 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

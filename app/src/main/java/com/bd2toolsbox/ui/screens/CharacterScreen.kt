@@ -12,6 +12,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -75,7 +77,9 @@ enum class CharacterFilter(val label: String, val ready: Boolean) {
 fun CharacterScreen(
     entries: List<CharacterEntry>,
     filter: CharacterFilter,
-    onPickCharacter: (String) -> Unit
+    onPickCharacter: (String) -> Unit,
+    avatarSyncFailed: Boolean = false,
+    onRetryAvatarSync: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val meta = remember(context) { CharacterMetaRepository.get(context) }
@@ -122,44 +126,90 @@ fun CharacterScreen(
             // 数据层已按「可玩在前、NPC 在后」排好序，这里只按 isNpc 切成两段渲染
             val playable = remember(shown) { shown.filterNot { it.isNpc } }
             val npc = remember(shown) { shown.filter { it.isNpc } }
-            Row(Modifier.fillMaxSize()) {
-                LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
-                    items(playable, key = { it.name }) { entry ->
-                        CharacterRow(entry = entry, onClick = { onPickCharacter(entry.name) })
-                        HorizontalDivider()
-                    }
-                    // 分区头独立占一格（key 固定，与角色名不会撞）；有 NPC 才插，免得空头占高度
-                    if (npc.isNotEmpty()) {
-                        item(key = "npc-header") {
-                            Text(
-                                "NPC（非可玩角色）",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
-                            )
-                        }
-                        items(npc, key = { it.name }) { entry ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Row(Modifier.fillMaxSize()) {
+                    LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
+                        items(playable, key = { it.name }) { entry ->
                             CharacterRow(entry = entry, onClick = { onPickCharacter(entry.name) })
                             HorizontalDivider()
                         }
-                    }
-                }
-                // 95 个角色靠手划太慢，右侧给一条首字母索引
-                AlphabetIndex(
-                    letters = remember(shown) { shown.map { initialOf(it.name) }.distinct() },
-                    onPick = { letter ->
-                        var target = playable.indexOfFirst { initialOf(it.name) == letter }
-                        // 该首字母只在 NPC 分区出现时，去 npc 段里找；渲染序列里 npc 段
-                        // 前有 header 占了 1 格，下标要加 playable.size + 1 才指得准
-                        if (target < 0) {
-                            val i = npc.indexOfFirst { initialOf(it.name) == letter }
-                            if (i >= 0) target = playable.size + 1 + i
+                        // 分区头独立占一格（key 固定，与角色名不会撞）；有 NPC 才插，免得空头占高度
+                        if (npc.isNotEmpty()) {
+                            item(key = "npc-header") {
+                                Text(
+                                    "NPC（非可玩角色）",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+                                )
+                            }
+                            items(npc, key = { it.name }) { entry ->
+                                CharacterRow(entry = entry, onClick = { onPickCharacter(entry.name) })
+                                HorizontalDivider()
+                            }
                         }
-                        if (target >= 0) scope.launch { listState.animateScrollToItem(target) }
                     }
-                )
+                    // 95 个角色靠手划太慢，右侧给一条首字母索引
+                    AlphabetIndex(
+                        letters = remember(shown) { shown.map { initialOf(it.name) }.distinct() },
+                        onPick = { letter ->
+                            var target = playable.indexOfFirst { initialOf(it.name) == letter }
+                            // 该首字母只在 NPC 分区出现时，去 npc 段里找；渲染序列里 npc 段
+                            // 前有 header 占了 1 格，下标要加 playable.size + 1 才指得准
+                            if (target < 0) {
+                                val i = npc.indexOfFirst { initialOf(it.name) == letter }
+                                if (i >= 0) target = playable.size + 1 + i
+                            }
+                            if (target >= 0) scope.launch { listState.animateScrollToItem(target) }
+                        }
+                    )
+                }
+
+                // 整趟预取都没拿到图时才出现，压在列表正中：一片灰人形图标总得有个说法。
+                // 它只画不拦：底下的列表照常滚、照常点，已缓存的头像也照常显示在四周。
+                if (avatarSyncFailed) {
+                    AvatarSyncHint(onRetry = onRetryAvatarSync)
+                }
             }
         }
+    }
+}
+
+/**
+ * 「请检查网络」提示。
+ *
+ * 头像图源在 GitHub（raw.githubusercontent），国内直连常常整趟都拿不到 ——
+ * 那时列表里是一整屏灰人形，看起来跟功能坏了一模一样。这里说清原因，
+ * 并留一条重试的路：用户把网络弄好之后不该只能靠重启应用。
+ */
+@Composable
+private fun AvatarSyncHint(onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .shadow(4.dp, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onRetry)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "请检查网络",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "头像图源在 GitHub，取不到时显示占位图标",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "点按重试",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
 

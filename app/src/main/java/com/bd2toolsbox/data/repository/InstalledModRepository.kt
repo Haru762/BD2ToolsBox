@@ -30,7 +30,15 @@ class InstalledModRepository(private val context: Context) {
 
     private fun file(): File = File(context.filesDir, FILENAME)
 
+    /**
+     * 读改写全部在这把锁里。
+     *
+     * 账本是「读全表 → 改一条 → 写回全表」：并发的两次写入各自读了旧表、写回时后写的那份
+     * 会把先写的覆盖掉（丢记录）。这些方法都标了 @Synchronized（同一把实例锁，重入安全，
+     * put 里调 load 不会自锁），单次读改写见 [removeAndReturn]。
+     */
     /** modUri -> 记录 */
+    @Synchronized
     fun load(): Map<String, InstalledModRecord> {
         val f = file()
         if (!f.exists()) return emptyMap()
@@ -54,6 +62,7 @@ class InstalledModRepository(private val context: Context) {
      * familyKey」，所以没法安全迁移。账本只是记账，清空不动游戏里的实际文件 ——
      * 重新装一次就能重建准确记录，比带着一份错账继续跑安全。
      */
+    @Synchronized
     fun needsReset(): Boolean {
         val f = file()
         if (!f.exists()) return false
@@ -74,24 +83,42 @@ class InstalledModRepository(private val context: Context) {
     }
 
     /** 记下一次成功装入。同一个 mod 再装即覆盖（更新画质、时间等）。 */
+    @Synchronized
     fun put(record: InstalledModRecord) {
         save(load().toMutableMap().apply { put(record.modUri, record) })
     }
 
+    @Synchronized
     fun putAll(records: List<InstalledModRecord>) {
         if (records.isEmpty()) return
         save(load().toMutableMap().apply { records.forEach { put(it.modUri, it) } })
     }
 
     /** 某个 bundle 上当前装着哪些 mod。装入时要把它们一起重新打包，否则会丢。 */
+    @Synchronized
     fun listByTargetHash(targetHash: String): List<InstalledModRecord> =
         load().values.filter { it.snapshotTargetHash == targetHash }
 
     /** 移除一个 mod 的记录。调用方需自行判断该 bundle 是否还有剩余（见 [listByTargetHash]）。 */
+    @Synchronized
     fun remove(modUri: String) {
         val current = load()
         if (!current.containsKey(modUri)) return
         save(current.toMutableMap().apply { remove(modUri) })
+    }
+
+    /**
+     * 读出并删掉一条记录，返回被删掉的那条（本来就没有则 null）。
+     *
+     * 「删源文件」那条路要先拿到记录（删除失败要原样放回）再销账：分成 load() + remove()
+     * 两次调用的话，并发的另一次写入会在两次之间插进来，把记录又写回去。这里一次读完写完。
+     */
+    @Synchronized
+    fun removeAndReturn(modUri: String): InstalledModRecord? {
+        val current = load()
+        val record = current[modUri] ?: return null
+        save(current.toMutableMap().apply { remove(modUri) })
+        return record
     }
 
     /**
@@ -101,6 +128,7 @@ class InstalledModRepository(private val context: Context) {
      * 注意 targetHash 会随游戏更新变化，因此这里只用于「刚还原了这个 bundle」这种
      * 当下就能对上的场合，不作为长期标识。
      */
+    @Synchronized
     fun removeByTargetHash(targetHash: String) {
         val current = load()
         val keys = current.filterValues { it.snapshotTargetHash == targetHash }.keys
@@ -108,6 +136,7 @@ class InstalledModRepository(private val context: Context) {
         save(current.toMutableMap().apply { keys.forEach { remove(it) } })
     }
 
+    @Synchronized
     fun clear() {
         try {
             file().delete()

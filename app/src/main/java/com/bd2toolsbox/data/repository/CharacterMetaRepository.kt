@@ -162,6 +162,20 @@ class CharacterMetaRepository private constructor(private val appContext: Contex
     /** 表已就绪时同步查，未就绪返回 null 且不触发加载 —— 给 Compose 首帧用。 */
     fun peekCharacter(name: String): CharacterMeta? = byCharacter?.get(name.trim())
 
+    /**
+     * 每个角色的代表皮肤（初始形象），供头像预取遍历。
+     *
+     * 顺序按角色名排（而不是哈希表那套随机序）：预取的先后顺序每次启动都一样，
+     * 半途断网时补齐的是同样那批，不至于这次有这张下次没有。
+     */
+    fun allRepresentatives(): List<Costume> {
+        ensureLoaded()
+        return byCharacter?.values
+            ?.mapNotNull { it.representative }
+            ?.sortedBy { it.character.lowercase() }
+            ?: emptyList()
+    }
+
     fun forCostumeId(costumeId: String): Costume? {
         ensureLoaded()
         return byCostumeId?.get(costumeId.trim())

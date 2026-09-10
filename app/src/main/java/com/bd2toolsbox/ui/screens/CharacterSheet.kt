@@ -76,7 +76,12 @@ fun CharacterSheet(
     onRemove: (ModInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // 与设置面板同一个坑：M3 1.2.1 的 BottomSheetDefaults.ContainerColor 取自
+    // colorScheme.surface，壁纸模式下那是透明的，面板会连着底下的列表一起透出来。
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
         val context = LocalContext.current
         val meta = remember(context) { CharacterMetaRepository.get(context) }
         val nameCn = remember(characterName) {
@@ -178,7 +183,7 @@ fun CharacterSheet(
             // slot table 的 group 无法闭合，实测直接崩。用 if/else 表达。
             if (entries.isEmpty()) {
                 Text(
-                    "这个角色还没有 mod。\n把 mod 放进已选的文件夹后下拉刷新即可。",
+                    "这个角色还没有 mod。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,

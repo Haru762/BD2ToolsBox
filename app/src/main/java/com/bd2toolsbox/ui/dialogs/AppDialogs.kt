@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.data.model.*
+import com.bd2toolsbox.data.repository.UpdateRepository
 import com.bd2toolsbox.ui.components.InstallJobRow
 import com.bd2toolsbox.ui.components.SelectionRow
 import com.bd2toolsbox.service.PrepackService
@@ -59,6 +60,7 @@ fun PrepackPlanDialog(
     val nothingToDo = plan.todo == 0
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = {
             Icon(
                 if (plan.enoughSpace || nothingToDo) Icons.Default.Unarchive else Icons.Default.Warning,
@@ -107,11 +109,9 @@ fun PrepackPlanDialog(
                     Spacer(Modifier.height(12.dp))
                     Text(
                         if (plan.enoughSpace) {
-                            "解包比较吃 CPU，会逐个进行。任务在后台运行并常驻通知，" +
-                                "期间可以切去做别的甚至退出界面。已完成的部分会保留，中断后再点会接着做。"
+                            "已完成的部分会保留，中断后再点会接着做。"
                         } else {
-                            "预计占用已接近或超过可用空间。建议先清理存储，" +
-                                "或者不做批量、需要时再单个预览。"
+                            "预计占用已接近或超过可用空间，建议先清理存储。"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -160,6 +160,7 @@ fun PrepackProgressDialog(
         // 点框外与按返回键都走「后台运行」，而不是什么都不做。
         // 进度在通知栏和设置里都看得到，关掉不会让人失去线索。
         onDismissRequest = onHide,
+        containerColor = dialogContainerColor(),
         title = { Text("正在预解包 $done / $total") },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -186,14 +187,6 @@ fun PrepackProgressDialog(
                             .height(2.dp)
                     )
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "点「后台运行」可以关掉这个框去做别的，甚至退出界面 —— 任务在通知栏继续，" +
-                        "进度也能在设置里看到，已完成的不会丢。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
             }
         },
         // 「后台运行」放 confirm 位：它才是这个框的常规出路，
@@ -220,6 +213,7 @@ fun UninstallAllDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = {
             Icon(
                 if (plan.error != null) Icons.Default.Error else Icons.Default.RestartAlt,
@@ -315,9 +309,7 @@ fun UninstallAllDialog(
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "这里统计的是游戏目录里所有与官方原版不一致的资源，" +
-                            "包括你用其他工具或手动拷进去的 mod。\n\n" +
-                            "还原完成后需要再点一次「装入游戏」，并重启游戏才生效。",
+                        "还原完成后需要再点一次「装入游戏」，并重启游戏才生效。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
@@ -354,13 +346,13 @@ fun BackupManageDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = { Icon(Icons.Default.Save, contentDescription = null) },
         title = { Text("原版备份") },
         text = {
             Column {
                 Text(
-                    "装入 mod 前先把该资源的官方原版存一份，卸载时就能直接拷回，" +
-                        "不用重新下载。装哪个备份哪个，不会预先占用空间。",
+                    "卸载时可直接拷回原版，不会预先占用空间。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -403,6 +395,7 @@ fun PreviewProgressDialog(state: PreviewState, onDismiss: () -> Unit) {
         is PreviewState.Idle -> return
         is PreviewState.Preparing -> AlertDialog(
             onDismissRequest = { },
+            containerColor = dialogContainerColor(),
             title = { Text("正在准备预览") },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -413,18 +406,13 @@ fun PreviewProgressDialog(state: PreviewState, onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "已转换产物需要先解包，请稍候…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             },
             confirmButton = {}
         )
         is PreviewState.Failed -> AlertDialog(
             onDismissRequest = onDismiss,
+            containerColor = dialogContainerColor(),
             icon = {
                 Icon(Icons.Default.Error, contentDescription = null,
                     tint = MaterialTheme.colorScheme.error)
@@ -435,6 +423,18 @@ fun PreviewProgressDialog(state: PreviewState, onDismiss: () -> Unit) {
         )
     }
 }
+
+/**
+ * 弹框统一底色（本文件里每个 AlertDialog 都要显式传）。
+ *
+ * 不能吃默认值：M3 1.2.1 的 AlertDialogDefaults.containerColor 走
+ * DialogTokens.ContainerColor = ColorSchemeKeyTokens.Surface，也就是 colorScheme.surface，
+ * 而壁纸模式（Theme 的 transparentBackground）正把 surface 抽成了透明 —— 不指定的话
+ * 弹框会连着壁纸和底下的列表一起透出来，两层字叠在一起。给一个不透明的容器色即可，
+ * 与开不开壁纸无关（M3 新规范里对话框本来就是 surfaceContainerHigh）。
+ */
+@Composable
+private fun dialogContainerColor() = MaterialTheme.colorScheme.surfaceContainerHigh
 
 private fun formatBytes(bytes: Long): String = when {
     bytes >= 1024L * 1024 * 1024 -> String.format("%.2f GB", bytes / 1024.0 / 1024 / 1024)
@@ -460,6 +460,7 @@ fun UnpackDialog(
 
     AlertDialog(
         onDismissRequest = { if (unpackState !is UnpackState.Unpacking) resetAndDismiss(onResetState, onDismiss) },
+        containerColor = dialogContainerColor(),
         icon = { Icon(Icons.Default.Unarchive, contentDescription = "解包工具") },
         title = { Text("解包工具") },
         text = {
@@ -856,6 +857,7 @@ fun ParallelInstallDialog(
 
     AlertDialog(
         onDismissRequest = { if (finalResult != null) onDismiss() },
+        containerColor = dialogContainerColor(),
         modifier = Modifier
             // 处理中固定 80% 屏高：任务行是一条条冒出来的，高度不固定的话
             // 对话框会随之上下跳。出结果后只剩几行字，再撑到 80% 就是一大片空白，
@@ -1035,6 +1037,7 @@ fun RenameModDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = { Icon(Icons.Default.Edit, contentDescription = "重命名") },
         title = { Text("重命名") },
         text = {
@@ -1086,6 +1089,7 @@ fun DeleteFolderConfirmationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = {
             Icon(
                 Icons.Default.DeleteForever,
@@ -1133,6 +1137,7 @@ fun RemoveModConfirmationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = { Icon(Icons.Default.RemoveCircleOutline, contentDescription = "移除") },
         title = { Text("移除这个 mod？") },
         text = {
@@ -1170,6 +1175,7 @@ fun UninstallConfirmationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = { Icon(Icons.Default.Warning, contentDescription = "警告") },
         title = { Text("确认还原") },
         text = {
@@ -1210,6 +1216,7 @@ fun UninstallDialog(
                 onDismiss()
             }
         },
+        containerColor = dialogContainerColor(),
         icon = {
             when (state) {
                 is UninstallState.Downloading -> Icon(Icons.Default.Download, contentDescription = "下载中")
@@ -1285,6 +1292,7 @@ fun MergeSpineDialog(state: MergeState, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = { if (state !is MergeState.Merging) onDismiss() },
+        containerColor = dialogContainerColor(),
         icon = {
             when (state) {
                 is MergeState.Merging -> Icon(Icons.Default.Merge, contentDescription = "合并中")
@@ -1351,6 +1359,7 @@ fun MergeSpineDialog(state: MergeState, onDismiss: () -> Unit) {
 fun VersionMismatchWarningDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         icon = {
             Icon(Icons.Default.Warning, contentDescription = "警告",
                  tint = MaterialTheme.colorScheme.error)
@@ -1387,6 +1396,7 @@ fun BundleScanDialog(
                 onDismiss()
             }
         },
+        containerColor = dialogContainerColor(),
         icon = {
             when (state) {
                 is BundleScanState.Confirmation -> Icon(Icons.Default.FindInPage, contentDescription = "待扫描")
@@ -1509,6 +1519,7 @@ fun LedgerResetDialog(notice: String?, onDismiss: () -> Unit) {
     if (notice == null) return
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         title = { Text("装入记录已重置") },
         text = { Text(notice, style = MaterialTheme.typography.bodyMedium) },
         confirmButton = { Button(onClick = onDismiss) { Text("知道了") } }
@@ -1530,6 +1541,7 @@ fun ConvertedOverwriteDialog(
     if (plan == null) return
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         title = { Text("会覆盖同一资源包里的 ${plan.total} 个 mod") },
         text = {
             Column {
@@ -1599,6 +1611,7 @@ fun ModSourceDirsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
         title = { Text("mod 文件夹") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -1694,3 +1707,114 @@ private fun dirLabel(uri: Uri): String {
     return listOf(root, rel).filter { it.isNotEmpty() }.joinToString("/")
         .ifEmpty { uri.toString() }
 }
+
+/**
+ * 「发现新版本」。
+ *
+ * 只在用户手动点过「检查更新」、且 GitHub 上的 tag 确实比本机新时才出现（判断在
+ * [UpdateRepository] 里做）。这里不做应用内下载安装 —— 正文给一段更新说明，
+ * 点「下载并安装」在应用内下载（架构按本机自动选），完成后另弹安装确认框。
+ *
+ * 正文是 release 的 markdown 原文，这里只做轻量去语法（见 [releaseNotesText]）：
+ * 弹窗里没法渲染 markdown，也没有可点的链接（复制地址比点一个打不开的链接有用）。
+ */
+@Composable
+fun UpdateDialog(
+    release: UpdateRepository.Release?,
+    onDownload: (UpdateRepository.Release) -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (release == null) return
+
+    val notes = remember(release.notes) { releaseNotesText(release.notes) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
+        icon = {
+            Icon(
+                Icons.Default.SystemUpdate,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = { Text("发现新版本 ${release.version}") },
+        text = {
+            // 更新说明长短不可控（从一句话到整篇公告），限高 + 滚动，
+            // 否则一条长 release 能把按钮顶出屏幕。
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    notes.ifBlank { "这个版本没有写更新说明，可以去 release 页看看。" },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { release?.let(onDownload) }) { Text("下载并安装") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+/**
+ * 更新包下载完成后的「安装」确认框。安装动作由 Activity 层执行（要拉系统
+ * 安装器与未知来源授权，都需要 Activity 上下文）。
+ */
+@Composable
+fun UpdateReadyDialog(
+    apkName: String?,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (apkName == null) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
+        icon = {
+            Icon(
+                Icons.Default.SystemUpdate,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = { Text("更新包已就绪") },
+        text = {
+            Text(apkName, style = MaterialTheme.typography.bodySmall)
+        },
+        confirmButton = { Button(onClick = onInstall) { Text("安装") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+/** markdown 行内链接：[文字](地址) → 文字（地址）。 */
+private val MD_LINK = Regex("""\[([^\[\]]*)\]\(([^()\s]*)\)""")
+
+/**
+ * release 正文的轻量去 markdown。
+ *
+ * 「轻量」是刻意的：弹窗里只要可读，不需要还原格式。标题去掉井号、列表换成中点、
+ * 行内链接展开成「文字（地址）」、去掉 `**` 与反引号。表格、图片这些一概不处理 ——
+ * 认不出的语法原样留着，至少信息不丢。
+ */
+private fun releaseNotesText(raw: String): String = raw
+    .lineSequence()
+    .joinToString("\n") { line ->
+        val linked = MD_LINK.replace(line) { m ->
+            val label = m.groupValues[1].trim()
+            val url = m.groupValues[2].trim()
+            if (label.isEmpty()) url else "$label（$url）"
+        }
+        val trimmed = linked.trimStart()
+        when {
+            trimmed.startsWith("### ") -> trimmed.removePrefix("### ")
+            trimmed.startsWith("## ") -> trimmed.removePrefix("## ")
+            trimmed.startsWith("# ") -> trimmed.removePrefix("# ")
+            trimmed.startsWith("* ") || trimmed.startsWith("- ") -> "· " + trimmed.drop(2)
+            else -> linked
+        }.replace("**", "").replace("`", "")
+    }
+    .trim()

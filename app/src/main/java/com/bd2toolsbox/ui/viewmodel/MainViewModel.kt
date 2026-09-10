@@ -26,11 +26,20 @@ import com.bd2toolsbox.data.repository.InstalledModRepository
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import com.bd2toolsbox.data.repository.SpineRuntimeRepository
+import com.bd2toolsbox.data.repository.UpdateRepository
 import com.bd2toolsbox.service.InstallService
 import com.bd2toolsbox.service.ModdingService
 import com.bd2toolsbox.service.PrepackService
 import com.bd2toolsbox.service.ShizukuManager
 import com.bd2toolsbox.ui.theme.AppTheme
+import com.google.gson.ExclusionStrategy
+import com.google.gson.FieldAttributes
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.TypeAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
+import com.google.gson.stream.JsonWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +54,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -82,6 +92,15 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         /** UnityFS bundle 文件头的魔数（"UnityFS" + 结尾 NUL，共 8 字节），产物 __data 的损坏判定用。
          *  用字节字面量而不是字符串：源码字符串里的裸 NUL 既看不见也容易被编辑工具吞掉。 */
         private val UNITYFS_MAGIC = byteArrayOf(0x55, 0x6E, 0x69, 0x74, 0x79, 0x46, 0x53, 0x00)
+
+        /** 冷启动列表快照（见 [saveModListSnapshot]）：上次扫描落定的整张列表。 */
+        private const val SNAPSHOT_FILENAME = "mod_list_snapshot.json"
+
+        /**
+         * 快照结构版本。改了 [ModInfo] 的字段含义就 +1 —— 老快照直接丢弃按「没有快照」走，
+         * 比按缺字段的半截数据渲染强（那种数据会以 NPE 的形式在很远的地方炸）。
+         */
+        private const val SNAPSHOT_VERSION = 1
     }
 
     private fun shouldIgnoreModEntry(entryName: String?): Boolean {
@@ -340,6 +359,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         cleanStalePreviewDirs(context)
         initRepositories(context)
         migrateLegacyLedgerIfNeeded()
+        // 冷启动先把上次扫描的结果填上（几毫秒的事），真正的扫描随后在后台跑完再整表替换 ——
+        // 「全部」那一页因此不用再对着空列表等整个 SAF 扫描
+        restoreModListSnapshot()
 
         startAsyncInitialization(context)
     }
@@ -569,6 +591,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             _modsList.value = emptyList()
             _selectedMods.value = emptySet()
             _stateFilter.value = null
+            // 一个目录都不剩：快照里的条目再也扫不到了，留着只会在下次冷启动显出一批
+            // 点不动的幽灵行
+            clearModListSnapshot()
         } else {
             rescanAllModSources()
         }
@@ -668,24 +693,40 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         }
     }
 
-    /** 头像缓存占用（字节数, 文件数）。 */
-    private val _avatarCacheUsage = MutableStateFlow(0L to 0)
-    val avatarCacheUsage: StateFlow<Pair<Long, Int>> = _avatarCacheUsage.asStateFlow()
+    /**
+     * 头像预取失败（网络类异常、没补齐）—— 角色列表据此在正中提示「请检查网络」。
+     *
+     * 缓存在本地的那些照常显示：图源在 GitHub，国内直连常常整趟都拿不到，
+     * 一片占位图标总得有个说法，否则用户只会以为功能坏了。
+     */
+    private val _avatarSyncFailed = MutableStateFlow(false)
+    val avatarSyncFailed: StateFlow<Boolean> = _avatarSyncFailed.asStateFlow()
 
-    fun refreshAvatarCacheUsage() {
+    private var avatarSyncWatcher: Job? = null
+
+    /**
+     * 启动后把全部角色头像补进本地缓存。**不阻塞扫描**：自己在后台协程里跑，
+     * 初始化那两步该怎么走还怎么走。
+     *
+     * 只认「走过一趟没」：重复调用（初始化收尾、用户点重试）不会叠起来跑，
+     * [AvatarRepository.syncAll] 自己也上了锁。
+     */
+    fun prefetchAvatars() {
         val ctx = appContext ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            _avatarCacheUsage.value = AvatarRepository.get(ctx).usage()
+        val repo = AvatarRepository.get(ctx)
+        if (avatarSyncWatcher == null) {
+            // 状态跟着仓库走：重试成功后提示要能自己消失
+            avatarSyncWatcher = viewModelScope.launch {
+                repo.syncState.collect {
+                    _avatarSyncFailed.value = it == AvatarRepository.SyncState.FAILED
+                }
+            }
         }
+        viewModelScope.launch(Dispatchers.IO) { repo.syncAll() }
     }
 
-    fun clearAvatarCache() {
-        val ctx = appContext ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            AvatarRepository.get(ctx).clearCache()
-            _avatarCacheUsage.value = 0L to 0
-        }
-    }
+    /** 用户点「请检查网络」那条提示时的手动重试。 */
+    fun retryAvatarSync() = prefetchAvatars()
 
     /** 旧格式账本被清空时的一次性告知；null 表示无需提示。 */
     private val _ledgerResetNotice = MutableStateFlow<String?>(null)
@@ -1037,6 +1078,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     private fun finishInitialization() {
         _isUpdatingCharacters.value = false
         if (modSourceDirs.value.isNotEmpty()) rescanAllModSources()
+        // 头像预取排在扫描后面触发，但不等它 —— 扫描（Python + 文件遍历）与下几十张
+        // 小图谁也不该等谁。此时角色表已经读完，URL 拼得出来。
+        prefetchAvatars()
     }
 
     fun dismissVersionMismatchWarning() {
@@ -1812,6 +1856,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         _modsList.value = emptyList()
         _selectedMods.value = emptySet()
         _stateFilter.value = null
+        // 源目录没了，快照也该没了（否则下次冷启动会显出一批再也扫不到的条目）
+        clearModListSnapshot()
     }
 
     private val _hiddenMods = MutableStateFlow<Set<String>>(emptySet())
@@ -1859,37 +1905,249 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     /**
-     * 从手机上真正删除这个 mod 文件夹。
+     * 正在删除 / 刚删掉的条目 uri（**墓碑**）。
+     *
+     * 两个用途：
+     *  1. 防重入：同一条正在删时，重复的删除请求直接挡掉；
+     *  2. 防「复活」：乐观删除把条目摘掉的那一刻，文件其实还在磁盘上 —— 任何**已经开跑**
+     *     的扫描（或 retryCatalogValidation 的整表回写）都还能把它扫回来，行就又跳出来了。
+     *     删除成功的 uri **留在集合里**（墓碑），扫描收尾过滤完之后由 [rescanAllModSources]
+     *     统一清空；删除失败/中断的则立刻摘掉，否则这个还在的 mod 会被永久挡在扫描结果外。
+     *
+     * 并发集合：批量删除的循环跑在 IO 线程上。
+     */
+    private val deletingModUris: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /**
+     * 这个 uri 是不是某个 mod 源文件夹的**根本身**。
+     *
+     * 源文件夹根级直接摆着 skel/png 时，扫出来的条目就是树根（见 ModRepository.discoverMods），
+     * 删它等于把整个源文件夹连同里面别的 mod 一起删掉，所以这种条目到哪都不给删。
+     */
+    fun isModSourceRoot(uri: Uri): Boolean = _modSourceDirs.value.any { tree ->
+        try {
+            DocumentsContract.buildDocumentUriUsingTree(
+                tree, DocumentsContract.getTreeDocumentId(tree)
+            ) == uri
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * 从手机上真正删除这个 mod 的源文件。
+     *
+     * **乐观更新**：SAF 删一个目录要几秒（provider 在递归删子项），原先等删完才动列表，
+     * 这几秒里界面毫无反应、看着像没点上。现在确认后立刻把条目摘掉、账本同步销账，
+     * 真删在后台跑；失败再把条目放回原位并报错（[restoreDeletedMods]）。
+     *
+     * 删除目标：条目 uri 是 buildDocumentUriUsingTree 出来的 **document uri**，
+     * [DocumentFile.fromSingleUri] 删的就是这一层。刻意不用 fromTreeUri —— 那条路要先按
+     * `isDocumentUri(context, uri)` 反查 provider 才决定用 documentId 还是树根 id
+     * （见 documentfile-1.0.1 字节码），查不出 provider 时会退回**树根**；fromSingleUri
+     * 永远只认传进来的那个 document，不留这种隐患。
      *
      * 这是整个 app 里唯一会动用户文件的操作，不可恢复，调用方必须先做二次确认。
+     * 源文件夹根本身（`_modSourceDirs` 里某个树的根 document）一律不删，见 [isModSourceRoot]。
      */
     fun deleteModFolder(context: Context, mod: ModInfo, onDone: (Boolean, String) -> Unit) {
+        // 源文件夹根条目不能删：删它等于把整个源目录（可能还有别的 mod）一起删掉。
+        // 界面上有一道同样的守卫（异常区的确认框），但卡片菜单那条入口没有 —— 收在这里，
+        // 任何调用方都绕不过去。
+        if (isModSourceRoot(mod.uri)) {
+            onDone(false, "「${mod.name}」就是 mod 源文件夹本身，删不得；要处理请到文件管理器里操作")
+            return
+        }
+        val key = mod.uri.toString()
+        // 同一条正在删（删除期间重扫又把它扫了回来，用户再点一次）→ 不并发删第二遍
+        if (!deletingModUris.add(key)) {
+            onDone(false, "「${mod.name}」正在删除，请稍候")
+            return
+        }
+        val index = _modsList.value.indexOfFirst { it.uri == mod.uri }
+        // —— 乐观：条目立刻消失，不等 SAF ——
+        _modsList.value = _modsList.value.filterNot { it.uri == mod.uri }
+        _selectedMods.value = _selectedMods.value - mod.uri
+
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                try {
-                    val doc = if (mod.isDirectory) {
-                        DocumentFile.fromTreeUri(context, mod.uri)
-                    } else {
-                        DocumentFile.fromSingleUri(context, mod.uri)
-                    }
-                    doc?.delete() == true
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    false
-                }
-            }
-            if (ok) {
-                _modsList.value = _modsList.value.filterNot { it.uri == mod.uri }
-                _selectedMods.value = _selectedMods.value - mod.uri
-                // 源文件都删了，账本里这条留着只会让状态推导继续把它算成「生效中」，
+            var ok = false
+            var record: InstalledModRecord? = null
+            try {
+                // 账本先销账。源文件都没了，这条记录留着只会让状态推导继续把它算成「生效中」，
                 // 而重打包时又找不到文件。注意这里只销账，不动游戏里的实际内容 ——
                 // 那需要重打包，属于「移除 mod」的动作，不是「删源文件」该做的事。
-                installedModRepository.remove(mod.uri.toString())
-                onDone(true, "已从手机删除「${mod.name}」")
-            } else {
-                onDone(false, "删除失败，可能没有该目录的写入权限")
+                // 失败要把它放回去，所以让 removeAndReturn 把记录交回来。
+                record = withContext(Dispatchers.IO) { takeLedgerRecord(key) }
+                ok = withContext(Dispatchers.IO) { deleteModSourceFile(context, mod) }
+            } catch (t: Throwable) {
+                // 兜底（含协程被取消）：任何意外都要把列表、账本、防重入状态收拾干净，
+                // 不能留下一个「条目不在了、文件还在、也没人管」的中间态
+                Log.w("MainViewModel", "删除中断: $key", t)
+            } finally {
+                if (ok) {
+                    // 删除期间若用户重扫过，条目会被扫回来 —— 结果落定时再摘一次。
+                    // 墓碑留在 deletingModUris 里（见那里的说明），由下一次扫描收尾统一清。
+                    _modsList.value = _modsList.value.filterNot { it.uri == mod.uri }
+                    withContext(NonCancellable + Dispatchers.IO) { saveModListSnapshot(_modsList.value) }
+                    onDone(true, "已从手机删除「${mod.name}」")
+                } else {
+                    // 失败/中断：墓碑必须摘掉，否则以后每次扫描都会把它挡在外面，
+                    // 这个其实还在的 mod 就再也扫不回来了
+                    deletingModUris.remove(key)
+                    restoreDeletedMods(listOf(mod to index))
+                    withContext(NonCancellable + Dispatchers.IO) { putLedgerRecord(record) }
+                    onDone(false, "删除失败，可能没有该目录的写入权限")
+                }
             }
         }
+    }
+
+    private val _isDeletingAbnormal = MutableStateFlow(false)
+
+    /** 一键删除异常 mod 是否在进行中：区头按钮据此置灰防重入。 */
+    val isDeletingAbnormal: StateFlow<Boolean> = _isDeletingAbnormal.asStateFlow()
+
+    /** 与 [isDeletingAbnormal] 配套的布尔（与 outdatedUpdateBusy 同款）：按钮点击都在主线程上。 */
+    private var abnormalDeleteBusy = false
+
+    /**
+     * 一键删除异常 mod 的源文件（「异常mod」区头的按钮）。
+     *
+     * 目标是**当前区里看得见的那几条**（[targets]）：搜索/状态筛选会把区头计数收窄，
+     * 按「全部异常」删会和用户看到的数字对不上。
+     *
+     * 整批一次性从列表消失，而不是逐条消失：逐条的话剩下的会不断往上跳，用户还得盯着
+     * 它一条条走完；整批清空后只有一句结果 toast。真删在后台**串行**跑（每个目录都要
+     * 几秒，并发反而容易被 provider 限流），失败的条目在结束时放回列表。
+     */
+    fun deleteAbnormalMods(context: Context, targets: List<ModInfo>) {
+        if (abnormalDeleteBusy) return          // 防重入
+        abnormalDeleteBusy = true
+        _isDeletingAbnormal.value = true
+
+        // 源文件夹根条目不能删（删它等于删整个源目录），指给用户去文件管理器处理
+        val (roots, deletable) = targets.partition { isModSourceRoot(it.uri) }
+        val pending = deletable.filter { deletingModUris.add(it.uri.toString()) }
+        if (pending.isEmpty()) {
+            abnormalDeleteBusy = false
+            _isDeletingAbnormal.value = false
+            toast(
+                context,
+                if (roots.isNotEmpty()) "这些条目就是 mod 源文件夹本身，请到文件管理器里处理"
+                else "当前没有可删除的条目"
+            )
+            return
+        }
+
+        val before = _modsList.value
+        val positions = pending.associate { it.uri.toString() to before.indexOfFirst { m -> m.uri == it.uri } }
+        val removedUris = pending.map { it.uri }.toSet()
+        // —— 乐观：整批立刻消失 ——
+        _modsList.value = before.filterNot { it.uri in removedUris }
+        _selectedMods.value = _selectedMods.value - removedUris
+
+        viewModelScope.launch(Dispatchers.IO) {
+            var removed = 0
+            val failed = ArrayList<ModInfo>()
+            val deleted = ArrayList<String>()
+            var i = 0
+            try {
+                while (i < pending.size) {
+                    val mod = pending[i]
+                    val key = mod.uri.toString()
+                    val record = takeLedgerRecord(key)
+                    val ok = deleteModSourceFile(context, mod)
+                    if (ok) {
+                        removed++
+                        // 墓碑留着（见 deletingModUris 的说明），下一次扫描收尾统一清
+                        deleted += key
+                    } else {
+                        failed += mod
+                        deletingModUris.remove(key)     // 没删成 → 别再挡着以后的重扫
+                        putLedgerRecord(record)         // 账本同理，原样放回
+                    }
+                    i++
+                }
+            } catch (t: Throwable) {
+                // 兜底（含协程被取消）：一条出意外不该让整批无声中断、busy 卡死
+                Log.w("MainViewModel", "批量删除中断", t)
+            } finally {
+                // 中断时还没轮到的条目：它们只是被乐观地摘掉了，文件还在 —— 一并算失败放回，
+                // 不能让它们就这么从列表里消失
+                while (i < pending.size) {
+                    deletingModUris.remove(pending[i].uri.toString())
+                    failed += pending[i]
+                    i++
+                }
+                // 收尾一律跑在 NonCancellable 上：取消（清后台、VM 销毁）也不能把这些
+                // 「防重入」状态留在原地，否则这个界面就再也删不动了
+                withContext(NonCancellable + Dispatchers.Main) {
+                    abnormalDeleteBusy = false
+                    _isDeletingAbnormal.value = false
+                    // 删成功的再摘一次：这期间若正好有一次扫描把条目扫了回来（墓碑被清），
+                    // 结果落定时仍要保证它们不在列表里
+                    if (deleted.isNotEmpty()) {
+                        _modsList.value = _modsList.value.filterNot { it.uri.toString() in deleted }
+                    }
+                    if (failed.isNotEmpty()) {
+                        restoreDeletedMods(failed.map { it to (positions[it.uri.toString()] ?: -1) })
+                    }
+                    val parts = mutableListOf("已删除 $removed 个")
+                    if (failed.isNotEmpty()) parts += "失败 ${failed.size} 个"
+                    if (roots.isNotEmpty()) parts += "${roots.size} 个是源文件夹，未删"
+                    toast(context, parts.joinToString("，"))
+                }
+                // 列表变了，快照跟着刷新，免得下次冷启动又把这些条目显出来
+                withContext(NonCancellable + Dispatchers.IO) { saveModListSnapshot(_modsList.value) }
+            }
+        }
+    }
+
+    /** 真删一个条目的源文件。跑在 IO 上；任何异常都算失败（delete 本身返回 false）。 */
+    private fun deleteModSourceFile(context: Context, mod: ModInfo): Boolean = try {
+        DocumentFile.fromSingleUri(context, mod.uri)?.delete() == true
+    } catch (e: Exception) {
+        Log.w("MainViewModel", "删除源文件失败: ${mod.uri}", e)
+        false
+    }
+
+    /** 从账本里销掉一条并把它交回来（删除失败要原样放回）。跑在 IO 上。
+     *  读改写是仓库里一次上锁的 [InstalledModRepository.removeAndReturn] —— 分开调
+     *  load()+remove() 会让并发的另一次写入从中间插进来。 */
+    private fun takeLedgerRecord(modUri: String): InstalledModRecord? {
+        if (!::installedModRepository.isInitialized) return null
+        return try {
+            installedModRepository.removeAndReturn(modUri)
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "销账失败: $modUri", e)
+            null
+        }
+    }
+
+    /** 把销掉的账放回去（删除失败时）。跑在 IO 上。 */
+    private fun putLedgerRecord(record: InstalledModRecord?) {
+        if (record == null || !::installedModRepository.isInitialized) return
+        try {
+            installedModRepository.put(record)
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "账本复原失败: ${record.modUri}", e)
+        }
+    }
+
+    /**
+     * 把乐观删掉的条目放回列表原来的位置（[index] 为 -1 表示放在末尾）。
+     *
+     * 按 uri 去重：删除失败前若正好有一次扫描结束，那条会被扫回来，别再插一份。
+     */
+    private fun restoreDeletedMods(entries: List<Pair<ModInfo, Int>>) {
+        if (entries.isEmpty()) return
+        val current = _modsList.value.toMutableList()
+        entries.sortedBy { it.second }.forEach { (mod, index) ->
+            if (current.any { it.uri == mod.uri }) return@forEach
+            val at = if (index < 0) current.size else index.coerceIn(0, current.size)
+            current.add(at, mod)
+        }
+        _modsList.value = current
     }
 
     /** 读某个 bundle 当前的自定义名（没设过则为空串）。 */
@@ -2432,10 +2690,20 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     // 依然有效的摘回正常分组（判定表见 validateMods）。
                     val validated = appContext?.let { validateMods(it, mods) } ?: mods
                     val withState = applyInstallState(validated)
+                    // 正在删的条目不要被这轮扫描「复活」：一个目录 SAF 删要几秒，
+                    // 这期间的重扫读到的还是删除前的状态，扫回来会让刚消失的行又跳出来
+                    val visible = withState.filterNot { deletingModUris.contains(it.uri.toString()) }
                     withContext(Dispatchers.Main) {
-                        _modsList.value = withState
+                        _modsList.value = visible
                         _selectedMods.value = emptySet()
+                        scanSettled = true
+                        // 墓碑只挡「本轮扫描」这一个时间窗：结果已经落定，之后还能出现的
+                        // 条目就是真的还在（比如删除失败又扫了回来）。不清的话，那些删不掉的
+                        // 条目会被永久挡在扫描结果之外，用户再也看不到它们。
+                        deletingModUris.clear()
                     }
+                    // 扫描链尾 = 列表落定的那一处：落一份冷启动快照（IO 已在，写失败不影响本轮扫描）
+                    saveModListSnapshot(visible)
                 } finally {
                     withContext(Dispatchers.Main) {
                         _isLoading.value = false
@@ -2443,6 +2711,198 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 }
 
                 if (!pendingScan) break
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- 冷启动列表快照
+
+    /**
+     * 上次扫描落定的整张列表，序列化在 filesDir 里，冷启动先拿它把「全部」填上。
+     *
+     * 为什么需要：角色表是本地文件、按角色视图秒开，而「全部」必须等整个 SAF 扫描
+     * （上千个 mod 要好几秒），于是冷启动时那一页永远是空的 —— 用户以为 mod 没了。
+     * 有快照后先显示上次的结果，扫描在后台跑完再整表替换（[rescanAllModSources]）。
+     *
+     * 快照只是显示用的缓存，**不是**事实来源：它可能过期（用户删了目录、撤销了授权、
+     * 在文件管理器里动了文件），这些偏差都由随后的那次扫描收敛；扫描还会把新结果写回去。
+     * 因此读写失败、文件损坏都只是「这次没有快照」，不影响任何功能。
+     */
+    private data class ModListSnapshot(
+        val version: Int = SNAPSHOT_VERSION,
+        /** 落盘时刻，仅供排查（读侧不据此判新旧：新旧由扫描结果决定）。 */
+        val savedAt: Long = 0L,
+        val mods: List<ModInfo> = emptyList()
+    )
+
+    /**
+     * Uri ⇄ 字符串。
+     *
+     * Gson 默认拿 Uri 没辙：它是抽象类、字段私有，反射序列化出来是一堆内部字段
+     * （甚至直接抛异常），读回来也构造不出对象。统一按 [Uri.toString] 存、
+     * [Uri.parse] 读 —— 与整份代码里「uri 当字符串用」的口径一致。
+     */
+    private object UriStringAdapter : TypeAdapter<Uri>() {
+        override fun write(out: JsonWriter, value: Uri?) {
+            out.value(value?.toString())
+        }
+
+        override fun read(input: JsonReader): Uri? {
+            if (input.peek() == JsonToken.NULL) {
+                input.nextNull()
+                return null
+            }
+            return Uri.parse(input.nextString())
+        }
+    }
+
+    /**
+     * 落盘时丢掉的字段。
+     *
+     * `resolvedTargets`/`unresolvedFiles` 是转换路径的数据，整个 Kotlin 侧没有消费者，
+     * 却是体积大头（一条一个几百字节的数组）；`convertedDataUri` 是一长串 document uri，
+     * 扫描时会重新发现，快照里那份只在「恢复了条目但还没扫完」这几秒内有用，丢掉它换来的
+     * 是校验路径自动跳过（checkUnityFsHeader 拿不到 uri 就返回 null，不判损坏，安全）。
+     * 只作用于序列化：读侧结构不变，历史快照里带着这些字段也照读不误。
+     */
+    private val snapshotDroppedFields =
+        setOf("resolvedTargets", "unresolvedFiles", "convertedDataUri")
+
+    private val snapshotGson: Gson by lazy {
+        GsonBuilder()
+            .registerTypeAdapter(Uri::class.java, UriStringAdapter)
+            .addSerializationExclusionStrategy(object : ExclusionStrategy {
+                override fun shouldSkipField(f: FieldAttributes) = f.name in snapshotDroppedFields
+                override fun shouldSkipClass(clazz: Class<*>?) = false
+            })
+            .create()
+    }
+
+    /**
+     * 本轮进程里扫描是否已经落定过一次。
+     *
+     * 快照只许在这次扫描**之前**进场：扫描一旦出过结果，列表就是事实，
+     * 迟到的快照不许再把它盖回去 —— 尤其扫出空表（用户把目录清空了）那种情况，
+     * 被旧快照覆盖就是「删掉的 mod 又回来了」，而且不会再有下一次扫描来纠正。
+     */
+    @Volatile
+    private var scanSettled = false
+
+    private fun modListSnapshotFile(): File? =
+        appContext?.let { File(it.filesDir, SNAPSHOT_FILENAME) }
+
+    /** 源目录被清空时把快照一并抹掉（写空表即可，读侧按「没有快照」走）。 */
+    private fun clearModListSnapshot() {
+        viewModelScope.launch(Dispatchers.IO) { saveModListSnapshot(emptyList()) }
+    }
+
+    /**
+     * 落快照。写在 IO 上、失败只记日志：宁可下次启动回到「没有快照」的老路径，
+     * 也不能因为一个缓存文件写不进去影响扫描收尾。
+     *
+     * 先写 .tmp 再改名：写到一半被杀（用户清后台）时旧的完整快照还在，不会留下
+     * 半截 JSON —— 虽然读侧也按损坏处理，但能救回来一份就用一份。
+     * [Synchronized]：删除成功、扫描收尾、清目录三处都会写，交错写会把 .tmp 写坏，
+     * 相互串起来（同一进程内只有这一处在写这个文件）。
+     */
+    @Synchronized
+    private fun saveModListSnapshot(mods: List<ModInfo>) {
+        val file = modListSnapshotFile() ?: return
+        try {
+            val json = snapshotGson.toJson(
+                ModListSnapshot(SNAPSHOT_VERSION, System.currentTimeMillis(), mods)
+            )
+            val tmp = File(file.parentFile, "${file.name}.tmp")
+            tmp.delete()                    // 上次进程被杀留下的半截 .tmp
+            tmp.writeText(json)
+            if (!tmp.renameTo(file)) {
+                file.delete()
+                if (!tmp.renameTo(file)) {
+                    Log.w("MainViewModel", "快照改名失败，本次不落盘")
+                    tmp.delete()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "写入冷启动快照失败（不影响功能）", e)
+        }
+    }
+
+    /** 读快照。任何异常（文件不存在、JSON 半截、字段缺失）都按「没有快照」返回空表。 */
+    private fun loadModListSnapshot(): List<ModInfo> {
+        val file = modListSnapshotFile() ?: return emptyList()
+        if (!file.exists()) return emptyList()
+        return try {
+            val text = file.readText()
+            if (text.isBlank()) return emptyList()
+            val snapshot = snapshotGson.fromJson(text, ModListSnapshot::class.java)
+                ?: return emptyList()
+            if (snapshot.version != SNAPSHOT_VERSION) {
+                Log.i("MainViewModel", "快照版本 ${snapshot.version} 不是 $SNAPSHOT_VERSION，丢弃")
+                return emptyList()
+            }
+            // Gson 不管 Kotlin 的非空约束：字段在 JSON 里缺失/被改坏时会给 null，
+            // 放过去就会在很远的地方炸 NPE（与 InstalledModRepository.load 同一道防线）
+            snapshot.mods.mapNotNull { it?.let(::normalizeSnapshotEntry) }
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "冷启动快照读取失败，按没有快照处理", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * 快照条目的校验与补全。
+     *
+     * 落盘时被排除的 resolvedTargets/unresolvedFiles 读回来**必然是 null** —— Gson 用
+     * Unsafe 造实例、不走 Kotlin 的默认值。留着 null 会在转换/校验路径上炸 NPE，补成空表；
+     * 其余关键字段缺失（JSON 被改坏、枚举名对不上）没法修，整条丢掉。
+     */
+    private fun normalizeSnapshotEntry(mod: ModInfo): ModInfo? {
+        @Suppress("SENSELESS_COMPARISON")
+        if (mod.uri == null || mod.name == null || mod.character == null || mod.costume == null ||
+            mod.type == null || mod.resolutionState == null || mod.installState == null || mod.kind == null
+        ) return null
+        return mod.copy(
+            resolvedTargets = nullToEmptyList(mod.resolvedTargets),
+            unresolvedFiles = nullToEmptyList(mod.unresolvedFiles)
+        )
+    }
+
+    /**
+     * null → 空表。
+     *
+     * 必须跨一层函数边界：直接写 `mod.resolvedTargets ?: emptyList()` 时，编译器按字段的
+     * 非空静态类型判定左侧恒非空，判空会被优化掉，null 照样漏过去。
+     */
+    private fun <T> nullToEmptyList(list: List<T>?): List<T> = list ?: emptyList()
+
+    /**
+     * 冷启动把快照灌进列表。跑在 IO 上，读完才回主线程。
+     *
+     * installState 用账本重算一遍（[applyInstallState]）：快照里那份是上次扫描时的判断，
+     * 账本才是「装过什么」的事实。此刻干净检测还没跑过（bundleCleanStates 还是空的），
+     * 算出来的是「账本里有 → 未校验 / 没有 → 未装」——这是诚实的：游戏目录还没看过，
+     * 扫描跑完自然会落回生效中/需重新应用那些真实状态。
+     *
+     * defect/outdated 按快照原样显示（它们依赖 catalog，冷启动时还没有更新的依据）。
+     */
+    private fun restoreModListSnapshot() {
+        viewModelScope.launch {
+            val restored = withContext(Dispatchers.IO) {
+                val snapshot = loadModListSnapshot()
+                if (snapshot.isEmpty()) {
+                    emptyList()
+                } else {
+                    val hidden = loadHidden()
+                    applyInstallState(snapshot.filterNot { it.uri.toString() in hidden })
+                }
+            }
+            // 扫描已经出过结果时不许覆盖：那份才是真的（见 scanSettled）。
+            // 没有源目录时也不灌：那种情况下列表本就该是空的（欢迎页 / 授权被撤销），
+            // 快照只会显出一批再也扫不到、也点不动的幽灵条目
+            if (restored.isNotEmpty() && !scanSettled && _modsList.value.isEmpty() &&
+                _modSourceDirs.value.isNotEmpty()
+            ) {
+                _modsList.value = restored
             }
         }
     }
@@ -2877,14 +3337,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 // 联网后仍然全按保守的 STALE 处理 —— 用户点了「重试」却没变化。
                 otherTierBundleMeta = fetchOtherTierMeta(context, result)
                 val revalidated = applyInstallState(validateMods(context, _modsList.value))
+                // 与扫描同一条回写路径，墓碑也要一起套用：不然「重试」这几秒里被乐观删掉的
+                // 条目会被这一遍整表回写复活（它的文件同样还在磁盘上）
+                val visible = revalidated.filterNot { deletingModUris.contains(it.uri.toString()) }
                 // 这一遍可能把原本正常的条目判成异常/待更新（离线时表是旧的、看不出来），
                 // 而选中集是上一轮的 —— 不清掉的话，批量转换会把已经失效的产物照单收下。
-                val invalid = revalidated
+                val invalid = visible
                     .filter { it.defect != null || it.outdatedCurrentHash != null }
                     .map { it.uri }
                     .toSet()
                 withContext(Dispatchers.Main) {
-                    _modsList.value = revalidated
+                    _modsList.value = visible
                     if (invalid.isNotEmpty()) {
                         _selectedMods.value = _selectedMods.value - invalid
                     }
@@ -3052,11 +3515,13 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      *
      * SAF 层级（见 ModRepository.discoverMods）：条目 uri 指向 **bundle 那一层**
      * （hex 名目录），hash 目录是它的直接子目录，结构是 `<bundle>/<hash>/__data`。
-     * 导航刻意不用 DocumentFile：`fromSingleUri` 拿到的 SingleDocumentFile 的
-     * listFiles/renameTo 都会抛 UnsupportedOperationException（拿不到子项、改不了名），
-     * 而 `fromTreeUri` 取的是**所选源目录树的根**（getTreeDocumentId），条目嵌在子目录
-     * 里时会指到错误的层。所以直接走 DocumentsContract —— 与 ModRepository 遍历目录
-     * 用的是同一套 API，深浅层级都正确（预览那条路踩过 fromTreeUri 的坑）。
+     * 导航刻意不用 DocumentFile：条目 uri 是 document uri（buildDocumentUriUsingTree），
+     * `fromSingleUri` 拿到的 SingleDocumentFile 的 listFiles/renameTo 都会抛
+     * UnsupportedOperationException（拿不到子项、改不了名）。所以直接走 DocumentsContract ——
+     * 与 ModRepository 遍历目录用的是同一套 API，深浅层级都正确。
+     *（注：`fromTreeUri` 传 document uri 时其实解析到的是该条目本身，不是树根 ——
+     * 1.0.1 的字节码里有一条 isDocumentUri 分支会改用 getDocumentId；但那条路要先反查
+     * provider，不如直接用 DocumentsContract 明确。）
      *
      * 动手前还有一道**游戏目录校验**（[gameBundleHashes]）：游戏资源还停在旧哈希上时
      * 直接返回 [HashRenameResult.GameBehindCatalog] 不碰文件 —— 那种状态改名等于让 mod
@@ -3503,6 +3968,109 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             }
         }
         return skel to atlas
+    }
+
+    // ------------------------------------------------ 检查更新
+
+    /**
+     * 发现的新版本。非 null = 有新版本可用，界面上挂更新弹窗。
+     *
+     * 只在手动点「检查更新」且确实有新版本时才有值 —— 没有启动时自动检查，
+     * App 不会自己在后台打 GitHub。
+     */
+    private val _latestRelease = MutableStateFlow<UpdateRepository.Release?>(null)
+    val latestRelease: StateFlow<UpdateRepository.Release?> = _latestRelease.asStateFlow()
+
+
+    /** 下载完成待安装的 APK 文件名；非空时界面弹「安装」确认框。 */
+    private val _updateApkReady = MutableStateFlow<String?>(null)
+    val updateApkReady: StateFlow<String?> = _updateApkReady.asStateFlow()
+    /** 正在检查。同时当防连点用：进行中再点直接忽略。 */
+    private val _updateChecking = MutableStateFlow(false)
+    val updateChecking: StateFlow<Boolean> = _updateChecking.asStateFlow()
+
+    /**
+     * 手动检查更新一次。
+     *
+     * 网络请求在仓库里走 IO 线程，这里回到 viewModelScope 的主线程再弹 toast ——
+     * Toast 在没调过 Looper.prepare 的后台线程上会直接抛异常，结果回调必须落在
+     * 主线程（[toast] 只负责换个 application context，不切线程）。
+     */
+    fun checkForUpdates() {
+        if (_updateChecking.value) return
+        val ctx = appContext ?: return
+        _updateChecking.value = true
+        viewModelScope.launch {
+            try {
+                val repo = UpdateRepository.get(ctx)
+                val release = repo.fetchLatest()
+                when {
+                    release == null ->
+                        toast(ctx, "检查更新失败：连不上 GitHub，请检查网络或代理")
+                    !repo.isNewerThanInstalled(release.version) ->
+                        toast(ctx, "已是最新版本（当前 ${repo.installedVersion()}）")
+                    else -> _latestRelease.value = release
+                }
+            } finally {
+                _updateChecking.value = false
+            }
+        }
+    }
+
+    /** 关掉更新弹窗。下次再点「检查更新」重新拉。 */
+    fun dismissUpdate() {
+        _latestRelease.value = null
+    }
+
+    /**
+     * 应用内下载更新包。架构选择在仓库层按本机 ABI 自动做；排队成功 toast 提醒
+     * 进度看通知栏，结果由 DownloadManager 的完成广播接回（见 MainActivity 的
+     * 接收器 → [onUpdateDownloadComplete]）。
+     */
+    fun downloadUpdate(release: UpdateRepository.Release) {
+        val ctx = appContext ?: return
+        viewModelScope.launch {
+            val repo = UpdateRepository.get(ctx)
+            // 已经下过这个包就直接弹安装，不再重复下载几十 MB
+            if (withContext(Dispatchers.IO) { repo.isApkDownloaded(release) }) {
+                _updateApkReady.value =
+                    withContext(Dispatchers.IO) { repo.downloadedApkFile()?.name }
+                return@launch
+            }
+            val started = withContext(Dispatchers.IO) {
+                repo.startApkDownload(release)
+            }
+            if (started != null) {
+                toast(ctx, "已开始下载 ${started.name}，进度见通知栏")
+            } else if (withContext(Dispatchers.IO) { UpdateRepository.get(ctx).hasActiveDownload() }) {
+                toast(ctx, "已有下载在进行中")
+            } else {
+                toast(ctx, "这个版本没有可下载的安装包，请到发布页手动下载")
+            }
+        }
+    }
+
+    /** 下载完成的回执入口（MainActivity 的广播接收器调）。 */
+    fun onUpdateDownloadComplete(id: Long) {
+        val ctx = appContext ?: return
+        viewModelScope.launch {
+            val repo = UpdateRepository.get(ctx)
+            if (id != withContext(Dispatchers.IO) { repo.currentDownloadId() }) return@launch
+            val ok = withContext(Dispatchers.IO) { repo.isDownloadSuccessful(id) }
+            if (ok) {
+                _updateApkReady.value = withContext(Dispatchers.IO) {
+                    repo.downloadedApkFile()?.name
+                }
+                toast(ctx, "更新包下载完成")
+            } else {
+                toast(ctx, "更新包下载失败，请检查网络或代理后重试")
+            }
+        }
+    }
+
+    /** 关掉「下载完成」弹窗（不安装，包文件保留，下次检查更新可重下）。 */
+    fun dismissUpdateReady() {
+        _updateApkReady.value = null
     }
 
     /**

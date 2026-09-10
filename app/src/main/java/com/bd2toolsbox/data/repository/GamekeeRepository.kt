@@ -70,12 +70,20 @@ class GamekeeRepository private constructor(private val appContext: android.cont
         private const val UA = "Mozilla/5.0 (Linux; Android) BD2ToolsBox"
 
         /** 正文缓存头部的渲染器版本前缀。改渲染逻辑时同步递增；缓存里缺失即视为
-         *  旧渲染，自动失效重拉（见 loadArticleDetail）。 */
-        private const val RENDERER_STAMP = "<!--renderer:v2"
+         *  旧渲染，自动失效重拉（见 loadArticleDetail）。
+         *  v3：评论正文解析重做 —— 表情标记 `_(… […])` 换成表情图、发言上传的
+         *  图片排到文字下方（v2 缓存里这两样都是转义后的代码文本，必须重渲染）。 */
+        private const val RENDERER_STAMP = "<!--renderer:v3"
 
         /** 渲染器戳后面跟着的内容版本号（来自 content_cdn 的 ?v=），两者都对上
          *  才复用缓存 —— 官方改了文章版本号就变，缓存自动过期。 */
         private const val CONTENT_STAMP = "|v="
+
+        /** 表情表磁盘缓存的有效期。表情包很少增补，一天一次足够；过期只用旧表兜底。 */
+        private const val EMOJI_TTL_MS = 24 * 60 * 60 * 1000L
+
+        /** 评论里最多排几张上传图（网页端也是 3 张 + 「+N」角标）。 */
+        private const val COMMENT_IMG_MAX = 3
 
         /** 列表分页大小。gamekee 页面端也是 10 条一页。 */
         const val PAGE_SIZE = 10
@@ -435,7 +443,9 @@ class GamekeeRepository private constructor(private val appContext: android.cont
             // 评论区拼进同一份文档：渲染是本地行为，和正文一起进磁盘缓存。
             // 树导航进来的条目没有评论数，统一以实际拉到的为准（拉满 3 页或到底）
             val comments = loadComments(article.id)
-            val html = renderArticleDocument(title, bodyHtml, article.comments, comments, contentVersion)
+            // 表情表只在真有评论时拉：评论里的 `_(… […])` 标记靠它换图
+            val emojis = if (comments.isEmpty()) emptyMap() else loadEmojiMap()
+            val html = renderArticleDocument(title, bodyHtml, article.comments, comments, contentVersion, emojis)
             try {
                 articleDir.mkdirs()
                 val tmp = File(articleDir, "${article.id}.html.part")
@@ -489,6 +499,12 @@ class GamekeeRepository private constructor(private val appContext: android.cont
 
     private val battleDir: File get() = File(cacheDir, "battles")
     private val battleHtmlMemory = ConcurrentHashMap<Long, String>()
+
+    /** 表情表（[loadEmojiMap]）的落盘文件与内存副本。 */
+    private val emojiFile: File get() = File(cacheDir, "emoji.json")
+
+    @Volatile
+    private var emojiMapMemory: Map<String, String>? = null
 
     /** 正在渲染的文章用到的阵容卡 HTML，渲染前由 loadArticleDetail 预取填充。 */
     private val currentBattleCache = HashMap<Long, String>()
@@ -659,6 +675,90 @@ class GamekeeRepository private constructor(private val appContext: android.cont
             }
             out
         }
+
+    // ---------------------------------------------------------------- 评论表情表
+
+    /**
+     * 评论正文里 `_(尤里表情包 [78])` 这种表情贴图的对照表。
+     *
+     * 标记原文直接就是图 —— 接口（网页端表情面板同款）里逐个对上：
+     *   GET /v1/emojiGroup/queryList
+     *     → data[].children[] { name: "_(尤里表情包 [78])", icon: "//cdnimg-v2…" }
+     * name 就是标记原文、icon 就是图，照抄即可。**必须查表，不能自己按编号拼**：
+     * 实测标记里不只有数字，还有 `_(K站 [震惊])`（中文词）和
+     * `_(其他角色表情包 [16··])`（双点）这类形态 —— 全表 4 组 151 个，
+     * 抓到的 34 处标记 100% 命中。
+     *
+     * 缓存：内存 → guides/emoji.json（[EMOJI_TTL_MS] 内直接用，表情表很少增补）
+     * → 网络（拉到就覆盖写盘）。网络失败时磁盘旧表无条件顶上（表情图很稳定，
+     * 旧表也比没有强），两样都没有才返回空表。
+     *
+     * TODO 正文（Slate/HTML）不替换表情标记：抽样的三篇正文（editor_type 1/3）
+     * 一个标记都没有，网页端也只在对评论调 replaceEmoji。哪天正文里真出现
+     * `_(… […])`，把 [currentBattleCache] 那套「渲染前预置、渲染时查表」照搬过来
+     * 接进 renderRuns 即可。
+     */
+    private suspend fun loadEmojiMap(): Map<String, String> = withContext(Dispatchers.IO) {
+        emojiMapMemory?.let { return@withContext it }
+        val diskMap = readEmojiFile()
+        if (diskMap != null && System.currentTimeMillis() - emojiFile.lastModified() < EMOJI_TTL_MS) {
+            emojiMapMemory = diskMap
+            return@withContext diskMap
+        }
+        val body = httpGet("$API/v1/emojiGroup/queryList")
+        val fresh = body?.let { parseEmojiMap(it) }
+        if (fresh != null && fresh.isNotEmpty()) {
+            try {
+                cacheDir.mkdirs()
+                val tmp = File(cacheDir, "emoji.json.part")
+                tmp.writeText(body)
+                tmp.renameTo(emojiFile)
+            } catch (_: Exception) {
+                // 写不进缓存不影响这次使用
+            }
+            emojiMapMemory = fresh
+            return@withContext fresh
+        }
+        // 在线拉不到（离线/接口抖动）：旧表顶上。空表不写内存，下次开文章还能再试
+        if (diskMap != null && diskMap.isNotEmpty()) {
+            emojiMapMemory = diskMap
+            return@withContext diskMap
+        }
+        emptyMap()
+    }
+
+    private fun readEmojiFile(): Map<String, String>? = try {
+        if (emojiFile.exists() && emojiFile.length() > 0) parseEmojiMap(emojiFile.readText()) else null
+    } catch (e: Exception) {
+        Log.w(TAG, "表情表缓存读取失败", e)
+        emojiFile.delete()
+        null
+    }
+
+    private fun parseEmojiMap(body: String): Map<String, String>? = try {
+        val arr = JsonParser.parseString(body).asJsonObject
+            .get("data")?.takeIf { it.isJsonArray }?.asJsonArray
+        if (arr == null) null else {
+            val map = HashMap<String, String>()
+            for (g in arr) {
+                val children = g.takeIf { it.isJsonObject }?.asJsonObject
+                    ?.get("children")?.takeIf { it.isJsonArray }?.asJsonArray
+                    ?: continue
+                for (c in children) {
+                    val o = c.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+                    val name = o.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+                    if (!name.startsWith("_(")) continue
+                    val icon = absolutize(o.get("icon")?.takeIf { it.isJsonPrimitive }?.asString)
+                        ?: continue
+                    map[name] = icon
+                }
+            }
+            map
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "表情表解析失败", e)
+        null
+    }
 
     // ---------------------------------------------------------------- 阵容组件 / 评论结束
 
@@ -899,13 +999,15 @@ class GamekeeRepository private constructor(private val appContext: android.cont
      * 图片压回容器宽度内 —— Slate 里图片常带 700px+ 的写死宽度。
      *
      * [commentsHtml] 非空时拼在正文末尾 —— 评论区跟着正文一起进缓存，离线可重读。
+     * [emojis] 是评论表情标记的对照表（见 [loadEmojiMap]）。
      */
     private fun renderArticleDocument(
         title: String,
         body: String,
         commentCount: Int,
         comments: List<GuideComment>,
-        contentVersion: String
+        contentVersion: String,
+        emojis: Map<String, String>
     ): String {
         val commentsHtml = if (comments.isEmpty()) "" else buildString {
             append("<div class=\"cmt\"><div class=\"cmt-h\">评论")
@@ -924,7 +1026,7 @@ class GamekeeRepository private constructor(private val appContext: android.cont
                 if (c.replyTo != null && c.replyTo != c.author) {
                     append(" <span class=\"c-to\">回复 @").append(esc(c.replyTo)).append("</span>")
                 }
-                append("</div><div class=\"c-t\">").append(esc(c.content).replace("\n", "<br>"))
+                append("</div><div class=\"c-t\">").append(commentContentHtml(c.content, emojis))
                     .append("</div><div class=\"c-m\">")
                 if (c.createdAt > 0) append(formatCommentDate(c.createdAt)).append(" · ")
                 if (c.likes > 0) append("👍 ").append(c.likes)
@@ -938,7 +1040,7 @@ class GamekeeRepository private constructor(private val appContext: android.cont
         }
 
         return """<!doctype html>
-<!--renderer:v2$CONTENT_STAMP$contentVersion-->
+$RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
 <html lang="zh-cn">
 <head>
 <meta charset="utf-8">
@@ -1018,6 +1120,21 @@ class GamekeeRepository private constructor(private val appContext: android.cont
   .c-t { margin:.1em 0; }
   .c-m { font-size:.78em; color:#aaa; }
   .c-more { font-size:.85em; color:#999; text-align:center; padding:.6em 0 .2em; }
+  /* 评论里的表情贴图：网页端按 40px 显示、整条只有表情时放大到 60px，
+     这里用 em 跟着正文字号走（2.5em ≈ 40px / 3.75em ≈ 60px）。
+     object-fit 保住原图比例（表情包有 741×706、2376×1080 各种尺寸） */
+  .c-e { width:2.5em !important; height:2.5em !important; margin:0 2px;
+         vertical-align:middle; object-fit:contain; }
+  .c-e-lg { width:3.75em !important; height:3.75em !important; }
+  /* 评论里上传的图（网页端最多排 3 张 + 「+N」角标）。网页端三张等宽横排，
+     这里没有点开大图的能力，所以按张数给宽度：一张看大点、三张才排一列 */
+  .c-imgs { display:flex; flex-wrap:wrap; gap:6px; align-items:flex-start;
+            margin:.35em 0 0; }
+  .c-imgs img { height:auto !important; }
+  .c-imgs-1 img { max-width:64% !important; }
+  .c-imgs-2 img { max-width:48% !important; }
+  .c-imgs-3 img { max-width:31% !important; }
+  .c-imgs-more { font-size:.85em; color:#999; align-self:center; }
 </style>
 </head>
 <body>$body$commentsHtml</body>
@@ -1028,6 +1145,100 @@ class GamekeeRepository private constructor(private val appContext: android.cont
 
     private fun formatCommentDate(epochSeconds: Long): String =
         commentDateFormat.format(Date(epochSeconds * 1000))
+
+    // ---------------------------------------------------------------- 评论正文 → HTML
+
+    /** 评论表情标记，与网页端 replaceEmoji 的正则一致（惰性取到最近的右括号）。 */
+    private val EMOJI_MARKER = Regex("_\\((.*?)\\)")
+
+    /** 评论里发言上传的图片（`<div class="comment-img-wrapper">…<img src="//cdn…">`）。 */
+    private val COMMENT_IMG = Regex("(?i)<img\\b[^>]*\\bsrc\\s*=\\s*[\"']([^\"']+)[\"']")
+
+    /** 整段只有表情图时网页端会放大表情，用这个判定。 */
+    private val ONLY_EMOJI_IMG = Regex("^\\s*(<img\\b[^>]*>\\s*)+$")
+
+    /**
+     * 一条评论的正文 → HTML。
+     *
+     * 评论 content 里混着三种东西，以前一律 esc 出来，用户看到的就是那「一块代码」：
+     *   1) 文字，可能带 `<br>` 换行与 `&nbsp;` 这类实体；
+     *   2) 发言时上传的图：`<div class="comment-img-wrapper"><div class="img-item">
+     *      <img src="//cdnimg-v2…">…`，网页端也是单独抽出来排在文字下方（最多 3 张）；
+     *   3) 表情贴图标记 `_(尤里表情包 [78])`，按 [loadEmojiMap] 查表换图。
+     *
+     * 顺序照网页端（deleteHtmlStr → replaceEmoji）：先只留文字（`<br>` 留作换行），
+     * 实体解码后再 esc，最后在**转义过的文字上**替换表情标记 —— esc 不动
+     * `_ ( ) [ ]`，标记能原样匹配，换进去的 `<img>` 也不会被二次转义；
+     * 表里查不到的标记直接删干净（网页端同样是 `|| ""`），不留 `_(… […])` 残渣。
+     */
+    private fun commentContentHtml(raw: String, emojis: Map<String, String>): String {
+        if (raw.isBlank()) return ""
+        // 上传图先抽出来。src 的值取不到引号字符，塞进属性不会撑破结构；
+        // 只认 https（cdnimg-v2 要 Referer，WebView 的 base 就是 gamekee，能过）
+        val images = COMMENT_IMG.findAll(raw)
+            .mapNotNull { absolutize(it.groupValues[1]) }
+            .filter { it.startsWith("https://") }
+            .toList()
+        val text = decodeEntities(
+            raw.replace(Regex("(?i)<br\\s*/?>"), "\n")
+                .replace(Regex("(?s)<!--.*?-->"), "")
+                // 只删「像标签的」：`<` 后面得跟字母才当标签。网页端是
+                // /<(?!br\s*\/?)[^>]+>/（< 后面什么都吃），用户写
+                // 「伤害 < 3 且 > 2」会被吃掉半句；这里收紧到字母开头，
+                // 真标签（<div/<img/<span…）照样删干净
+                .replace(Regex("</?[a-zA-Z][^>]*>"), "")
+        )
+        val escaped = esc(text)
+        var body = escaped.replace(EMOJI_MARKER) { m ->
+            emojis[m.value]?.let { emojiImg(it) } ?: ""
+        }
+        // 整条评论只有表情：网页端把 40px 放大到 60px，这里跟着放大一档。
+        // body 里的 class="c-e" 只会来自上面刚生成的 <img>（用户文字里的引号
+        // 已经被 esc 成 &quot;），替换是安全的
+        if (ONLY_EMOJI_IMG.matches(body)) body = body.replace("class=\"c-e\"", "class=\"c-e c-e-lg\"")
+        val sb = StringBuilder(body.replace("\n", "<br>"))
+        if (images.isNotEmpty()) {
+            val shown = images.take(COMMENT_IMG_MAX)
+            sb.append("<div class=\"c-imgs c-imgs-").append(shown.size).append("\">")
+            shown.forEach {
+                sb.append("<img src=\"").append(esc(it)).append("\" alt=\"\" loading=\"lazy\">")
+            }
+            if (images.size > COMMENT_IMG_MAX) {
+                sb.append("<span class=\"c-imgs-more\">+").append(images.size - COMMENT_IMG_MAX).append("</span>")
+            }
+            sb.append("</div>")
+        }
+        return sb.toString()
+    }
+
+    private fun emojiImg(url: String): String =
+        "<img class=\"c-e\" src=\"" + esc(url) + "\" alt=\"\" loading=\"lazy\">"
+
+    /**
+     * 评论里的 HTML 实体。实体要**在 esc 之前**解掉：`&nbsp;` 得变回空格，
+     * 否则 esc 会把 `&` 转成 `&amp;`，页面上原样显示一串 `&nbsp;` 代码。
+     * 只认常见名字与数字实体，其余原样留着（宁可显示原文也不乱删字符）。
+     */
+    private fun decodeEntities(s: String): String = COMMENT_ENTITY.replace(s) { m ->
+        when (val e = m.groupValues[1]) {
+            "nbsp" -> " "
+            "lt" -> "<"
+            "gt" -> ">"
+            "quot" -> "\""
+            "apos" -> "'"
+            "amp" -> "&"
+            else -> {
+                val cp = when {
+                    e.startsWith("#x", true) -> e.drop(2).toIntOrNull(16)
+                    e.startsWith("#") -> e.drop(1).toIntOrNull()
+                    else -> null
+                }
+                if (cp != null && cp in 1..0x10FFFF) String(Character.toChars(cp)) else m.value
+            }
+        }
+    }
+
+    private val COMMENT_ENTITY = Regex("&(#x?[0-9a-fA-F]+|[a-zA-Z]+);")
 
     // ---------------------------------------------------------------- HTTP
 
@@ -1138,6 +1349,7 @@ class GamekeeRepository private constructor(private val appContext: android.cont
         cacheDir.deleteRecursively()
         treeCache = null
         thumbs.clear()
+        emojiMapMemory = null
     }
 
     // HTML 转义放到最后：kotlin.text.escapeHtml 不存在，自己来，只处理会破结构的几个

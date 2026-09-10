@@ -159,7 +159,7 @@ fun CdkScreen() {
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "来自 GameKee · 点条目即复制",
+                    "来自 GameKee",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -561,6 +561,9 @@ private fun BatchResultDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        // M3 1.2.1 的 AlertDialog 默认底色取自 colorScheme.surface，壁纸模式下
+        // 那是透明的（见 Theme 的 transparentBackground），这里显式给不透明的
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text("兑换结果") },
         text = {
             if (outcomes.isEmpty()) {
@@ -617,6 +620,8 @@ private fun BatchResultDialog(
 private fun HistoryDialog(history: List<RedeemRecord>?, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        // 同上：壁纸模式下默认底色是透明的，显式给不透明容器色
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text("兑换记录") },
         text = {
             when {

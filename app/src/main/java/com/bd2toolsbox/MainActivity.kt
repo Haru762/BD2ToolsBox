@@ -1,8 +1,17 @@
 package com.bd2toolsbox
 
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import com.bd2toolsbox.data.repository.UpdateRepository
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -76,6 +85,22 @@ import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
 
+    /**
+     * 系统下载完成广播：只认我们自己排队的那个下载 id，交给 ViewModel 走
+     * 「下载完成 → 弹安装框」的流程。
+     */
+    private val updateDownloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (id != -1L &&
+                id == UpdateRepository.get(applicationContext).currentDownloadId()
+            ) {
+                viewModel.onUpdateDownloadComplete(id)
+            }
+        }
+    }
+
     private val viewModel: MainViewModel by viewModels()
     private val guideViewModel: GuideViewModel by viewModels()
 
@@ -92,6 +117,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 更新包下载完成的系统广播（targetSdk 34 起 context 注册必须带 flag；
+        // 广播由系统发出，NOT_EXPORTED 即可）
+        ContextCompat.registerReceiver(
+            this,
+            updateDownloadReceiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         // 手势条沉浸：状态栏/导航栏透明，内容画到系统栏后面（各内容区的
         // 避让交给各自的 statusBarsPadding / NavigationBar / Scaffold）
         enableEdgeToEdge()
@@ -190,7 +223,6 @@ class MainActivity : ComponentActivity() {
                 val openSettings = {
                     viewModel.refreshBackupUsage()
                     viewModel.refreshPreviewCacheUsage()
-                    viewModel.refreshAvatarCacheUsage()
                     viewModel.refreshSpineRuntimeUsage()
                     settingsOpen = true
                     Unit
@@ -404,7 +436,6 @@ class MainActivity : ComponentActivity() {
                                 onClick = {
                                     viewModel.refreshBackupUsage()
                                     viewModel.refreshPreviewCacheUsage()
-                                    viewModel.refreshAvatarCacheUsage()
                                     viewModel.refreshSpineRuntimeUsage()
                                     settingsOpen = true
                                 }
@@ -451,13 +482,17 @@ class MainActivity : ComponentActivity() {
                                     if (byCharacter) {
                                         val characters by viewModel.allCharacterNames.collectAsState()
                                         val npcCharacters by viewModel.npcCharacterNames.collectAsState()
+                                        val avatarSyncFailed by viewModel.avatarSyncFailed.collectAsState()
                                         val entries = remember(characters, npcCharacters, allMods) {
                                             buildCharacterEntries(characters, npcCharacters, allMods)
                                         }
                                         CharacterScreen(
                                             entries = entries,
                                             filter = characterFilter,
-                                            onPickCharacter = { openedCharacter = it }
+                                            onPickCharacter = { openedCharacter = it },
+                                            // 预取整趟没拿到图时，列表正中给一句「请检查网络」
+                                            avatarSyncFailed = avatarSyncFailed,
+                                            onRetryAvatarSync = { viewModel.retryAvatarSync() }
                                         )
                                     } else {
                                         ModScreen(
@@ -563,6 +598,29 @@ class MainActivity : ComponentActivity() {
                     plan = prepackPlan,
                     onConfirm = { viewModel.startPrepack() },
                     onDismiss = { viewModel.dismissPrepackPlan() }
+                )
+
+                // 检查更新：只在「设置 → 高级」里手动点，结果落在这一个弹窗上。
+                // 「去下载」跳系统浏览器到 release 页，App 自己不下载不安装。
+                val latestRelease by viewModel.latestRelease.collectAsState()
+                UpdateDialog(
+                    release = latestRelease,
+                    onDownload = { release ->
+                        // 应用内下载：架构按本机自动选，进度看通知栏，
+                        // 完成后由下载广播接回并弹「安装」框
+                        viewModel.downloadUpdate(release)
+                        viewModel.dismissUpdate()
+                    },
+                    onDismiss = { viewModel.dismissUpdate() }
+                )
+
+                // 下载完成后的安装确认。安装要拉系统安装器与未知来源授权，
+                // 都需要 Activity 上下文，动作在 Activity 层做。
+                val updateApkReady by viewModel.updateApkReady.collectAsState()
+                UpdateReadyDialog(
+                    apkName = updateApkReady,
+                    onInstall = { installUpdateApk() },
+                    onDismiss = { viewModel.dismissUpdateReady() }
                 )
 
                 val prepackProgress by viewModel.prepackProgress.collectAsState()
@@ -731,6 +789,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // 更新下载广播注册于 onCreate，这里配对注销
+        runCatching { unregisterReceiver(updateDownloadReceiver) }
         try {
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         } catch (_: Exception) {
@@ -754,6 +814,48 @@ class MainActivity : ComponentActivity() {
      * 没有 Toast 的话，Shizuku 仍未启动时界面不会有任何变化，
      * 用户无法区分「点了没生效」和「检测过但仍不可用」。
      */
+    /**
+     * 拉起系统安装器装下载好的更新包。
+     *
+     * Android 8+ 要求「允许来自此来源的应用安装」授权：没给过就先把设置页
+     * 打开（系统没有授权完成的回调，用户回来后需要再点一次安装）。
+     */
+    private fun installUpdateApk() {
+        val file = UpdateRepository.get(applicationContext).downloadedApkFile() ?: run {
+            Toast.makeText(this, "安装包不存在，请重新检查更新", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            Toast.makeText(
+                this,
+                "请先允许 BD2 ToolsBox 安装应用，回来后再点一次安装",
+                Toast.LENGTH_LONG
+            ).show()
+            runCatching {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        runCatching {
+            startActivity(
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            )
+        }.onFailure {
+            Toast.makeText(this, "无法启动安装器：${it.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun recheckShizukuWithFeedback(viewModel: MainViewModel) {
         val available = viewModel.recheckShizuku()
         val msg = if (available) {

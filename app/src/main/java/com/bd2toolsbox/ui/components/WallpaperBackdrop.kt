@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,7 +16,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -29,11 +29,17 @@ import kotlinx.coroutines.withContext
  * 自定义壁纸底层。
  *
  * 铺在所有内容之下（主题里会把 background/surface 抽成透明，壁纸才透得出来），
- * 上面盖一层可调不透明度的白色遮罩 —— 「壁纸好看」和「字看得清」天生冲突，
+ * 上面盖一层可调不透明度的底色遮罩 —— 「壁纸好看」和「字看得清」天生冲突，
  * 而哪张图配多少合适只有用户自己知道，所以给条滑块而不是定死一个值。
  *
- * 遮罩用**白色**而不是 colorScheme.surface：壁纸模式下 surface 本身已经被改成透明了，
- * 拿它当遮罩色等于没盖。整个界面是浅色方案，白色也正是它原本的底色。
+ * 遮罩跟主题走：取 colorScheme 里不透明的底色，而不是写死 Color.White —— 换配色
+ * 预设、开「跟随壁纸取色」时遮罩会跟着变，不再永远是一层纯白。
+ *
+ * 但不能取 background / surface：壁纸模式下 Theme 正是把这两个抽成透明的
+ * （壁纸才透得出来），拿它们当遮罩色等于没盖 —— 而且 Color.Transparent 的
+ * RGB 是黑，copy(alpha = scrim) 会得到一层**黑色**遮罩，比不盖还糟。
+ * surfaceContainerLowest 是这一族里最接近 background 且始终不透明的一个
+ * （浅色方案下就是纯白），语义和观感都对得上。
  *
  * [uri] 为 null 时什么都不画，一次解码都不做。
  */
@@ -71,7 +77,7 @@ fun WallpaperBackdrop(uri: Uri?, scrim: Float) {
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.White.copy(alpha = scrim))
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = scrim))
         )
     }
 }

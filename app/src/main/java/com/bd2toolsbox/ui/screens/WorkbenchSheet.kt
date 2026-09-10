@@ -1,6 +1,10 @@
 package com.bd2toolsbox.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,14 +16,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.ui.components.WorkbenchRow
@@ -68,12 +81,36 @@ fun WorkbenchSheet(
     val hiddenCount by viewModel.hiddenCount.collectAsState()
     val previewCache by viewModel.previewCacheUsage.collectAsState()
     val spineRuntime by viewModel.spineRuntimeUsage.collectAsState()
-    val avatarCache by viewModel.avatarCacheUsage.collectAsState()
     val prepackProgress by viewModel.prepackProgress.collectAsState()
 
     val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val updateChecking by viewModel.updateChecking.collectAsState()
+    // 版本从 PackageManager 读，不写死在代码里 —— 发版只改 build.gradle 的
+    // versionName/versionCode，这里跟着变（项目没开 BuildConfig，也不值得为
+    // 一行字去开）。
+    val versionText = remember(context) {
+        try {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
+                       else info.versionCode.toLong()
+            "${info.versionName}（$code）"
+        } catch (e: Exception) {
+            "未知"
+        }
+    }
+
+    // 显式给不透明底色：M3 1.2.1 的 BottomSheetDefaults.ContainerColor 走
+    // SheetBottomTokens.DockedContainerColor = ColorSchemeKeyTokens.Surface，即
+    // colorScheme.surface —— 而壁纸模式下 surface 被抽成了透明，整个面板会连着
+    // 壁纸和底下的列表一起透出来（两层字叠在一起）。surfaceContainerLow 是 M3
+    // 给底部弹层的容器色，本主题不透明。
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -105,7 +142,7 @@ fun WorkbenchSheet(
             WorkbenchSection("原版备份") {
                 WorkbenchRow(
                     title = "装入前自动备份",
-                    subtitle = "装哪个备份哪个，卸载时可直接拷回、无需下载",
+                    subtitle = "卸载时可直接拷回，无需重新下载",
                     trailing = {
                         Switch(checked = backupOn, onCheckedChange = { viewModel.setBackupOriginals(it) })
                     }
@@ -131,7 +168,7 @@ fun WorkbenchSheet(
             WorkbenchSection("预览缓存") {
                 WorkbenchRow(
                     title = "批量预解包",
-                    subtitle = "提前把产物解包存好，之后预览动画秒开",
+                    subtitle = "提前解包，之后预览秒开",
                     enabled = prepackProgress == null,
                     onClick = onPrepack,
                     trailing = {
@@ -167,33 +204,9 @@ fun WorkbenchSheet(
                 WorkbenchRow(
                     title = if (spineRuntime > 0) "渲染组件已就绪" else "渲染组件未下载",
                     subtitle = if (spineRuntime > 0)
-                        "占用 ${formatBytes(spineRuntime)} · 预览动画靠它渲染"
+                        "占用 ${formatBytes(spineRuntime)}"
                     else
-                        "首次预览动画时自动下载（约 1.2 MB）。它的许可不允许随安装包分发，只能单独取"
-                )
-            }
-
-            // ---------------------------------------------------------- 角色头像
-            WorkbenchSection("角色头像") {
-                WorkbenchRow(
-                    title = if (avatarCache.second > 0) "已下载 ${avatarCache.second} 张"
-                            else "尚未下载",
-                    // 图从 GitHub 取，国内不挂代理大概率连不上 —— 说清楚了，
-                    // 用户看到一片占位图标时才知道该往哪儿找原因。
-                    subtitle = if (avatarCache.second > 0)
-                        "占用 ${formatBytes(avatarCache.first)} · 滚动列表时按需下载"
-                    else
-                        "列表滚到哪就下哪张（约 10 KB/张）。图源在 GitHub，连不上会一直显示占位图标",
-                    trailing = {
-                        if (avatarCache.second > 0) {
-                            TextButton(
-                                onClick = { viewModel.clearAvatarCache() },
-                                colors = ButtonDefaults.textButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.error
-                                )
-                            ) { Text("清空") }
-                        }
-                    }
+                        "首次预览时自动下载（约 1.2 MB）"
                 )
             }
 
@@ -201,7 +214,7 @@ fun WorkbenchSheet(
             WorkbenchSection("游戏目录") {
                 WorkbenchRow(
                     title = "一键卸载全部 mod",
-                    subtitle = "把游戏里所有被改过的资源还原成官方原版",
+                    subtitle = "把改过的资源还原成官方原版",
                     onClick = onUninstallAll,
                     trailing = {
                         Icon(
@@ -212,7 +225,7 @@ fun WorkbenchSheet(
                 )
                 WorkbenchRow(
                     title = "重新检测 Shizuku",
-                    subtitle = "启动 Shizuku 后点这里，无需重跑转换",
+                    subtitle = "无需重跑转换",
                     onClick = onRecheckShizuku,
                     trailing = { Icon(Icons.Default.ChevronRight, null) }
                 )
@@ -222,7 +235,7 @@ fun WorkbenchSheet(
             WorkbenchSection("外观") {
                 WorkbenchRow(
                     title = "跟随壁纸取色",
-                    subtitle = if (dynamicSupported) "使用系统壁纸的配色方案，开启后下面的配色不生效"
+                    subtitle = if (dynamicSupported) "开启后下面的预设配色不生效"
                                else "需要 Android 12 或更高版本",
                     enabled = dynamicSupported,
                     trailing = {
@@ -280,8 +293,6 @@ fun WorkbenchSheet(
 
                 WorkbenchRow(
                     title = if (wallpaperUri == null) "自定义壁纸" else "更换壁纸",
-                    subtitle = if (wallpaperUri == null) "选一张图当界面背景"
-                               else "拖下面的滑块调整它透出来的程度",
                     onClick = onPickWallpaper,
                     trailing = {
                         if (wallpaperUri != null) {
@@ -330,11 +341,6 @@ fun WorkbenchSheet(
                             // 直接没法读了。宁可不给到「壁纸全见」也不能让界面用不了。
                             valueRange = 0f..0.75f
                         )
-                        Text(
-                            "越往右壁纸越清楚、文字越淡。看不清就往左拖一点。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -343,7 +349,6 @@ fun WorkbenchSheet(
             WorkbenchSection("高级", showDivider = false) {
                 WorkbenchRow(
                     title = "重看使用引导",
-                    subtitle = "从头过一遍「怎么把 mod 装进游戏」",
                     onClick = onReplayOnboarding,
                     trailing = { Icon(Icons.Default.ChevronRight, null) }
                 )
@@ -356,12 +361,124 @@ fun WorkbenchSheet(
                 )
                 WorkbenchRow(
                     title = "解包工具",
-                    subtitle = "把某个 bundle 里的资源导出到 Download/outputs/",
+                    subtitle = "导出资源到 Download/outputs/",
                     onClick = onUnpackTool,
                     trailing = { Icon(Icons.Default.ChevronRight, null) }
                 )
+
+                // ---------------------------------------------------- 关于
+                // 声明、版本、项目地址收进「关于」弹框 —— 平铺在设置里太占地方；
+                // 检查更新是常用入口，单独留一行。升级前查版本、怀疑装的是不是
+                // 正版时点开关于即可。
+                var showAbout by remember { mutableStateOf(false) }
+                WorkbenchRow(
+                    title = "关于",
+                    subtitle = "BD2 ToolsBox · 版本 $versionText",
+                    onClick = { showAbout = true },
+                    trailing = { Icon(Icons.Default.ChevronRight, null) }
+                )
+                if (showAbout) {
+                    AboutDialog(
+                        versionText = versionText,
+                        onDismiss = { showAbout = false }
+                    )
+                }
+                WorkbenchRow(
+                    title = "检查更新",
+                    subtitle = if (updateChecking) "正在检查…" else null,
+                    enabled = !updateChecking,
+                    onClick = { viewModel.checkForUpdates() },
+                    trailing = {
+                        // 转圈同时兼作「本轮已发出」的反馈：没有它就只剩一个
+                        // 不会变化的箭头，用户会以为点击没生效而连点。
+                        if (updateChecking) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.ChevronRight, null)
+                        }
+                    }
+                )
             }
         }
+    }
+}
+
+/**
+ * 「关于」弹框：版本 + 免费开源声明（双语）+ 项目地址。
+ * 声明样式仿 Alas —— 一句话把「这是免费软件、付费购买请退款」说清楚。
+ * containerColor 必须显式给不透明色：壁纸模式把 surface 透明化后，
+ * 默认底色的弹框会透出底下的列表文字。
+ */
+@Composable
+private fun AboutDialog(versionText: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("关于") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "BD2 ToolsBox · 版本 $versionText",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    "BD2 ToolsBox 是一款免费开源软件，如果你在任何渠道付费购买了 BD2 ToolsBox，请退款。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "BD2 ToolsBox is a free and open source software. If you paid for it " +
+                            "through any channel, please request a refund.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "github.com/Haru762/BD2ToolsBox",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    // 复制与打开分开：只想复制的人不该被拉去浏览器。
+                    IconButton(onClick = {
+                        clipboard.setText(AnnotatedString(PROJECT_URL))
+                        // Android 13+ 系统自己会弹「已复制」，再 toast 一次是双重提示；
+                        // 老系统没有这层，保留自己的。
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            Toast.makeText(context, "地址已复制", Toast.LENGTH_SHORT).show()
+                        }
+                    }) { Icon(Icons.Default.ContentCopy, contentDescription = "复制地址", modifier = Modifier.size(18.dp)) }
+                    IconButton(onClick = { openUrl(context, PROJECT_URL) }) {
+                        Icon(
+                            Icons.Default.OpenInNew,
+                            contentDescription = "在浏览器中打开",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
+}
+
+/** 项目主页。「复制」与「在浏览器中打开」用的是同一个地址。 */
+private const val PROJECT_URL = "https://github.com/Haru762/BD2ToolsBox"
+
+/** 开系统浏览器。没有能处理 http 的应用时给一句提示，别让点击石沉大海。 */
+private fun openUrl(context: Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    } catch (e: Exception) {
+        Toast.makeText(context, "没有能打开这个地址的应用", Toast.LENGTH_SHORT).show()
     }
 }
 
