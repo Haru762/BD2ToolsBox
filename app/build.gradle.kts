@@ -26,8 +26,8 @@ android {
         applicationId = "com.bd2toolsbox"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.7"
+        versionCode = 11
+        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

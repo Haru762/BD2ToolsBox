@@ -250,7 +250,7 @@ class UpdateRepository private constructor(private val appContext: Context) {
     fun downloadedApkFile(): File? =
         updateDir().listFiles()?.firstOrNull { it.isFile && it.length() > 0 }
 
-    private fun updateDir(): File =
+    internal fun updateDir(): File =
         File(appContext.getExternalFilesDir(null), "updates").apply { mkdirs() }
 
     /**

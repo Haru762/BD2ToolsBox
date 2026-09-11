@@ -41,6 +41,7 @@ import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import com.google.gson.stream.JsonWriter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
@@ -1084,6 +1085,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         prefetchAvatars()
         // 启动自动检查更新：静默、24h 一次、有新版弹框
         checkForUpdates(auto = true)
+        // 清上次更新残留的安装包（装完即弃）
+        cleanupUpdateApk()
     }
 
     fun dismissVersionMismatchWarning() {
@@ -2207,7 +2210,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         )
 
         if (successful.isNotEmpty() && ShizukuManager.isRunning()) {
-            moveFilesToGame()
+            moveFilesToGame(silent = true)
         }
     }
 
@@ -2260,11 +2263,13 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         _moveState.value = MoveState.Idle
     }
 
-    fun moveFilesToGame() {
+    fun moveFilesToGame(silent: Boolean = false) {
         // 跟着装入流程走 installScope：它现在是「转换完自动移入」的收尾一步，
         // 界面销毁时若被取消，产物就停在 Download/Shared 里没进游戏 —— 用户以为装好了。
+        // silent=true（自动移入）不亮「正在装入」中间态 —— 那一步只是几百毫秒的
+        // 文件搬运，弹出来一闪而过反而像出错了；手动点按钮才需要进度反馈。
         installScope.launch {
-            _moveState.value = MoveState.Moving
+            if (!silent) _moveState.value = MoveState.Moving
             val (success, message) = ShizukuManager.moveDownloadToGame()
             _moveState.value = if (success) {
                 MoveState.Success(message)
@@ -4108,6 +4113,27 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             }
             if (started != null) {
                 toast(ctx, "已开始下载 ${started.name}，进度见通知栏")
+                // 轮询兜底：广播接收器在部分 ROM 上不可靠（NOT_EXPORTED 改
+                // EXPORTED 已修一层），这里再直接查状态——双保险，谁先到谁
+                // 触发弹框；已有 _updateApkReady 非空守卫不会弹两次。
+                viewModelScope.launch(Dispatchers.IO) {
+                    while (_updateApkReady.value == null) {
+                        delay(3000)
+                        val id = repo.currentDownloadId()
+                        if (id != -1L && repo.isDownloadSuccessful(id)) {
+                            val f = repo.downloadedApkFile()
+                            if (f != null) {
+                                _updateApkReady.value = f.name
+                                break
+                            }
+                        }
+                        // 下载不在了（被取消或超时很久）就停
+                        if (!repo.hasActiveDownload() && !repo.isDownloadSuccessful(id)) {
+                            // 已不在进行中也不算成功 → 大概率被用户取消
+                            break
+                        }
+                    }
+                }
             } else if (withContext(Dispatchers.IO) { UpdateRepository.get(ctx).hasActiveDownload() }) {
                 toast(ctx, "已有下载在进行中")
             } else {
@@ -4137,6 +4163,14 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     /** 关掉「下载完成」弹窗（不安装，包文件保留，下次检查更新可重下）。 */
     fun dismissUpdateReady() {
         _updateApkReady.value = null
+    }
+
+    /** 启动时清掉上次更新留下的安装包（装完就没用了，白占几十 MB）。 */
+    fun cleanupUpdateApk() {
+        val ctx = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            UpdateRepository.get(ctx).updateDir().listFiles()?.forEach { it.delete() }
+        }
     }
 
     /** 关掉静态预览查看器，顺带清掉它的临时目录。 */

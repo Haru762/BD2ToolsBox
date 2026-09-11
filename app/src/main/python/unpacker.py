@@ -60,8 +60,14 @@ def decompress_astc_ctypes(data, width, height, block_x, block_y):
         if len(data) < blocks * 16 // 2:  # 宽松一半，正常 ASTC 是 16B/block
             raise ValueError(f"data too short: {len(data)}B for {blocks} blocks")
         import texture2ddecoder
-        return texture2ddecoder.decode_astc(
-            bytes(data), width, height, block_x, block_y), None
+        raw = texture2ddecoder.decode_astc(
+            bytes(data), width, height, block_x, block_y)
+        # C 侧按 uint32 打包输出，小端机器上字节序是 B,G,R,A（BGRA）；
+        # PIL/UnityPy 期望 R,G,B,A —— 交换首尾两个通道，否则整张图
+        # 偏蓝（肤色变蓝调）。bytearray 扩展切片在 C 层做，2048² 秒级。
+        _ba = bytearray(raw)
+        _ba[0::4], _ba[2::4] = raw[2::4], raw[0::4]   # swap R↔B
+        return bytes(_ba), None
     except Exception as e:
         _report(f"WARNING: ASTC decode failed for '{_current_asset_name or '?'}' "
                 f"({width}x{height}, block {block_x}x{block_y}): {e}")

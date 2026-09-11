@@ -117,13 +117,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 更新包下载完成的系统广播（targetSdk 34 起 context 注册必须带 flag；
-        // 广播由系统发出，NOT_EXPORTED 即可）
+        // 更新包下载完成的系统广播。EXPORTED 而非 NOT_EXPORTED：部分国产
+        // ROM 对 NOT_EXPORTED 接收器的系统广播投递不可靠（实测过弹框不出现
+        // 的场景），DownloadManager 广播本身无敏感数据，EXPORTED 更稳。
         ContextCompat.registerReceiver(
             this,
             updateDownloadReceiver,
             IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_EXPORTED
         )
         // 手势条沉浸：状态栏/导航栏透明，内容画到系统栏后面（各内容区的
         // 避让交给各自的 statusBarsPadding / NavigationBar / Scaffold）
@@ -247,7 +248,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .statusBarsPadding()
-                                    .padding(start = 16.dp, end = 8.dp, top = 6.dp),
+                                    .padding(start = 16.dp, end = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
@@ -284,13 +285,16 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .statusBarsPadding()
-                                .padding(start = 8.dp, end = 8.dp, top = 6.dp),
+                                .padding(start = 8.dp, end = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             var folderMenu by remember { mutableStateOf(false) }
                             Box {
-                                IconButton(onClick = { folderMenu = true }) {
-                                    Icon(Icons.Default.FolderOpen, contentDescription = "mod 文件夹")
+                                IconButton(
+                                    onClick = { folderMenu = true },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(Icons.Default.FolderOpen, contentDescription = "mod 文件夹", modifier = Modifier.size(22.dp))
                                 }
                                 DropdownMenu(
                                     expanded = folderMenu,
@@ -878,8 +882,8 @@ class MainActivity : ComponentActivity() {
 /** 顶栏右上角的设置齿轮。三个 tab 共用同一个入口，点击行为由所在 tab 注入。 */
 @Composable
 private fun SettingsGear(onClick: () -> Unit = {}) {
-    IconButton(onClick = onClick) {
-        Icon(Icons.Default.Settings, contentDescription = "设置")
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+        Icon(Icons.Default.Settings, contentDescription = "设置", modifier = Modifier.size(22.dp))
     }
 }
 
