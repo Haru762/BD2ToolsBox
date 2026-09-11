@@ -54,7 +54,9 @@ def _make_decoder(symbol):
         )
         if ret != 0:
             raise RuntimeError(f"{symbol} failed with return code {ret}")
-        return bytes(out)
+        # 返回数组本体而非 bytes 拷贝：PIL frombytes 走缓冲区协议
+        # 直接读，一张 4096² 贴图省 67MB 峰值；调用方用完即随 out 一起释放。
+        return out
     return decode
 
 
@@ -121,7 +123,8 @@ def _decode_astc(data, width, height, block_x, block_y):
     )
     if ret != 0:
         raise RuntimeError(f"decode_astc failed with return code {ret}")
-    return bytes(out)
+    # 同 _make_decoder：返回数组本体，免一次整图拷贝
+    return out
 
 
 decode_astc = _decode_astc

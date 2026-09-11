@@ -29,6 +29,11 @@ object ModdingService {
     private fun progressAdapter(onProgress: (String) -> Unit): PyObject =
         PyObject.fromJava(onProgress)
 
+    /** 可取消版：回调返回 true 时 python 侧尽快收手（见 unpackBundle）。
+     *  Boolean 与 Unit 的 lambda 在 JVM 上都是 Function1，只能按名区分。 */
+    private fun cancellableProgressAdapter(onProgress: (String) -> Boolean): PyObject =
+        PyObject.fromJava(onProgress)
+
     // ---------------------------------------------------------------- 下载与转换
 
     fun downloadBundle(hashedName: String, quality: String, outputDir: String,
@@ -131,9 +136,13 @@ object ModdingService {
      * @param fast 预览用：只导出 png/atlas/skel，PNG 低压缩写盘，明显更快。
      *             解包工具应传 false，保持完整导出与原有压缩率。
      */
+    /**
+     * onProgress 返回 true 表示请求取消（python 侧每个资产检查一次，
+     * 取消后尽快干净退出，而不是把当前这个 mod 硬解完）。
+     */
     fun unpackBundle(bundlePath: String, outputDir: String, fast: Boolean = false,
-                     onProgress: (String) -> Unit): Pair<Boolean, String> {
-        val r = callMain("unpack_bundle", bundlePath, outputDir, progressAdapter(onProgress), fast)
+                     onProgress: (String) -> Boolean): Pair<Boolean, String> {
+        val r = callMain("unpack_bundle", bundlePath, outputDir, cancellableProgressAdapter(onProgress), fast)
             ?: return Pair(false, "An unknown error occurred in Kotlin during unpack.")
         return r[0].toBoolean() to r[1].toString()
     }

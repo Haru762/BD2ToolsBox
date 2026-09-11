@@ -134,6 +134,14 @@ class PrepackService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var worker: Job? = null
+
+    /**
+     * 取消旗标。worker.cancel() 只能取消协程，Chaquopy 的 python 调用是
+     * 同步阻塞——靠这个旗标让进度回调（python 每个资产调一次）把取消
+     * 传进 python，当前 mod 立刻收手，不用等它解完。
+     */
+    @Volatile
+    private var cancelRequested = false
     private lateinit var previewCache: PreviewCacheRepository
 
     override fun onCreate() {
@@ -147,6 +155,7 @@ class PrepackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL) {
             Log.d(TAG, "收到取消")
+            cancelRequested = true
             worker?.cancel()
             worker = null
             _progress.value = null
@@ -180,6 +189,7 @@ class PrepackService : Service() {
     }
 
     private suspend fun run(targets: List<Target>) {
+        cancelRequested = false
         val ctx = applicationContext
         try {
             if (!Python.isStarted()) {
@@ -196,6 +206,9 @@ class PrepackService : Service() {
                     Log.d(TAG, "已取消，停在 $done/${targets.size}")
                     break
                 }
+                // 每个 mod 一行日志：真机上预解包被系统杀掉时（LMK/厂商省电），
+                // 进度条只停在最后一个 mod，这行日志是唯一的死因线索。
+                Log.i(TAG, "预解包 ${done + 1}/${targets.size}: ${t.displayName}")
                 _progress.value = Progress(done, targets.size, t.displayName, "准备中…")
                 notify(done, targets.size, t.displayName, "准备中…")
 
@@ -250,6 +263,9 @@ class PrepackService : Service() {
                             lastPush = now
                             push(done, targets.size, t.displayName, describeUnpack(line))
                         }
+                        // 返回取消旗标（lambda 最后一行即返回值；回调跑在
+                        // python 线程上，不能查协程 isActive，读旗标）
+                        cancelRequested
                     }
                     if (ok) {
                         val hasSkel = outDir.listFiles()?.any {

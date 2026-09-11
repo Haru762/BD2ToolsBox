@@ -1235,7 +1235,7 @@ private fun ModCardMenu(
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
-            text = { Text("预览动画") },
+            text = { Text("预览") },
             leadingIcon = { Icon(Icons.Default.PlayArrow, null) },
             onClick = { onDismiss(); onPreview() }
         )

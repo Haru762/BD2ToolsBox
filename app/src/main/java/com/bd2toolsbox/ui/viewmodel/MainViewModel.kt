@@ -2466,6 +2466,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     viewModelScope.launch(Dispatchers.Main) {
                         _unpackState.value = UnpackState.Unpacking(progress)
                     }
+                    false   // 解包工具页没有取消入口
                 }
 
                 if (result.first) {
@@ -3774,7 +3775,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         context: Context,
         modInfo: ModInfo,
         tempDir: File
-    ): Pair<String, String>? {
+    ): PreviewAssets? {
         val hashDir = modInfo.convertedHashDir ?: return null
         val srcSize = modInfo.convertedDataSize ?: -1L
         val bundleName = modInfo.targetHash ?: return null
@@ -3789,8 +3790,12 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 previewCacheRepository.entryDir(bundleName, hashDir).listFiles()
                     ?.filter { it.isFile && !it.name.startsWith(".") }
                     ?.forEach { it.copyTo(File(tempDir, it.name), overwrite = true) }
-                return File(tempDir, File(cached.first).name).absolutePath to
-                        File(tempDir, File(cached.second).name).absolutePath
+                return PreviewAssets(
+                    File(tempDir, File(cached.first).name).absolutePath,
+                    File(tempDir, File(cached.second).name).absolutePath,
+                    tempDir.listFiles()?.filter { it.name.endsWith(".png") }
+                        ?.map { it.absolutePath }.orEmpty()
+                )
             }
         }
 
@@ -3811,7 +3816,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         val outDir = previewCacheRepository.prepareDir(bundleName, hashDir)
         val (ok, msg) = ModdingService.unpackBundle(
             bundleFile.absolutePath, outDir.absolutePath, fast = true
-        ) { p -> _previewState.value = PreviewState.Preparing(p) }
+        ) { p ->
+            _previewState.value = PreviewState.Preparing(p)
+            false   // 预览路径不提供中途取消
+        }
         bundleFile.delete()
         if (!ok) {
             previewCacheRepository.delete(bundleName, hashDir)   // 不留半成品当缓存
@@ -3824,9 +3832,16 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             ?: files.firstOrNull { it.name.endsWith(".json", true) }
         val atlas = files.firstOrNull { it.name.endsWith(".atlas", true) }
         if (skel == null || atlas == null) {
+            // 有图没骨架：不算失败——静态查看兜底（预解包侧同样只认骨架，
+            // 这里至少让用户当场看到贴图）
+            val pngs = files.filter { it.name.endsWith(".png") }
+                .map { it.absolutePath }
+            if (pngs.isNotEmpty()) {
+                return PreviewAssets(null, null, pngs)
+            }
             previewCacheRepository.delete(bundleName, hashDir)
             _previewState.value = PreviewState.Failed(
-                "这个 bundle 里没有可预览的 Spine 骨架（解出 ${files.size} 个文件）"
+                "这个 bundle 里没有可预览的素材（解出 ${files.size} 个文件）"
             )
             return null
         }
@@ -3834,7 +3849,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
         files.filter { it.isFile && !it.name.startsWith(".") }
             .forEach { it.copyTo(File(tempDir, it.name), overwrite = true) }
-        return File(tempDir, skel.name).absolutePath to File(tempDir, atlas.name).absolutePath
+        return PreviewAssets(
+            File(tempDir, skel.name).absolutePath,
+            File(tempDir, atlas.name).absolutePath,
+            files.filter { it.name.endsWith(".png") }.map { it.absolutePath }
+        )
     }
 
     /**
@@ -3881,22 +3900,32 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             if (!tempDir.mkdirs()) return@launch
 
             try {
-                val (skelPath, atlasPath) = collectPreviewFiles(context, modInfo, tempDir)
-                if (skelPath != null && atlasPath != null) {
+                val preview = collectPreviewFiles(context, modInfo, tempDir)
+                if (preview.skelPath != null && preview.atlasPath != null) {
                     withContext(Dispatchers.Main) {
                         context.startActivity(Intent(context, SpinePreviewActivity::class.java).apply {
-                            putExtra("skelPath", skelPath)
-                            putExtra("atlasPath", atlasPath)
+                            putExtra("skelPath", preview.skelPath)
+                            putExtra("atlasPath", preview.atlasPath)
                             putExtra("tempDirPath", tempDir.absolutePath)
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK
                         })
                     }
                     _previewState.value = PreviewState.Idle
+                } else if (preview.pngPaths.isNotEmpty()) {
+                    // 没骨架的贴图型 mod（立绘/壁纸等）：spine 放不了动画，
+                    // 至少把图亮出来看看 —— 用户「哪怕不是动画」的要求。
+                    // 路径所有权交给查看器：静态查看不经过 SpinePreviewActivity
+                    // 的 onDestroy 清理，这里由查看器关闭时删 tempDir。
+                    withContext(Dispatchers.Main) {
+                        _staticPreviewImages.value = preview.pngPaths
+                        _staticPreviewTempDir.value = tempDir.absolutePath
+                    }
+                    _previewState.value = PreviewState.Idle
                 } else {
-                    // 没有素材可预览要明说 —— 旧版这里是空分支，长按毫无反应，
+                    // 一点素材都没有要明说 —— 旧版这里是空分支，长按毫无反应，
                     // 用户分不清是不支持还是坏了
                     _previewState.value = PreviewState.Failed(
-                        "没找到可预览的骨架文件（需要 .skel 或 .json，外加同名 .atlas）"
+                        "没找到可预览的素材（动画需要 .skel/.json + .atlas；静态至少要有一张 .png）"
                     )
                     tempDir.deleteRecursively()
                 }
@@ -3914,11 +3943,18 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 把 mod 素材收进临时目录，返回 (skel 路径, atlas 路径)。三类来源：
      * 产物（先解包）、目录 mod（逐文件拷）、zip mod（逐条解压）。
      */
+    /** collectPreviewFiles 的产物：spine 三件套 + 全部贴图（静态查看兜底用）。 */
+    data class PreviewAssets(
+        val skelPath: String?,
+        val atlasPath: String?,
+        val pngPaths: List<String>
+    )
+
     private suspend fun collectPreviewFiles(
         context: Context,
         modInfo: ModInfo,
         tempDir: File
-    ): Pair<String?, String?> {
+    ): PreviewAssets {
         if (modInfo.kind == ModKind.CONVERTED_BUNDLE) {
             return unpackConvertedForPreview(context, modInfo, tempDir)
                 ?: run {
@@ -3926,15 +3962,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                         _previewState.value = PreviewState.Failed("无法从产物中取出可预览的素材")
                     }
                     tempDir.deleteRecursively()
-                    null to null
+                    PreviewAssets(null, null, emptyList())
                 }
         }
 
         var skel: String? = null
         var atlas: String? = null
+        val pngs = mutableListOf<String>()
         fun onExtracted(fileName: String, dest: File) {
             if (fileName.endsWith(".skel") || fileName.endsWith(".json")) skel = dest.absolutePath
             else if (fileName.endsWith(".atlas")) atlas = dest.absolutePath
+            else if (fileName.endsWith(".png")) pngs.add(dest.absolutePath)
         }
 
         val previewExts = setOf(".skel", ".json", ".atlas", ".png")
@@ -3967,7 +4005,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 }
             }
         }
-        return skel to atlas
+        return PreviewAssets(skel, atlas, pngs)
     }
 
     // ------------------------------------------------ 检查更新
@@ -3981,6 +4019,13 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     private val _latestRelease = MutableStateFlow<UpdateRepository.Release?>(null)
     val latestRelease: StateFlow<UpdateRepository.Release?> = _latestRelease.asStateFlow()
 
+
+    /** 静态预览（无骨架 mod 的贴图查看）：图片路径列表；非空时界面弹查看器。 */
+    private val _staticPreviewImages = MutableStateFlow<List<String>>(emptyList())
+    val staticPreviewImages: StateFlow<List<String>> = _staticPreviewImages.asStateFlow()
+
+    /** 静态预览的临时目录，查看器关闭时清理。 */
+    private val _staticPreviewTempDir = MutableStateFlow<String?>(null)
 
     /** 下载完成待安装的 APK 文件名；非空时界面弹「安装」确认框。 */
     private val _updateApkReady = MutableStateFlow<String?>(null)
@@ -4071,6 +4116,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     /** 关掉「下载完成」弹窗（不安装，包文件保留，下次检查更新可重下）。 */
     fun dismissUpdateReady() {
         _updateApkReady.value = null
+    }
+
+    /** 关掉静态预览查看器，顺带清掉它的临时目录。 */
+    fun dismissStaticPreview() {
+        _staticPreviewImages.value = emptyList()
+        _staticPreviewTempDir.value?.let { path ->
+            viewModelScope.launch(Dispatchers.IO) {
+                File(path).deleteRecursively()
+            }
+        }
+        _staticPreviewTempDir.value = null
     }
 
     /**

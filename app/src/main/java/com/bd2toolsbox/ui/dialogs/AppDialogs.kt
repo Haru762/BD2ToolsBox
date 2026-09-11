@@ -13,6 +13,22 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -1757,6 +1773,80 @@ fun UpdateDialog(
             Button(onClick = { release?.let(onDownload) }) { Text("下载并安装") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+/**
+ * 贴图静态查看器：无骨架 mod（立绘/壁纸等贴图替换型）的预览兜底。
+ * spine 放不了动画，至少把图亮出来。点图片翻页，按钮关闭。
+ *
+ * 大贴图（spine 图集页常见 2048²/4096²）按屏幕宽降采样解码，避免一张
+ * 图就把查看器撑爆——跟预解包同一个教训。
+ */
+@Composable
+fun ImageViewerDialog(
+    imagePaths: List<String>,
+    onDismiss: () -> Unit
+) {
+    if (imagePaths.isEmpty()) return
+    var index by remember { mutableStateOf(0) }
+    var bitmap by remember(imagePaths, index) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val context = LocalContext.current
+    val density = LocalDensity.current
+
+    // 当前页解码（IO 不可挂主线程，LaunchedEffect 内解码 + 按屏宽降采样）
+    LaunchedEffect(imagePaths, index) {
+        bitmap = withContext(Dispatchers.IO) {
+            try {
+                val opts = android.graphics.BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                android.graphics.BitmapFactory.decodeFile(imagePaths[index], opts)
+                val screenW = with(density) {
+                    android.os.Build.VERSION.SDK_INT.let {
+                        context.resources.displayMetrics.widthPixels
+                    }
+                }
+                var sample = 1
+                while (opts.outWidth / (sample * 2) >= screenW) sample *= 2
+                android.graphics.BitmapFactory.decodeFile(
+                    imagePaths[index],
+                    android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
+        title = { Text("贴图 ${index + 1}/${imagePaths.size}") },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(Color.Black)
+                    .clickable {
+                        // 点图翻页；最后一页再点关闭
+                        if (index < imagePaths.size - 1) index++ else onDismiss()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                bitmap?.let {
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                } ?: CircularProgressIndicator(modifier = Modifier.size(28.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
     )
 }
 

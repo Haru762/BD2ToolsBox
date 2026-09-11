@@ -614,6 +614,13 @@ class MainActivity : ComponentActivity() {
                     onDismiss = { viewModel.dismissUpdate() }
                 )
 
+                // 无骨架 mod 的静态贴图查看（预览的兜底路径）
+                val staticImages by viewModel.staticPreviewImages.collectAsState()
+                ImageViewerDialog(
+                    imagePaths = staticImages,
+                    onDismiss = { viewModel.dismissStaticPreview() }
+                )
+
                 // 下载完成后的安装确认。安装要拉系统安装器与未知来源授权，
                 // 都需要 Activity 上下文，动作在 Activity 层做。
                 val updateApkReady by viewModel.updateApkReady.collectAsState()

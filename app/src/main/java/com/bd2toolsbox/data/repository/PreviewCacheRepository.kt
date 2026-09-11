@@ -26,6 +26,13 @@ import java.io.File
 class PreviewCacheRepository(private val context: Context) {
 
     companion object {
+        /**
+         * 缓存换代戳。解码逻辑修过一次大 bug（0.2.5 之前 ASTC 全部静默解成
+         * 黑图），但没有版本戳的话修完也白修——isValid 只认 skel/atlas/大小，
+         * 旧的黑图缓存会一直被当作有效命中继续显示。换代即整体失效，下次
+         * 预解包重新生成。解码逻辑再改必须 bump。
+         */
+        private const val CACHE_GENERATION = 2
         private const val DIR_NAME = "preview_cache"
         private const val SRC_SIZE_FILE = ".srcsize"
     }
@@ -44,6 +51,10 @@ class PreviewCacheRepository(private val context: Context) {
     fun isValid(bundleName: String, hashDir: String, srcSize: Long): Boolean {
         val dir = entryDir(bundleName, hashDir)
         if (!dir.isDirectory) return false
+        // 旧代缓存（无戳或代数不符）一律无效，逼一次重新解包
+        val genFile = File(dir, "gen")
+        if (!genFile.isFile || genFile.readText().trim() != CACHE_GENERATION.toString())
+            return false
         val files = dir.listFiles()?.filter { it.isFile } ?: return false
         val hasSkel = files.any { it.name.endsWith(".skel", true) || it.name.endsWith(".json", true) }
         val hasAtlas = files.any { it.name.endsWith(".atlas", true) }
@@ -71,6 +82,11 @@ class PreviewCacheRepository(private val context: Context) {
 
     /** 解包成功后记录源产物大小，作为后续校验依据。 */
     fun commit(bundleName: String, hashDir: String, srcSize: Long) {
+        try {
+            File(entryDir(bundleName, hashDir), "gen").writeText(CACHE_GENERATION.toString())
+        } catch (_: Exception) {
+            // 写不进戳只是下次会重复解包，不当错误处理
+        }
         try {
             File(entryDir(bundleName, hashDir), SRC_SIZE_FILE).writeText(srcSize.toString())
         } catch (e: Exception) {

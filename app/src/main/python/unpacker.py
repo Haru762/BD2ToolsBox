@@ -24,6 +24,10 @@ _current_asset_name = None
 _progress_callback = print
 
 
+class UnpackCancelled(Exception):
+    """进度回调要求取消（返回真）。解开到一半的目录由调用方清理。"""
+
+
 def _report(message):
     """警告双写：stdout（logcat）与 UI 进度 —— 解码失败不能再静默。"""
     print(message)
@@ -42,6 +46,19 @@ def decompress_astc_ctypes(data, width, height, block_x, block_y):
     所以原因必须写进日志，否则又是一次「预览全黑、日志什么也没有」。
     """
     try:
+        # 尺寸帽与数据量核对：损坏对象可能带着垃圾尺寸（169KB 的包声称
+        # 16384x16384 → 一次分配 1GB → 进程被系统直接杀掉，预解包「无声
+        # 消失」就死在这里）。声称的分辨率先过合理性检查，数据长度也要
+        # 够铺满 block 数（ASTC 每 block 16 字节，减 3 字节头）——两道
+        # 都不过就按解码失败处理，黑图 + 日志，进程继续活。
+        pixels = width * height
+        if pixels <= 0 or pixels > MAX_DECODE_PIXELS:
+            raise ValueError(f"implausible dimensions {width}x{height}")
+        if block_x <= 0 or block_y <= 0 or block_x > 16 or block_y > 16:
+            raise ValueError(f"implausible block size {block_x}x{block_y}")
+        blocks = ((width + block_x - 1) // block_x) * ((height + block_y - 1) // block_y)
+        if len(data) < blocks * 16 // 2:  # 宽松一半，正常 ASTC 是 16B/block
+            raise ValueError(f"data too short: {len(data)}B for {blocks} blocks")
         import texture2ddecoder
         return texture2ddecoder.decode_astc(
             bytes(data), width, height, block_x, block_y), None
@@ -63,6 +80,14 @@ PREVIEW_TYPES = ("Texture2D", "TextAsset", "MonoBehaviour")
 
 # 每 10 个对象做一次 gc：贴图解码的内存大头不进 gc 代际，得主动收
 GC_INTERVAL = 10
+
+# 单张贴图解码的像素帽（16384x16384 = 上限；正常 spine 页最大 4096²）
+MAX_DECODE_PIXELS = 16384 * 16384
+
+# 单个 bundle 的体量门槛：超过则拒绝解码（加载本身就要吃等量内存，
+# 448MB 的特殊插画合集在手机上会把进程直接顶爆——预解包队列死在它身上、
+# 整个 app 无声消失。跳过只影响「预览」，安装是整文件拷贝不受影响）。
+MAX_BUNDLE_BYTES = 350 * 1024 * 1024
 
 
 def _unique_export_path(output_dir, base_name, extension, path_id):
@@ -140,6 +165,17 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print, fast=False):
     类型连 obj.read() 都不做——完整反序列化对用不上的对象是纯浪费），
     PNG 用 compress_level=1 换写盘速度。
     """
+    # 体量门槛（见 MAX_BUNDLE_BYTES 注释）：宁可明说「预览不了」，
+    # 也不能让一个巨包把整个预解包队列连带 app 进程一起带走。
+    try:
+        if os.path.getsize(bundle_path) > MAX_BUNDLE_BYTES:
+            msg = (f"bundle too large to decode: {os.path.getsize(bundle_path) // 1048576} MB "
+                   f"(cap {MAX_BUNDLE_BYTES // 1048576} MB) — 安装不受影响，仅无法预览")
+            progress_callback(msg)
+            return False, msg
+    except OSError:
+        pass
+
     global _current_asset_name, _progress_callback
     _progress_callback = progress_callback or print
     progress_callback(f"Starting to unpack '{os.path.basename(bundle_path)}'...")
@@ -181,7 +217,8 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print, fast=False):
                         dest_name = registered.replace('/', '_')
                 path_id = getattr(obj, 'path_id', 'dup')
                 _current_asset_name = dest_name
-                progress_callback(f"Processing asset {i + 1}/{total}: {dest_name}")
+                if progress_callback(f"Processing asset {i + 1}/{total}: {dest_name}"):
+                    raise UnpackCancelled()
 
                 if obj.type.name == "Texture2D":
                     _export_texture(data, _unique_export_path(output_dir, dest_name, ".png", path_id), fast)
@@ -203,6 +240,9 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print, fast=False):
         gc.collect()
         progress_callback("Unpacking complete.")
         return True, "Unpacking complete."
+    except UnpackCancelled:
+        progress_callback("Unpacking cancelled.")
+        return False, "cancelled"
     except Exception as e:
         import traceback
         error_message = f"Failed to load bundle: {e}"
