@@ -152,7 +152,12 @@ def _parse_catalog_data(output_dir):
 
 
 def _relevant_bundles_from_catalog(output_dir):
-    """catalog 预筛：只留装着骨架/立绘的 bundle。catalog 不可用返回 None。"""
+    """catalog 预筛：只留装着骨架/立绘的 bundle。catalog 不可用返回 None。
+
+    **已知会误杀**：spine 资产装在哪只有 bundle 内 m_Name 说了算，
+    timeline/storypack/localpacktitle 类 bundle 的 catalog 地址不含
+    illust/skeletondata，预筛会把它们连同里面的 illust_special24.skel
+    一起剔除。仅 check_scan_needed(full_scan=False) 时使用，不是默认。"""
     try:
         _, bundle_to_keys = _parse_catalog_data(output_dir)
     except Exception:
@@ -174,12 +179,23 @@ def _relevant_bundles_from_catalog(output_dir):
 # 三步式扫描 API
 # ---------------------------------------------------------------------------
 
-def check_scan_needed(output_dir, bundle_list_json, full_scan=False):
+def check_scan_needed(output_dir, bundle_list_json, full_scan=True):
     """Step 1：对照缓存，给出需要重扫的 bundle 名单（JSON 串）。
 
     bundle_list_json 是 Kotlin 经 Shizuku 从游戏 Shared/ 拿到的目录清单：
     [{"name": bundle名, "hash": 哈希目录名}, ...]。哈希没变的直接复用缓存
-    扫描结果；catalog 说与 mod 无关的跳过（full_scan=True 时不做预筛）。
+    扫描结果。
+
+    默认全量扫描（full_scan=True）。此前默认走 catalog 预筛（只扫地址含
+    illust/skeletondata 的 bundle），但 spine 资产实际装在哪个 bundle 里
+    只有 bundle 内 m_Name 说了算 —— timeline / storypack / localpacktitle
+    这类 bundle 的 catalog 地址一个关键词都不含，预筛把它们剔除后索引里
+    永远查不到这些名字（表现为剧情/好感类 mod 永远 UNKNOWN）。预筛的
+    收益只是首次扫描少拷 ~14GB，代价是认不出用户的 mod，不值。
+
+    预筛保留为 full_scan=False 的可选路径：扫描代价敏感、只装角色立绘类
+    mod 的用户可以显式选择。缓存机制两种模式下照旧 —— 首次全量只付一次，
+    之后游戏更新只重扫哈希变化的 bundle。
     """
     global _scan_state
 

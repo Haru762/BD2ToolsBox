@@ -280,8 +280,13 @@ def _cached_table_from_disk(output_dir, cache_prefix, payload_key, quality):
 # 本地 bundle 扫描 —— 三步 API（Kotlin 管 Shizuku 文件搬运）
 # ---------------------------------------------------------------------------
 
-def check_scan_needed(output_dir, bundle_list_json, progress_callback=None, full_scan=False):
-    """Step 1：对照缓存给出待扫 bundle 名单（JSON 串）。异常时返回空名单。"""
+def check_scan_needed(output_dir, bundle_list_json, progress_callback=None, full_scan=True):
+    """Step 1：对照缓存给出待扫 bundle 名单（JSON 串）。异常时返回空名单。
+
+    默认全量扫描（不预筛）—— 预筛会误杀装着 spine 资产但 catalog 地址
+    不含 illust/skeletondata 的 bundle（timeline/storypack 等），详见
+    local_bundle_indexer.check_scan_needed 的文档。
+    """
     report = _reporter(progress_callback)
     try:
         result = local_bundle_indexer.check_scan_needed(
@@ -370,7 +375,13 @@ def _resolution_index(output_dir, quality, file_names, report):
     """
     index = local_bundle_indexer.load_local_index(output_dir)
     wanted = resolver.candidate_keys(file_names)
-    if not wanted:
+    # 覆盖判定只看主候选名（mod 文件名直接展开的结果）。前缀桥接产生的
+    # cutscene_* 变体是 catalog 侧的查表需求：本地索引存 bundle m_Name（无
+    # 前缀），把它们算进缺口会误判「缺」而多下载 60MB catalog。
+    # 不能按字符串前缀过滤 wanted —— mod 文件本身就可能叫
+    # cutscene_char000707.skel，那种键是货真价实的主候选名。
+    primary_wanted = resolver.primary_candidate_keys(file_names)
+    if not primary_wanted:
         # 空 mod 列表 / 只有一个预览图之类：没必要为此下 60MB catalog。
         # 空索引原样返回（好过 None：调用方不用区分「没索引」与「没资产」）
         return index or {"assetToBundles": {}, "catalogAssetToBundle": {}}, None
@@ -381,14 +392,14 @@ def _resolution_index(output_dir, quality, file_names, report):
     # 大写键的索引就会声称覆盖而跳过补表，resolver 随后必然落空 ——
     # 假短路比不判更糟，它连 catalog 兜底的机会都掐掉了。
     # 代价：本地表真有大写键时这批会多走一次 catalog（诚实，且下游能救回来）。
-    missing = set(name for name in wanted if name not in local_assets)
+    primary_missing = set(n for n in primary_wanted if n not in local_assets)
 
-    if index is not None and local_assets and not missing:
+    if index is not None and local_assets and not primary_missing:
         # 本地索引完整覆盖这批候选 → 一个字节都不下载
         return index, None
 
     existing_catalog = (index or {}).get("catalogAssetToBundle") or {}
-    if index is not None and not local_assets and not (missing - set(existing_catalog)):
+    if index is not None and not local_assets and not (primary_missing - set(existing_catalog)):
         # 盘上已经有一张能覆盖这批候选的 catalog 表（上次兜底建的 / 扫描时消解的）
         # → 直接可用，不必再联网
         return index, None
@@ -434,9 +445,15 @@ def _resolution_index(output_dir, quality, file_names, report):
                       "Please scan local bundles first.")
 
     # 只为缺失的候选名建表；一个都没缺就不会走到这里（上面已提前返回）
+    # 本地已命中的主候选不需要 catalog 版；缺失的才把主候选+前缀变体都带上
+    catalog_needed = set(primary_missing)
+    for name in primary_missing:
+        prefixed = "cutscene_" + name
+        if prefixed in wanted:
+            catalog_needed.add(prefixed)
     try:
         assets = catalog_indexer.build_catalog_asset_index(
-            catalog_content, missing or wanted)
+            catalog_content, catalog_needed)
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception:
@@ -449,7 +466,7 @@ def _resolution_index(output_dir, quality, file_names, report):
         return None, "Catalog content is unusable."
 
     reason = ("Local bundle index has no assets" if not local_assets
-              else "Local bundle index missing %d asset(s)" % len(missing))
+              else "Local bundle index missing %d asset(s)" % len(primary_missing))
     report(f"{reason}; using catalog addresses instead "
            f"({len(assets)} candidate assets matched).")
 

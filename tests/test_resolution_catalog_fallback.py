@@ -417,7 +417,12 @@ class ResolutionIndexShapesTest(unittest.TestCase):
         self.assertEqual(self.HEX_LOCAL, r["targetHash"])
 
     def test_partial_index_builds_catalog_table_for_missing_keys_only(self):
-        """只对缺失候选建 wanted 定向 catalog 表；本地命中的不入那次建表请求。"""
+        """只对缺失候选建 wanted 定向 catalog 表；本地命中的不入那次建表请求。
+
+        缺失的主候选要带上它的 cutscene_ 前缀变体：PC mod 文件名常不带前缀
+        （char066401.skel），catalog 地址末段却带（cutscene_char066401.skel.bytes），
+        建表请求漏掉变体会让这类 mod 在 catalog 里也找不到。
+        """
         local = {"assetToBundles": {u"char_a.skel": [self.HEX_LOCAL]},
                  "catalogAssetToBundle": {}, "scannedBundles": {}}
         captured = {}
@@ -432,7 +437,8 @@ class ResolutionIndexShapesTest(unittest.TestCase):
             [u"char_a.skel", u"char_b.skel"], local,
             download=({"fake": "catalog"}, None), build=spy)
         self.assertIsNone(error)
-        self.assertEqual({u"char_b.skel"}, captured["wanted"])
+        self.assertEqual({u"char_b.skel", u"cutscene_char_b.skel"},
+                         captured["wanted"])
         # 本地 assetToBundles 原样保留（本地命中优先）
         self.assertEqual([self.HEX_LOCAL], index["assetToBundles"][u"char_a.skel"])
         # 缺失的补进了 catalog 表，且真实 resolver 能把两者都用上

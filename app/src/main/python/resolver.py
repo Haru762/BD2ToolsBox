@@ -45,6 +45,10 @@ def _expand_candidates(base_name):
 
     桥接基于「复合扩展名的首段」：char000104.atlas.txt 的复合扩展名是
     .atlas.txt，剥掉它得词干 char000104，加回首段 .atlas → char000104.atlas。
+
+    PC mod 作者的文件名经常不带 cutscene_ 前缀（char066401.skel），而
+    catalog 地址末段带前缀（cutscene_char066401.skel.bytes）。对没有
+    前缀的候选补一个带前缀的变体，让这类 mod 也能在 catalog 里找到目标。
     """
     lowered = (base_name or "").strip().lower()
     if not lowered:
@@ -58,18 +62,49 @@ def _expand_candidates(base_name):
             bridged = stem + t
             if bridged and bridged not in candidates:
                 candidates.append(bridged)
-    return candidates
+    # 前缀桥接：char066401.atlas → 也试 cutscene_char066401.atlas
+    expanded = list(candidates)
+    for c in candidates:
+        if not c.startswith('cutscene_'):
+            prefixed = 'cutscene_' + c
+            if prefixed not in expanded:
+                expanded.append(prefixed)
+    return expanded
 
 
 def candidate_keys(file_names):
-    """一组 mod 文件名 → 可能命中的资产名集合（小写、去重）。
+    """一组 mod 文件名 → 全部可能命中的资产名集合（含前缀桥接）。
 
     给「按需建 catalog 资产索引」用：全量索引太大，先算出这批 mod 真正
-    会查的那些键，让 catalog_indexer 只留命中的。
+    会查的那些键（包括 cutscene_ 前缀变体），让 catalog_indexer 只留命中的。
     """
     keys = set()
-    for file_name in file_names or []:
-        keys.update(_expand_candidates(Path(file_name).name))
+    for name in file_names or []:
+        keys.update(_expand_candidates(Path(name).name))
+    return keys
+
+
+def primary_candidate_keys(file_names):
+    """一组 mod 文件名 → 主候选名集合（不含前缀桥接）。
+
+    给 main_script._resolution_index 的覆盖判定用：本地索引存的是 bundle 内
+    m_Name，覆盖判定只看原始候选名（mod 文件名本身展开的结果），前缀变体
+    是 catalog 侧的查表需求，不算本地缺口。
+    """
+    keys = set()
+    for name in file_names or []:
+        lowered = (Path(name).name or "").strip().lower()
+        if not lowered:
+            continue
+        keys.add(lowered)
+        for suffix, targets in _EXTENSION_BRIDGES:
+            if not lowered.endswith(suffix):
+                continue
+            stem = lowered[:-len(suffix)]
+            for t in targets:
+                bridged = stem + t
+                if bridged:
+                    keys.add(bridged)
     return keys
 
 
