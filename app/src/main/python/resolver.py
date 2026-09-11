@@ -14,7 +14,10 @@
    新装 app / 没跑过「扫描游戏资源」的场合只有 CDN catalog 可用；catalog
    的资源地址末段与 bundle 内 m_Name 是同一套命名（见
    catalog_indexer.build_catalog_asset_index），所以同一套候选名直接查表。
-   有扫描索引时不走这条路（扫描为主、catalog 只用来收窄多命中）。
+   有扫描索引时也**不是完全不看它**：扫描索引里已有的命中优先，但
+   「这个资产本地没扫到」的候选名仍旧回退查这张表 —— 扫描索引常常只是
+   部分结果（用户中途停了扫描、资源没下全、某个 bundle 解包失败），
+   只认本地会让部分索引比没有索引还差。多命中时同样用它收窄。
 
 3. 两条都没有 → 判 UNKNOWN，交给上层提示去扫描。
 
@@ -157,18 +160,42 @@ def resolve_mod_folder(mod_file_names, local_index):
                         hit_candidate = candidate
                     bundles.update(found)
 
-            # 多命中时用 catalog 权威映射收窄到其中一个
+            # 多命中时用 catalog 权威映射收窄到其中一个。
+            # 取到的值可能是裸字符串（扫描索引的消解表原生形状），也可能是列表
+            # （catalog 兜底表 / 合并后的表）—— 一律先归成集合再与本地候选求交，
+            # 直接拿列表做 `in set` 会抛 TypeError: unhashable type: 'list'，
+            # 而那个异常会冒到 resolve_mod_batch 的兜底 except，整批 mod 一起塌。
+            # 只有交集唯一时才收窄；交集为空或仍有多个都保持保守，不任选。
             if len(bundles) > 1:
                 for candidate in candidates:
-                    catalog_bundle = catalog_asset_to_bundle.get(candidate)
-                    if catalog_bundle and catalog_bundle in bundles:
-                        bundles = {catalog_bundle}
+                    narrowed = bundles & set(
+                        _as_bundle_names(catalog_asset_to_bundle.get(candidate)))
+                    if len(narrowed) == 1:
+                        bundles = narrowed
                         strategy = 'CATALOG_FILTERED'
                         break
                 else:
                     strategy = 'LOCAL_SCAN'
             else:
                 strategy = 'LOCAL_SCAN'
+
+            # 本地一个都没命中 —— 索引是**部分**扫出来的（用户中途停了扫描 / 这份
+            # 资源没下过 / 该 bundle 解包失败）。此时才回退 catalog 权威映射，
+            # 且只补未命中：上面本地已有的单命中、多命中消歧结果原样不动。
+            #
+            # 此前这个分支里 catalog 只用于「收窄多命中」，未命中一律留 UNKNOWN ——
+            # 结果是有本地索引反而更差：扫了一半的用户比完全没扫的识别得还少
+            # （没索引时走 catalog_only 主路径反而是全的）。
+            if not bundles:
+                for candidate in candidates:
+                    found = _as_bundle_names(catalog_asset_to_bundle.get(candidate))
+                    if not found:
+                        continue
+                    if hit_candidate is None:
+                        hit_candidate = candidate
+                    bundles.update(found)
+                if bundles:
+                    strategy = 'CATALOG_ONLY'
 
         if hit_candidate and bundles:
             matches.append({

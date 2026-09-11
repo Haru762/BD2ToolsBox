@@ -21,6 +21,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
+import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
 /**
@@ -28,8 +30,8 @@ import java.util.zip.ZipInputStream
  *
  * 职责是把一个 SAF 目录树里的 mod 找出来（[discoverMods]），并把每个 mod
  * 的文件名交给 python 侧的 resolver 解析成「目标 bundle」（[scanMods]）。
- * 解析结果带磁盘缓存（mod_cache.json）：SAF 报上来的 lastModified 没变
- * 就直接复用，跳过整轮 python 解析。
+ * 解析结果带磁盘缓存（mod_cache.json）：索引戳、目录时间及子文件签名都未变，
+ * 且上次已有匹配结果时才复用；未识别条目在重扫时重试。
  *
  * 缓存何时整体作废：mod → bundle 的映射来自 local_bundle_index.json（游戏
  * 目录扫描的产物），游戏更新后映射会变。因此缓存里记录着建缓存时的索引
@@ -62,8 +64,8 @@ class ModRepository(
          */
         private const val MAX_SCAN_DEPTH = 8
 
-        /** 目录访问上限：误选存储根目录时不会把整部手机翻一遍。 */
-        private const val MAX_DIRS_VISITED = 3000
+        /** 防止误扫整部手机；触及边界必须报告未完成，不能当作完整结果。 */
+        private const val MAX_DIRS_VISITED = 15000
 
         /** 目录里直接躺着这些后缀的文件，就认定这个目录本身是一个 mod。 */
         private val MOD_ASSET_EXTENSIONS = setOf("skel", "json", "atlas", "png", "jpg", "jpeg")
@@ -73,6 +75,9 @@ class ModRepository(
 
     // ---------------------------------------------------------------- 数据形状
 
+    /** 扫描未完成时不提交残缺结果，由调用方保留原列表并提供重试。 */
+    class IncompleteScanException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
     /** 一次扫描中需要交给 python 解析的候选。 */
     private data class PendingResolve(
         val uriString: String,
@@ -80,7 +85,8 @@ class ModRepository(
         val name: String,
         val uri: Uri,
         val isDirectory: Boolean,
-        val modDetails: ModDetails
+        val modDetails: ModDetails,
+        val sourceSignature: String
     )
 
     /** SAF 目录下的一个子项（文件或目录）。 */
@@ -103,6 +109,7 @@ class ModRepository(
         val lastModified: Long,
         val isDirectory: Boolean,
         val fileNames: List<String>,
+        val sourceSignature: String = "",
         val kind: ModKind = ModKind.PC_SOURCE,
         /** 仅已转换产物：hash 目录名 */
         val hashDir: String? = null,
@@ -136,7 +143,15 @@ class ModRepository(
         )
         val out = mutableListOf<ChildDoc>()
         try {
-            context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            val cursorResult = context.contentResolver.query(childrenUri, projection, null, null, null)
+                ?: throw IncompleteScanException("目录读取失败，请检查文件夹权限后重试")
+            cursorResult.use { cursor ->
+                val extras = cursor.extras
+                if (extras.getBoolean(DocumentsContract.EXTRA_LOADING, false) ||
+                    !extras.getString(DocumentsContract.EXTRA_ERROR).isNullOrBlank()
+                ) {
+                    throw IncompleteScanException("文件夹尚未读完，请稍后重试")
+                }
                 val idCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val mimeCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
@@ -158,9 +173,19 @@ class ModRepository(
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            throw IncompleteScanException("目录读取失败，请检查文件夹权限后重试", e)
         }
         return out
+    }
+
+    /** 用已枚举的子文件名、大小和时间戳判定变化，不依赖父目录 mtime。 */
+    private fun sourceSignature(files: List<ChildDoc>): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        files.sortedBy { it.name }.forEach { file ->
+            val text = "${file.name.length}:${file.name}:${file.size}:${file.lastModified}\n"
+            digest.update(text.toByteArray(Charsets.UTF_8))
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     /** 查询某个 document 自身的名字与修改时间（所选根目录本身就是一个 mod 的情况）。 */
@@ -208,7 +233,9 @@ class ModRepository(
             parentName: String?,
             parentLastModified: Long
         ) {
-            if (visited >= MAX_DIRS_VISITED) return
+            if (visited >= MAX_DIRS_VISITED) {
+                throw IncompleteScanException("目录数量超过扫描上限，请分开添加子文件夹")
+            }
             visited++
 
             val children = listChildren(treeRootUri, docId)
@@ -244,7 +271,8 @@ class ModRepository(
                         displayName = if (relPath.isEmpty()) label else "$relPath/$label",
                         lastModified = zip.lastModified,
                         isDirectory = false,
-                        fileNames = emptyList()
+                        fileNames = emptyList(),
+                        sourceSignature = sourceSignature(listOf(zip))
                     )
                 )
             }
@@ -257,16 +285,18 @@ class ModRepository(
                         displayName = relPath.ifEmpty { dirName },
                         lastModified = dirLastModified,
                         isDirectory = true,
-                        fileNames = ownFileNames
+                        fileNames = ownFileNames,
+                        sourceSignature = sourceSignature(files.filterNot { shouldIgnoreModEntry(it.name) })
                     )
                 )
                 return      // mod 目录里的 .old 备份等子目录天然被跳过
             }
 
-            if (depth >= MAX_SCAN_DEPTH) return
-            children.asSequence()
-                .filter { it.isDirectory && !it.name.startsWith(".") }
-                .forEach { sub ->
+            val subdirectories = children.filter { it.isDirectory && !it.name.startsWith(".") }
+            if (depth >= MAX_SCAN_DEPTH && subdirectories.isNotEmpty()) {
+                throw IncompleteScanException("文件夹层级过深，请直接添加内层文件夹")
+            }
+            subdirectories.forEach { sub ->
                     walk(
                         docId = sub.docId,
                         dirName = sub.name,
@@ -304,7 +334,9 @@ class ModRepository(
      * 有效的……不，这里只写本目录扫到的 —— 多目录的合并在 MainViewModel 层）。
      */
     suspend fun scanMods(dirUri: Uri): List<ModInfo> = withContext(Dispatchers.IO) {
+        val indexStamp = currentIndexStamp()
         val cached = loadModCache()
+        nameResolver.invalidate()
         val newCache = mutableMapOf<String, ModCacheInfo>()
         val results = mutableListOf<ModInfo>()
         val pending = mutableListOf<PendingResolve>()
@@ -359,7 +391,10 @@ class ModRepository(
             }
 
             val hit = cached.entries[uriString]
-            if (hit != null && hit.lastModified == mod.lastModified) {
+            if (hit != null && hit.lastModified == mod.lastModified &&
+                hit.sourceSignature == mod.sourceSignature &&
+                hit.resolutionState != ResolutionState.UNKNOWN
+            ) {
                 newCache[uriString] = hit
                 results.add(
                     ModInfo(
@@ -374,7 +409,8 @@ class ModRepository(
                         resolutionState = hit.resolutionState,
                         targetHash = hit.targetHash,
                         resolvedFamilyKey = hit.resolvedFamilyKey,
-                        unresolvedFiles = hit.unresolvedFiles,
+                        resolvedTargets = hit.resolvedTargets.orEmpty(),
+                        unresolvedFiles = hit.unresolvedFiles.orEmpty(),
                         errorReason = hit.errorReason
                     )
                 )
@@ -394,7 +430,8 @@ class ModRepository(
                         name = mod.displayName,
                         uri = mod.uri,
                         isDirectory = mod.isDirectory,
-                        modDetails = details
+                        modDetails = details,
+                        sourceSignature = mod.sourceSignature
                     )
                 )
             }
@@ -404,7 +441,7 @@ class ModRepository(
             resolvePending(pending, newCache, results)
         }
 
-        saveModCache(newCache)
+        saveModCache(newCache, indexStamp)
         results.sortedBy { it.name }
     }
 
@@ -488,7 +525,9 @@ class ModRepository(
                 targetHash = targetHash,
                 resolvedFamilyKey = familyKey,
                 unresolvedFiles = unresolved,
-                errorReason = errorReason
+                errorReason = errorReason,
+                sourceSignature = candidate.sourceSignature,
+                resolvedTargets = resolvedTargets
             )
 
             intoResults.add(
@@ -542,6 +581,7 @@ class ModRepository(
                 return ModCache(0L, emptyMap())
             }
             val stamp = root.get("indexStamp")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+            if (stamp != currentIndexStamp()) return ModCache(0L, emptyMap())
             val entries = root.get("entries")?.takeIf { it.isJsonObject }?.asJsonObject ?: return ModCache(0L, emptyMap())
             val type = object : TypeToken<Map<String, ModCacheInfo>>() {}.type
             ModCache(stamp, gson.fromJson(entries, type) ?: emptyMap())
@@ -551,11 +591,11 @@ class ModRepository(
         }
     }
 
-    private fun saveModCache(cache: Map<String, ModCacheInfo>) {
+    private fun saveModCache(cache: Map<String, ModCacheInfo>, indexStamp: Long) {
         try {
             val root = JsonObject().apply {
                 addProperty("schemaVersion", MOD_CACHE_SCHEMA)
-                addProperty("indexStamp", currentIndexStamp())
+                addProperty("indexStamp", indexStamp)
                 add("entries", gson.toJsonTree(cache))
             }
             val tmp = File(context.filesDir, MOD_CACHE_FILENAME + ".part")

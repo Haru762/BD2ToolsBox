@@ -355,58 +355,122 @@ def _latest_disk_catalog(output_dir, quality):
 def _resolution_index(output_dir, quality, file_names, report):
     """解析 mod 用的查表索引。返回 (index, error)，index 为 None 时 error 是原因。
 
-    优先本地扫描索引（最准，含 bundle 内全部 m_Name）；没有（新装 app、
-    没跑过「扫描游戏资源」、清过数据）就现场用 catalog 的资源地址建一份
-    够用的——只保留这批 mod 会查的那些键，几十 KB 而不是 20MB。
+    优先本地扫描索引（最准，含 bundle 内全部 m_Name）；本地**没覆盖到**的候选名
+    才现场建一份 wanted 定向的 catalog 表补上——只保留这批 mod 会查的那些键，
+    几十 KB 而不是 20MB。
+
+    判据是「覆盖」而不是「非空」：只判 `assetToBundles` 非空就返回，会让一份
+    部分扫出来的索引把整条 catalog 兜底短路。finalize_scan 明确允许 partial
+    结果（用户中途停止扫描），设备上也没下全所有 bundle，所以部分索引是常态
+    而不是边缘情况 —— 短路之后表现为「扫过资源的用户反而比没扫过的识别得少」。
 
     「索引在盘上但资产表是空的」也要走 catalog：finalize_scan 扫到 0 个
     bundle 也会落盘一份「空但有效」的索引（用户中途放弃扫描、预筛全跳过），
     只判 `index is not None` 会让兜底永远不触发，表现为整列表 unknown。
     """
     index = local_bundle_indexer.load_local_index(output_dir)
-    if index is not None and index.get("assetToBundles"):
-        return index, None
-
-    # 先算出这批 mod 真正会查的键：一个都没有就没必要下 60MB catalog
-    # （空 mod 列表、只有一个预览图之类的场合）
     wanted = resolver.candidate_keys(file_names)
     if not wanted:
+        # 空 mod 列表 / 只有一个预览图之类：没必要为此下 60MB catalog。
         # 空索引原样返回（好过 None：调用方不用区分「没索引」与「没资产」）
         return index or {"assetToBundles": {}, "catalogAssetToBundle": {}}, None
 
+    local_assets = (index or {}).get("assetToBundles") or {}
+    # 键必须**原样**比，不做大小写归一：resolver 是小写候选名去
+    # asset_to_bundles.get(...) 的，这里若按 lower 判「已覆盖」，遇到表里存
+    # 大写键的索引就会声称覆盖而跳过补表，resolver 随后必然落空 ——
+    # 假短路比不判更糟，它连 catalog 兜底的机会都掐掉了。
+    # 代价：本地表真有大写键时这批会多走一次 catalog（诚实，且下游能救回来）。
+    missing = set(name for name in wanted if name not in local_assets)
+
+    if index is not None and local_assets and not missing:
+        # 本地索引完整覆盖这批候选 → 一个字节都不下载
+        return index, None
+
+    existing_catalog = (index or {}).get("catalogAssetToBundle") or {}
+    if index is not None and not local_assets and not (missing - set(existing_catalog)):
+        # 盘上已经有一张能覆盖这批候选的 catalog 表（上次兜底建的 / 扫描时消解的）
+        # → 直接可用，不必再联网
+        return index, None
+
     quality = cdn_downloader.normalize_quality(quality)
-    version = cdn_downloader.get_cdn_version(quality)
     catalog_content = None
-    if version:
-        with catalog_cache_lock:
-            _prune_catalog_cache(cdn_downloader.catalog_cache_key(quality, version))
-        catalog_content, error = cdn_downloader.download_catalog(
-            output_dir, quality, version, catalog_cache, catalog_cache_lock, None)
-        if error:
-            catalog_content = None
+    # 补表链自己兜住异常。这里冒出去的异常会被 [resolve_mod_batch] 的外层
+    # `except Exception` 接住、整批返回 _fail —— 连本地索引已经解析出来的
+    # KNOWN 条目一起丢掉，表现为「明明认得出的 mod 全变未识别」。
+    # KeyboardInterrupt / SystemExit 是中断信号不是坏数据，照旧上抛。
+    try:
+        version = cdn_downloader.get_cdn_version(quality)
+        if version:
+            with catalog_cache_lock:
+                _prune_catalog_cache(cdn_downloader.catalog_cache_key(quality, version))
+            catalog_content, error = cdn_downloader.download_catalog(
+                output_dir, quality, version, catalog_cache, catalog_cache_lock, None)
+            if error:
+                catalog_content = None
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception:
+        # 版本查询/下载炸了（不是返回 error 元组那种）：下面退磁盘那份
+        catalog_content = None
 
     if catalog_content is None:
-        # 离线降级：磁盘上那份 catalog 对不上版本也比没有强
-        catalog_content = _latest_disk_catalog(output_dir, quality)
+        # 离线降级：先试磁盘上那份（只读盘、不重复发请求），对不上版本也比没有强
+        try:
+            catalog_content = _latest_disk_catalog(output_dir, quality)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            catalog_content = None
 
     if not catalog_content:
-        # catalog 也拿不到时，盘上那份空索引仍旧是「什么都没匹配上」的
-        # 正确来源（硬判成「请先扫描」会误导：用户可能已经扫过了）
+        # catalog 也拿不到时，盘上那份（哪怕只是部分的）索引仍旧是能给出的最好
+        # 结果：本地已解析出来的照常返回，没覆盖到的算未命中进 unresolvedFiles。
+        # 绝不能整批清空 —— 那会把用户已经扫到的成果一起丢掉。
         if index is not None:
             report("No catalog available; falling back to the local bundle index.")
             return index, None
         return None, ("Local bundle index not found and no catalog available. "
                       "Please scan local bundles first.")
 
-    assets = catalog_indexer.build_catalog_asset_index(catalog_content, wanted)
-    reason = ("Local bundle index has no assets" if index is not None
-              else "Local bundle index not found")
+    # 只为缺失的候选名建表；一个都没缺就不会走到这里（上面已提前返回）
+    try:
+        assets = catalog_indexer.build_catalog_asset_index(
+            catalog_content, missing or wanted)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception:
+        # catalog 结构坏 / 解析不了 —— 同上：原样保留本地索引与其中已有的
+        # catalog 映射（返回同一个对象，不新建也不改写），让 resolver 继续
+        # 用本地命中解析。没有本地索引时就如实报错，不谎报成功。
+        if index is not None:
+            report("Catalog content unusable; falling back to the local bundle index.")
+            return index, None
+        return None, "Catalog content is unusable."
+
+    reason = ("Local bundle index has no assets" if not local_assets
+              else "Local bundle index missing %d asset(s)" % len(missing))
     report(f"{reason}; using catalog addresses instead "
            f"({len(assets)} candidate assets matched).")
-    # assetToBundles 留空是给 resolver 的信号：走 catalog 主路径而不是
-    # 「扫描为主 + catalog 收窄」。返回结构与扫描索引同一份契约，
-    # ModRepository / resolve_mod_folder 都不用改。
-    return {"assetToBundles": {}, "catalogAssetToBundle": assets}, None
+
+    # 扫描索引里的 catalogAssetToBundle 只收「同名多 bundle」的歧义项，这里补的是
+    # 本地完全没扫到的候选名，两边键不重叠 —— 合并不会互相覆盖。
+    merged_catalog = dict(existing_catalog)
+    for key, value in assets.items():
+        merged_catalog.setdefault(key, value)
+
+    if index is None:
+        # 没有本地索引：assetToBundles 留空是给 resolver 的信号，走 catalog 主路径
+        # 而不是「扫描为主 + catalog 收窄」。返回结构与扫描索引同一份契约，
+        # ModRepository / resolve_mod_folder 都不用改。
+        return {"assetToBundles": {}, "catalogAssetToBundle": merged_catalog}, None
+
+    # 有本地索引：assetToBundles 原样保留（本地命中优先），只把缺失候选的
+    # catalog 映射补进表里 —— resolver 会先查本地、未命中再回退这张表。
+    # 用浅拷贝，绝不就地改写入参（调用方复用 load_local_index 的内存缓存对象）
+    merged_index = dict(index)
+    merged_index["catalogAssetToBundle"] = merged_catalog
+    return merged_index, None
 
 
 def resolve_mod_files(file_names_json, output_dir, quality="HD", progress_callback=None):

@@ -1994,7 +1994,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     // 删除期间若用户重扫过，条目会被扫回来 —— 结果落定时再摘一次。
                     // 墓碑留在 deletingModUris 里（见那里的说明），由下一次扫描收尾统一清。
                     _modsList.value = _modsList.value.filterNot { it.uri == mod.uri }
-                    withContext(NonCancellable + Dispatchers.IO) { saveModListSnapshot(_modsList.value) }
+                    val snapshot = captureModListSnapshot(_modsList.value)
+                    withContext(NonCancellable + Dispatchers.IO) { saveModListSnapshot(snapshot) }
                     onDone(true, "已从手机删除「${mod.name}」")
                 } else {
                     // 失败/中断：墓碑必须摘掉，否则以后每次扫描都会把它挡在外面，
@@ -2087,7 +2088,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 }
                 // 收尾一律跑在 NonCancellable 上：取消（清后台、VM 销毁）也不能把这些
                 // 「防重入」状态留在原地，否则这个界面就再也删不动了
-                withContext(NonCancellable + Dispatchers.Main) {
+                val snapshot = withContext(NonCancellable + Dispatchers.Main) {
                     abnormalDeleteBusy = false
                     _isDeletingAbnormal.value = false
                     // 删成功的再摘一次：这期间若正好有一次扫描把条目扫了回来（墓碑被清），
@@ -2102,9 +2103,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     if (failed.isNotEmpty()) parts += "失败 ${failed.size} 个"
                     if (roots.isNotEmpty()) parts += "${roots.size} 个是源文件夹，未删"
                     toast(context, parts.joinToString("，"))
+                    captureModListSnapshot(_modsList.value)
                 }
                 // 列表变了，快照跟着刷新，免得下次冷启动又把这些条目显出来
-                withContext(NonCancellable + Dispatchers.IO) { saveModListSnapshot(_modsList.value) }
+                withContext(NonCancellable + Dispatchers.IO) { saveModListSnapshot(snapshot) }
             }
         }
     }
@@ -2653,7 +2655,19 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * `pendingScan` 那套防抖保留：扫描期间又被触发（加了新目录、下拉刷新）时
      * 不并发跑第二遍，而是记一个标记、当前这轮结束后再扫一次。
      */
-    fun rescanAllModSources() {
+    /** 从文件管理器返回时重扫；正在装入、更新或预解包时不插入额外任务。 */
+    fun refreshModSourcesOnReturn() {
+        if (!initialized || _modSourceDirs.value.isEmpty() || _isUpdatingCharacters.value ||
+            _showInstallDialog.value || _isUpdatingOutdated.value ||
+            _isDeletingAbnormal.value || prepackProgress.value != null
+        ) return
+        rescanAllModSources(preserveSelection = true)
+    }
+
+    private val clearSelectionForNextScan = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun rescanAllModSources(preserveSelection: Boolean = false) {
+        if (!preserveSelection) clearSelectionForNextScan.set(true)
         pendingScan = true
         if (scanJob?.isActive == true) return
 
@@ -2662,6 +2676,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 if (!pendingScan) break
                 pendingScan = false
 
+                val clearSelection = clearSelectionForNextScan.getAndSet(false)
                 val dirs = _modSourceDirs.value
                 if (dirs.isEmpty()) break
 
@@ -2679,6 +2694,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     for (dir in dirs) {
                         val found = try {
                             modRepository.scanMods(dir)
+                        } catch (e: ModRepository.IncompleteScanException) {
+                            throw e
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             // 单个目录出问题（权限被撤、被删）不该让整次扫描失败，
                             // 否则用户会以为所有 mod 都不见了。
@@ -2691,6 +2710,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                             if (seen.add(key)) mods.add(m)
                         }
                     }
+                    // 用户在扫描期间移除/重选目录，旧任务不再覆盖当前列表。
+                    if (dirs != _modSourceDirs.value) {
+                        pendingScan = true
+                        continue
+                    }
                     Log.d("MainViewModel", "扫描 ${dirs.size} 个目录，合计 ${mods.size} 个 mod")
                     refreshBundleCleanStates()
                     // 四道检查在扫描链尾全量跑一遍（缓存命中的条目也重判）—— 每次扫描
@@ -2701,18 +2725,37 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     val withState = applyInstallState(validated)
                     // 正在删的条目不要被这轮扫描「复活」：一个目录 SAF 删要几秒，
                     // 这期间的重扫读到的还是删除前的状态，扫回来会让刚消失的行又跳出来
-                    val visible = withState.filterNot { deletingModUris.contains(it.uri.toString()) }
-                    withContext(Dispatchers.Main) {
+                    // 校验会联网；在主线程提交时再次核对来源，不能把已移除目录扫回来。
+                    val published = withContext(Dispatchers.Main) {
+                        if (dirs != _modSourceDirs.value) {
+                            pendingScan = true
+                            return@withContext null
+                        }
+                        val visible = withState.filterNot { deletingModUris.contains(it.uri.toString()) }
                         _modsList.value = visible
-                        _selectedMods.value = emptySet()
+                        if (clearSelection) {
+                            _selectedMods.value = emptySet()
+                        } else {
+                            val selectableUris = visible.filter {
+                                it.resolutionState == ResolutionState.KNOWN && it.defect == null &&
+                                        it.outdatedCurrentHash == null && !isUnknownCharacter(it.character)
+                            }.map { it.uri }.toSet()
+                            _selectedMods.value = _selectedMods.value intersect selectableUris
+                        }
                         scanSettled = true
                         // 墓碑只挡「本轮扫描」这一个时间窗：结果已经落定，之后还能出现的
                         // 条目就是真的还在（比如删除失败又扫了回来）。不清的话，那些删不掉的
                         // 条目会被永久挡在扫描结果之外，用户再也看不到它们。
                         deletingModUris.clear()
+                        captureModListSnapshot(visible)
                     }
-                    // 扫描链尾 = 列表落定的那一处：落一份冷启动快照（IO 已在，写失败不影响本轮扫描）
-                    saveModListSnapshot(visible)
+                    // 只给实际提交的列表写快照，失效扫描不覆盖快照。
+                    if (published != null) saveModListSnapshot(published)
+                } catch (e: ModRepository.IncompleteScanException) {
+                    Log.w("MainViewModel", "扫描未完成，保留上次列表", e)
+                    withContext(Dispatchers.Main) {
+                        appContext?.let { toast(it, "扫描未完成：${e.message}") }
+                    }
                 } finally {
                     withContext(Dispatchers.Main) {
                         _isLoading.value = false
@@ -2741,7 +2784,19 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         val version: Int = SNAPSHOT_VERSION,
         /** 落盘时刻，仅供排查（读侧不据此判新旧：新旧由扫描结果决定）。 */
         val savedAt: Long = 0L,
-        val mods: List<ModInfo> = emptyList()
+        val mods: List<ModInfo> = emptyList(),
+        val sourceDirs: List<String>? = null
+    )
+
+    private data class SnapshotWrite(val revision: Long, val snapshot: ModListSnapshot)
+    private var snapshotWriteRevision = 0L
+
+    /** 在列表提交时编号，旧 IO 任务即使较晚完成也不能盖掉较新的结果。 */
+    @Synchronized
+    private fun captureModListSnapshot(mods: List<ModInfo>): SnapshotWrite = SnapshotWrite(
+        ++snapshotWriteRevision,
+        ModListSnapshot(SNAPSHOT_VERSION, System.currentTimeMillis(), mods.toList(),
+            _modSourceDirs.value.map { it.toString() })
     )
 
     /**
@@ -2802,7 +2857,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     /** 源目录被清空时把快照一并抹掉（写空表即可，读侧按「没有快照」走）。 */
     private fun clearModListSnapshot() {
-        viewModelScope.launch(Dispatchers.IO) { saveModListSnapshot(emptyList()) }
+        val snapshot = captureModListSnapshot(emptyList())
+        viewModelScope.launch(Dispatchers.IO) { saveModListSnapshot(snapshot) }
     }
 
     /**
@@ -2815,12 +2871,13 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 相互串起来（同一进程内只有这一处在写这个文件）。
      */
     @Synchronized
-    private fun saveModListSnapshot(mods: List<ModInfo>) {
+    private fun saveModListSnapshot(write: SnapshotWrite) {
+        if (write.revision != snapshotWriteRevision ||
+            write.snapshot.sourceDirs != _modSourceDirs.value.map { it.toString() }
+        ) return
         val file = modListSnapshotFile() ?: return
         try {
-            val json = snapshotGson.toJson(
-                ModListSnapshot(SNAPSHOT_VERSION, System.currentTimeMillis(), mods)
-            )
+            val json = snapshotGson.toJson(write.snapshot)
             val tmp = File(file.parentFile, "${file.name}.tmp")
             tmp.delete()                    // 上次进程被杀留下的半截 .tmp
             tmp.writeText(json)
@@ -2849,6 +2906,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 Log.i("MainViewModel", "快照版本 ${snapshot.version} 不是 $SNAPSHOT_VERSION，丢弃")
                 return emptyList()
             }
+            if (snapshot.sourceDirs != _modSourceDirs.value.map { it.toString() }) return emptyList()
             // Gson 不管 Kotlin 的非空约束：字段在 JSON 里缺失/被改坏时会给 null，
             // 放过去就会在很远的地方炸 NPE（与 InstalledModRepository.load 同一道防线）
             snapshot.mods.mapNotNull { it?.let(::normalizeSnapshotEntry) }
@@ -2896,6 +2954,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      */
     private fun restoreModListSnapshot() {
         viewModelScope.launch {
+            val sources = _modSourceDirs.value
             val restored = withContext(Dispatchers.IO) {
                 val snapshot = loadModListSnapshot()
                 if (snapshot.isEmpty()) {
@@ -2909,7 +2968,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             // 没有源目录时也不灌：那种情况下列表本就该是空的（欢迎页 / 授权被撤销），
             // 快照只会显出一批再也扫不到、也点不动的幽灵条目
             if (restored.isNotEmpty() && !scanSettled && _modsList.value.isEmpty() &&
-                _modSourceDirs.value.isNotEmpty()
+                sources.isNotEmpty() && sources == _modSourceDirs.value
             ) {
                 _modsList.value = restored
             }

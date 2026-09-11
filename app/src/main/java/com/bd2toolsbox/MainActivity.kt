@@ -910,6 +910,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onRestart() {
+        super.onRestart()
+        viewModel.refreshModSourcesOnReturn()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         // 更新下载广播注册于 onCreate，这里配对注销

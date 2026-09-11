@@ -244,7 +244,10 @@ data class ModCacheInfo(
     val targetHash: String? = targetHashedName,
     val resolvedFamilyKey: String? = null,
     val unresolvedFiles: List<String> = emptyList(),
-    val errorReason: String? = null
+    val errorReason: String? = null,
+    /** 子文件元数据签名；旧缓存无此字段，重扫时自动重建。 */
+    val sourceSignature: String? = null,
+    val resolvedTargets: List<ResolvedTarget> = emptyList()
 )
 
 data class CharacterInfo(val character: String, val costume: String, val type: String, val hashedName: String)
