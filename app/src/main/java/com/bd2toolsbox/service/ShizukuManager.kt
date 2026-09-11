@@ -28,6 +28,21 @@ object ShizukuManager {
 
     private const val TAG = "ShizukuManager"
 
+    /**
+     * 进程级「扫描进行中」标志。扫描跑在 [com.bd2toolsbox.ui.viewmodel.MainViewModel]
+     * 的 installScope 上（活过界面销毁），期间用户冷启动 app 会新建 ViewModel、
+     * 走启动初始化的 [checkLocalBundles] —— 那会调 python check_scan_needed
+     * 重置其全局 _scan_state，把在途扫描的累积状态搅掉。初始化检查必须先看这里。
+     */
+    @Volatile
+    var scanRunning: Boolean = false
+        private set
+
+    /** 仅供扫描流程自己翻转；外部只读。 */
+    fun markScanRunning(running: Boolean) {
+        scanRunning = running
+    }
+
     private const val GAME_UNITY_CACHE_PATH =
         "/storage/emulated/0/Android/data/com.neowizgames.game.browndust2/files/UnityCache/"
     private const val DOWNLOAD_SHARED_PATH =

@@ -57,6 +57,13 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- 游戏资源扫描期间的前台服务：全量扫描 20–40 分钟，切后台必须保活，
+             通知栏进度条让用户知道扫到哪了。 -->
+        <service
+            android:name=".service.ScanService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- 更新包安装：DownloadManager 下的 APK 在应用专属目录里，交给系统
              安装器读需要走 FileProvider 授权 -->
         <provider

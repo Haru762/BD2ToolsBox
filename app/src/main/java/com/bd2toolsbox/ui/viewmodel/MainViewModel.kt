@@ -30,6 +30,7 @@ import com.bd2toolsbox.data.repository.UpdateRepository
 import com.bd2toolsbox.service.InstallService
 import com.bd2toolsbox.service.ModdingService
 import com.bd2toolsbox.service.PrepackService
+import com.bd2toolsbox.service.ScanService
 import com.bd2toolsbox.service.ShizukuManager
 import com.bd2toolsbox.ui.theme.AppTheme
 import com.google.gson.ExclusionStrategy
@@ -492,7 +493,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     refreshCharacterNames()
                 }
 
-                if (ShizukuManager.isAvailable()) {
+                if (ShizukuManager.isAvailable() && !ShizukuManager.scanRunning) {
+                    // 扫描已在跑（installScope 上，可能跨了界面重建）时不能再做
+                    // 启动期检查 —— check_scan_needed 会重置 python 侧的全局
+                    // 扫描状态，把在途扫描搅掉。等它跑完，下次启动再对账。
                     val checkResult = withContext(Dispatchers.IO) {
                         ShizukuManager.checkLocalBundles(
                             outputDir = context.filesDir.absolutePath
@@ -1021,12 +1025,34 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     // --- Bundle Scan Dialog Actions ---
 
-    /** 用户确认后执行启动期发现的 bundle 扫描（Phase 2），结束后收尾初始化。 */
+    /** 用户确认后执行启动期发现的 bundle 扫描（Phase 2），结束后收尾初始化。
+     *
+     * 跑在 [installScope] 而不是 viewModelScope：全量扫描 20–40 分钟，用户必然会
+     * 切出去 —— viewModelScope 在界面销毁时取消协程，扫描断一半（与转换/装入
+     * 同一条教训，见 [com.bd2toolsbox.service.InstallService] 的类注释）。期间
+     * [ScanService] 钉住进程 + 通知栏进度；界面销毁后 in-app 进度条没了就没了，
+     * 通知栏是主进度通道。
+     */
     fun confirmBundleScan() {
         val context = appContext ?: return
         val checkResult = pendingCheckResult ?: return
+        // 立刻取走并进入扫描态：双击确认 / 界面重建后的重复确认都不该启动第二次
+        // 扫描 —— python 侧 _scan_state 是全局单例，两个扫描会互相搅状态。
+        pendingCheckResult = null
+        if (ShizukuManager.scanRunning) return
+        ShizukuManager.markScanRunning(true)
+        _bundleScanState.value = BundleScanState.Scanning(
+            currentIndex = 0,
+            totalCount = checkResult.needsScanCount,
+            currentBundle = "",
+            progressMessage = ""
+        )
 
-        viewModelScope.launch {
+        installScope.launch {
+            // 用 appContext：这条流程刻意要活过界面销毁（同 processInstallJobs）
+            val svcCtx = appContext ?: context
+            val total = checkResult.needsScanCount
+            ScanService.start(svcCtx, total)
             try {
                 // Shizuku 服务跑在 shell UID，写不了 app 的内部 cacheDir（/data/data/…），
                 // 扫描临时文件得放 externalCacheDir
@@ -1038,7 +1064,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                         cacheDir = shizukuCacheDir,
                         checkResult = checkResult
                     ) { currentIndex, total, bundleName, message ->
-                        // 扫描跑在 IO 线程，状态更新回主线程
+                        // 通知栏：主进度通道，界面死活无关
+                        ScanService.update(svcCtx, currentIndex, total, bundleName, message)
+                        // 界面内进度条：VM 已销毁时这里静默不生效，可接受
                         viewModelScope.launch(Dispatchers.Main) {
                             _bundleScanState.value = BundleScanState.Scanning(
                                 currentIndex = currentIndex,
@@ -1059,12 +1087,20 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 } else {
                     BundleScanState.Failed("资源扫描失败。")
                 }
+                if (success) {
+                    // 摘要通知留着给用户看（可划掉）；失败走 stop 直接收掉
+                    ScanService.finish(svcCtx, scanned, failed)
+                } else {
+                    ScanService.stop(svcCtx)
+                }
             } catch (e: Exception) {
                 _bundleScanState.value = BundleScanState.Failed(e.message ?: "Unknown error")
+                ScanService.stop(svcCtx)
             } finally {
-                pendingCheckResult = null
-                // 扫描产出新索引，收尾初始化并触发一轮 mod 重扫
-                finishInitialization()
+                ShizukuManager.markScanRunning(false)
+                // 扫描产出新索引，收尾初始化并触发一轮 mod 重扫。回 viewModelScope：
+                // 里面的刷新本来就挂在界面上，界面没了就不必跑（下次冷启动会重来）
+                viewModelScope.launch { finishInitialization() }
             }
         }
     }
