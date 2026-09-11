@@ -4,10 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -71,8 +67,7 @@ fun ModScreen(
     onRenameRequest: (ModInfo) -> Unit,
     onDeleteFolderRequest: (ModInfo) -> Unit,
     onInstallConverted: (List<ModInfo>) -> Unit,
-    onRequestNotification: () -> Unit,
-    onUnpackRequest: () -> Unit
+    onRequestNotification: () -> Unit
 ) {
     val modSourceDirectoryUri by viewModel.modSourceDirectoryUri.collectAsState()
     // 先按 tab 的类型收窄，再做原有的分组。后续所有计数（全选三态、筛选 chip）都基于
@@ -162,7 +157,8 @@ fun ModScreen(
     val isDeletingAbnormal by viewModel.isDeletingAbnormal.collectAsState()
     val showShimmer by viewModel.showShimmer.collectAsState()
     val context = LocalContext.current
-    val isSearchActive by viewModel.isSearchActive.collectAsState()
+    // 搜索框已上移到 MainActivity 的顶栏（展开与否也归那里管），这里只留查询词：
+    // 空态要说「没有名称包含 xxx 的 mod」，删除异常区的文案也要看当前有没有搜索条件。
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedQuality by viewModel.selectedQuality.collectAsState()
 
@@ -205,13 +201,10 @@ fun ModScreen(
                 // repacker.py 在转换时本就会自动检测并合并超出的贴图页（见 repacker.py:458），
                 // 那个按钮只是把同一件事挪到手动，而且会就地改写用户的原始 mod 文件
                 // （删掉 .png/.atlas、旧文件挪进 .old）。对玩家既看不懂又有破坏性。
-                AnimatedVisibility(visible = modSourceDirectoryUri != null && selectedMods.isEmpty()) {
-                    FloatingActionButton(
-                        onClick = onUnpackRequest,
-                    ) {
-                        Icon(Icons.Default.Unarchive, contentDescription = "解包工具")
-                    }
-                }
+                // 原先这里还有个「解包工具」悬浮按钮，已移除：设置 → 高级里的
+                // 「解包工具」入口一直都在（同一个 UnpackDialog），功能没有少。
+                // 它只在这颗 FAB 的同一个角落、还只在没勾选任何 mod 时出现，
+                // 与「转换所选」抢位置，横屏时更容易点错。
                 AnimatedVisibility(visible = selectedMods.isNotEmpty()) {
                     // 已转换产物不需要重打包，直接放进游戏目录即可，所以按钮文案与动作都不同。
                     // 混选时以「有没有 PC mod」为准：PC mod 必须走转换流程。
@@ -241,7 +234,10 @@ fun ModScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                // 只用 bottom：这层 Scaffold 没有 topBar（顶栏在外层 MainActivity），
+                // 但 padding 里可能仍带 top 通道值（snackbar/FAB 撑出来的），
+                // 全量 .padding(padding) 会把列表整体往下推出一截空白。
+                .padding(bottom = padding.calculateBottomPadding()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // 注意这里不再用「未选目录就整屏显示欢迎页」的写法。
@@ -253,132 +249,48 @@ fun ModScreen(
                     .onGloballyPositioned { boxTopInWindow = it.positionInWindow().y }
             ) {
                     Column {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background)
-                            ) {
-                                Box(
-                                    modifier = Modifier.size(width = 48.dp, height = 40.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    // 必须用 modsList（搜索过滤后的）而不是 allModsList：
-                                    // toggleSelectAll() 操作的就是过滤后的列表，若这里拿全量计数，
-                                    // 搜索状态下全选会显示成半选态，用户再点一次反而全部取消。
-                                    // 异常条目不参与勾选（在顶部异常区），要挡在分母外 ——
-                                    // STALE 这类异常解析结果仍是 KNOWN，不挡就永远到不了全选态。
-                                    // 未识别的产物（角色表查不到、character="未识别"）也是
-                                    // KNOWN，但渲染在只读的未识别区，同样不算分母。
-                                    // 待更新的产物也是 KNOWN、也渲染在只读区（更新即治愈），
-                                    // 同样挡在分母外，否则全选态永远到不了。
-                                    val allModsCount = modsList.count {
-                                        it.resolutionState == ResolutionState.KNOWN &&
-                                                it.defect == null &&
-                                                it.outdatedCurrentHash == null &&
-                                                !isUnknownCharacter(it.character)
-                                    }
-                                    val selectedModsCount = selectedMods.size
-                                    val checkboxState = when {
-                                        selectedModsCount == 0 -> ToggleableState.Off
-                                        selectedModsCount == allModsCount && allModsCount > 0 -> ToggleableState.On
-                                        selectedModsCount > 0 -> ToggleableState.Indeterminate
-                                        else -> ToggleableState.Off
-                                    }
-                                    TriStateCheckbox(
-                                        state = checkboxState,
-                                        onClick = { viewModel.toggleSelectAll() }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
+                        // —— 原第二行（全选卡 + 搜索框）已删除 ——
+                        // 搜索上移到 MainActivity 的顶栏（Mods tab，齿轮左边），全选并进下面的
+                        // 筛选行。那一行原本只为这两件东西就吃掉一整条高度，删掉后列表直接从
+                        // 顶栏开始，多露出一行 mod。
 
-                            // 换目录的入口原先在这里。它管的是全局的 mod 源目录、
-                            // 两个视图都用得着，所以已上移到 MainActivity 的顶栏（左上角文件夹图标），
-                            // 这里不再重复放一个。
+                        // 换目录的入口原先在这里。它管的是全局的 mod 源目录、
+                        // 两个视图都用得着，所以已上移到 MainActivity 的顶栏（左上角文件夹图标），
+                        // 这里不再重复放一个。
 
-                            BoxWithConstraints(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(40.dp),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                val transition = updateTransition(isSearchActive, label = "search_transition")
-                                val collapsedSearchWidth = 40.dp
+                        // ASTC 开关原先在这里占了半条横幅，现已迁入设置的「转换设置」。
+                        // 顶栏只留与当前列表强相关的东西（全选、搜索、状态筛选），
+                        // 腾出的宽度给搜索框 —— 上百个 mod 时搜索才是高频操作。
 
-                                // ASTC 开关原先在这里占了半条横幅，现已迁入设置的「转换设置」。
-                                // 顶栏只留与当前列表强相关的东西（全选、搜索、状态筛选），
-                                // 腾出的宽度给搜索框 —— 上百个 mod 时搜索才是高频操作。
-                                val searchCardWidth by transition.animateDp(
-                                    label = "search_card_width",
-                                    transitionSpec = { tween(350) }
-                                ) { active ->
-                                    if (active) maxWidth else collapsedSearchWidth
-                                }
-
-                                val searchCornerRadius by transition.animateDp(
-                                    label = "search_card_corner_radius",
-                                    transitionSpec = { tween(350) }
-                                ) { active ->
-                                    if (active) 16.dp else 20.dp
-                                }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    ElevatedCard(
-                                        modifier = Modifier.size(width = searchCardWidth, height = 40.dp),
-                                        shape = RoundedCornerShape(searchCornerRadius),
-                                        onClick = { if (!isSearchActive) viewModel.setSearchActive(true) },
-                                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxSize(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.End
-                                        ) {
-                                            AnimatedVisibility(visible = isSearchActive, modifier = Modifier.weight(1f)) {
-                                                BasicTextField(
-                                                    value = searchQuery,
-                                                    onValueChange = viewModel::onSearchQueryChanged,
-                                                    modifier = Modifier.padding(start = 16.dp, end = 8.dp),
-                                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                                        color = MaterialTheme.colorScheme.onSurface
-                                                    ),
-                                                    singleLine = true,
-                                                    decorationBox = { innerTextField ->
-                                                        if (searchQuery.isEmpty()) {
-                                                            Text(
-                                                                "按名称搜索...",
-                                                                style = MaterialTheme.typography.bodyMedium,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                            )
-                                                        }
-                                                        innerTextField()
-                                                    }
-                                                )
-                                            }
-                                            IconButton(onClick = { viewModel.setSearchActive(!isSearchActive) }) {
-                                                Icon(
-                                                    imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
-                                                    contentDescription = "搜索"
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        // 全选三态。必须用 modsList（搜索过滤后的）而不是 allModsList：
+                        // toggleSelectAll() 操作的就是过滤后的列表，若这里拿全量计数，
+                        // 搜索状态下全选会显示成半选态，用户再点一次反而全部取消。
+                        // 异常条目不参与勾选（在顶部异常区），要挡在分母外 ——
+                        // STALE 这类异常解析结果仍是 KNOWN，不挡就永远到不了全选态。
+                        // 未识别的产物（角色表查不到、character="未识别"）也是
+                        // KNOWN，但渲染在只读的未识别区，同样不算分母。
+                        // 待更新的产物也是 KNOWN、也渲染在只读区（更新即治愈），
+                        // 同样挡在分母外，否则全选态永远到不了。
+                        val allModsCount = modsList.count {
+                            it.resolutionState == ResolutionState.KNOWN &&
+                                    it.defect == null &&
+                                    it.outdatedCurrentHash == null &&
+                                    !isUnknownCharacter(it.character)
+                        }
+                        val selectedModsCount = selectedMods.size
+                        val selectAllState = when {
+                            selectedModsCount == 0 -> ToggleableState.Off
+                            selectedModsCount == allModsCount && allModsCount > 0 -> ToggleableState.On
+                            selectedModsCount > 0 -> ToggleableState.Indeterminate
+                            else -> ToggleableState.Off
                         }
 
                         StateFilterRow(
                             allMods = normalAllMods,
                             current = stateFilter,
-                            onSelect = { viewModel.setStateFilter(it) }
+                            onSelect = { viewModel.setStateFilter(it) },
+                            selectAllState = selectAllState,
+                            onSelectAll = { viewModel.toggleSelectAll() }
                         )
 
                         if (modSourceDirectoryUri == null) {
@@ -401,7 +313,7 @@ fun ModScreen(
                         } else {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(vertical = 8.dp)
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp)
                             ) {
                                 // —— 折叠区：异常 → 待更新 → 未识别 ——
                                 // 各区头带计数，整条可点；N == 0 的区整段不渲染。
@@ -741,12 +653,18 @@ private fun AutoShrinkText(
  *
  * 只显示实际存在的状态，且计数取自未过滤的全量列表 —— 否则选中某个筛选后其余计数会
  * 全变 0，看起来像 mod 消失了。
+ *
+ * 三态全选框也并进这一行（第一个元素，在 chip 之前）：它原先独占列表顶上一整行，
+ * 只为放一颗勾选框太占地方，而它和筛选 chip 管的是同一件事 —— 这份列表选哪些。
+ * 三态值由调用方算好传入（分母要跟 toggleSelectAll() 的操作集一致，见调用处注释）。
  */
 @Composable
 private fun StateFilterRow(
     allMods: List<ModInfo>,
     current: ModInstallState?,
-    onSelect: (ModInstallState?) -> Unit
+    onSelect: (ModInstallState?) -> Unit,
+    selectAllState: ToggleableState,
+    onSelectAll: () -> Unit
 ) {
     if (allMods.isEmpty()) return
 
@@ -761,29 +679,38 @@ private fun StateFilterRow(
         ModInstallState.UNVERIFIED to "未校验",
     ).filter { (counts[it.first] ?: 0) > 0 }
 
-    // 只有一种状态时筛选没有意义
-    if (candidates.size < 2) return
+    // 只有一种状态时筛选没有意义 —— 但只收掉 chip，全选框照留：全选跟筛选不是一回事，
+    // 「mod 全是未装」这种常见场景下 chip 没什么可筛的，用户照样需要一次勾满。
+    val showChips = candidates.size >= 2
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        FilterChip(
-            selected = current == null,
-            onClick = { onSelect(null) },
-            label = { Text("全部 ${allMods.size}", style = MaterialTheme.typography.labelMedium) }
+        TriStateCheckbox(
+            state = selectAllState,
+            onClick = onSelectAll,
+            modifier = Modifier.size(20.dp)
         )
-        candidates.forEach { (state, label) ->
+        if (showChips) {
             FilterChip(
-                selected = current == state,
-                onClick = { onSelect(state) },
-                label = {
-                    Text("$label ${counts[state]}", style = MaterialTheme.typography.labelMedium)
-                }
+                selected = current == null,
+                onClick = { onSelect(null) },
+                label = { Text("全部 ${allMods.size}", style = MaterialTheme.typography.labelMedium) }
             )
+            candidates.forEach { (state, label) ->
+                FilterChip(
+                    selected = current == state,
+                    onClick = { onSelect(state) },
+                    label = {
+                        Text("$label ${counts[state]}", style = MaterialTheme.typography.labelMedium)
+                    }
+                )
+            }
         }
     }
 }
@@ -1233,7 +1160,14 @@ private fun ModCardMenu(
     onHide: (() -> Unit)?,
     onDeleteFolder: (() -> Unit)?
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier.background(
+            MaterialTheme.colorScheme.surfaceContainerLow,
+            MaterialTheme.shapes.extraSmall
+        )
+    ) {
         DropdownMenuItem(
             text = { Text("预览") },
             leadingIcon = { Icon(Icons.Default.PlayArrow, null) },

@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.bd2toolsbox
 
 import android.app.DownloadManager
@@ -20,6 +22,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,11 +36,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CardGiftcard
@@ -41,6 +52,7 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WifiOff
@@ -61,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.data.model.ModInfo
 import com.bd2toolsbox.ui.components.WallpaperBackdrop
@@ -233,6 +246,8 @@ class MainActivity : ComponentActivity() {
                 // 而不是它处在哪个加工阶段。「全部」保留原来的平铺列表 ——
                 // 批量多选转换要用它，认不出角色的 mod 也只能在那里看到。
                 var byCharacter by remember { mutableStateOf(true) }
+                // 左右滑切换视图的累积位移
+                var viewSwipeAccum by remember { mutableStateOf(0f) }
                 var openedCharacter by remember { mutableStateOf<String?>(null) }
                 var characterFilter by remember { mutableStateOf(CharacterFilter.ALL) }
 
@@ -289,6 +304,13 @@ class MainActivity : ComponentActivity() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             var folderMenu by remember { mutableStateOf(false) }
+                            // 搜索状态全在 ViewModel 里（展开与否 / 查询词），顶栏只负责
+                            // 「点图标展开、再点收起」。原先它是列表里的第二行，
+                            // 现在挪到这儿 —— 顶栏本来就只放与当前列表强相关的东西。
+                            val isSearchActive by viewModel.isSearchActive.collectAsState()
+                            val searchQuery by viewModel.searchQuery.collectAsState()
+                            // 搜索常驻顶栏：按角色视图点搜索时先切到全部再展开
+                            val searchExpanded = isSearchActive
                             Box {
                                 IconButton(
                                     onClick = { folderMenu = true },
@@ -297,6 +319,7 @@ class MainActivity : ComponentActivity() {
                                     Icon(Icons.Default.FolderOpen, contentDescription = "mod 文件夹", modifier = Modifier.size(22.dp))
                                 }
                                 DropdownMenu(
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.extraSmall),
                                     expanded = folderMenu,
                                     onDismissRequest = { folderMenu = false }
                                 ) {
@@ -349,6 +372,7 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                     DropdownMenu(
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.extraSmall),
                                         expanded = filterMenu,
                                         onDismissRequest = { filterMenu = false }
                                     ) {
@@ -422,7 +446,72 @@ class MainActivity : ComponentActivity() {
                                 Spacer(Modifier.width(6.dp))
                             }
 
-                            Spacer(Modifier.weight(1f))
+                            // 搜索：从列表的第二行上移到顶栏，收起时只占一个图标。
+                            // 展开时输入框吃掉剩余宽度，图标变叉号，再点一次收起并清空
+                            // 查询词（清空由 ViewModel 的 setSearchActive(false) 负责）。
+                            if (true) {
+                                if (searchExpanded) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(40.dp),
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 16.dp),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            BasicTextField(
+                                                value = searchQuery,
+                                                onValueChange = viewModel::onSearchQueryChanged,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                ),
+                                                singleLine = true,
+                                                decorationBox = { innerTextField ->
+                                                    if (searchQuery.isEmpty()) {
+                                                        Text(
+                                                            "按名称搜索...",
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            // 顶栏挤，窄屏上留给输入框的宽度可能不足一行
+                                                            // 中文的高度固定 40.dp，让它断行会顶出圆角框，
+                                                            // 宁可截断
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                    innerTextField()
+                                                }
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                }
+                                IconButton(
+                                    onClick = {
+                                    if (byCharacter) byCharacter = false
+                                    viewModel.setSearchActive(!isSearchActive)
+                                },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSearchActive) Icons.Default.Close
+                                                      else Icons.Default.Search,
+                                        contentDescription = if (isSearchActive) "收起搜索" else "搜索",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+
+
+                            // 搜索展开时输入框要吃掉整条剩余宽度；这颗 Spacer 若同时占着
+                            // weight，两者会各分一半，输入框只剩几十 dp。所以收起时才放它。
+                            if (!searchExpanded) Spacer(Modifier.weight(1f))
 
                             FilterChip(
                                 selected = byCharacter,
@@ -436,6 +525,7 @@ class MainActivity : ComponentActivity() {
                                 label = { Text("全部", style = MaterialTheme.typography.labelMedium) }
                             )
                             Spacer(Modifier.width(2.dp))
+
                             SettingsGear(
                                 onClick = {
                                     viewModel.refreshBackupUsage()
@@ -483,7 +573,28 @@ class MainActivity : ComponentActivity() {
                                 else -> Column(modifier = Modifier.fillMaxSize()) {
                                     val allMods by viewModel.modsList.collectAsState()
 
-                                    if (byCharacter) {
+                                    // 左右滑切换 按角色 ↔ 全部：HorizontalPager 自带平滑翻页
+                                    // 动画 + 手势，跟引导页同一套组件。0=按角色 1=全部。
+                                    val pagerState = rememberPagerState(
+                                        initialPage = if (byCharacter) 0 else 1,
+                                        pageCount = { 2 }
+                                    )
+                                    // 页面滑完同步 byCharacter（FilterChip 的高亮跟着走）
+                                    LaunchedEffect(pagerState.currentPage) {
+                                        byCharacter = pagerState.currentPage == 0
+                                    }
+                                    // FilterChip 点击时驱动 pager 滑过去（动画）
+                                    LaunchedEffect(byCharacter) {
+                                        val target = if (byCharacter) 0 else 1
+                                        if (pagerState.currentPage != target) {
+                                            pagerState.animateScrollToPage(target)
+                                        }
+                                    }
+                                    HorizontalPager(
+                                        state = pagerState,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) { page ->
+                                    if (page == 0) {
                                         val characters by viewModel.allCharacterNames.collectAsState()
                                         val npcCharacters by viewModel.npcCharacterNames.collectAsState()
                                         val avatarSyncFailed by viewModel.avatarSyncFailed.collectAsState()
@@ -498,7 +609,7 @@ class MainActivity : ComponentActivity() {
                                             avatarSyncFailed = avatarSyncFailed,
                                             onRetryAvatarSync = { viewModel.retryAvatarSync() }
                                         )
-                                    } else {
+                                    } else {  // page == 1，全部视图
                                         ModScreen(
                                             viewModel = viewModel,
                                             // 不按加工阶段过滤：两类混排，与「按角色」视图口径一致
@@ -519,9 +630,9 @@ class MainActivity : ComponentActivity() {
                                             onBackupManageRequest = {
                                                 viewModel.refreshBackupUsage()
                                                 showBackupManage = true
-                                            },
-                                            onUnpackRequest = { showUnpackDialog = true }
+                                            }
                                         )
+                                    }
                                     }
                                 }
                             }
