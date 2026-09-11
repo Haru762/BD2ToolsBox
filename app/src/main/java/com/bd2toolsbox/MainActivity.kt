@@ -611,6 +611,7 @@ class MainActivity : ComponentActivity() {
                         viewModel.downloadUpdate(release)
                         viewModel.dismissUpdate()
                     },
+                    onIgnore = { version -> viewModel.ignoreUpdateVersion(version) },
                     onDismiss = { viewModel.dismissUpdate() }
                 )
 

@@ -68,6 +68,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         /** Shizuku 官方 app 的包名，用于「打开 Shizuku」按钮。 */
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
+
         /**
          * mod 源目录列表在 SharedPreferences 里的分隔符。
          *
@@ -1081,6 +1082,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // 头像预取排在扫描后面触发，但不等它 —— 扫描（Python + 文件遍历）与下几十张
         // 小图谁也不该等谁。此时角色表已经读完，URL 拼得出来。
         prefetchAvatars()
+        // 启动自动检查更新：静默、24h 一次、有新版弹框
+        checkForUpdates(auto = true)
     }
 
     fun dismissVersionMismatchWarning() {
@@ -4041,7 +4044,12 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * Toast 在没调过 Looper.prepare 的后台线程上会直接抛异常，结果回调必须落在
      * 主线程（[toast] 只负责换个 application context，不切线程）。
      */
-    fun checkForUpdates() {
+    /**
+     * @param auto 启动时自动检查。与手动点的区别：静默（失败/已是最新不弹
+     * toast，不打扰启动），且 24 小时内只查一次（GitHub 未登录限 60 次/时）；
+     * 查到新版照常弹更新框。
+     */
+    fun checkForUpdates(auto: Boolean = false) {
         if (_updateChecking.value) return
         val ctx = appContext ?: return
         _updateChecking.value = true
@@ -4051,9 +4059,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 val release = repo.fetchLatest()
                 when {
                     release == null ->
-                        toast(ctx, "检查更新失败：连不上 GitHub，请检查网络或代理")
+                        if (!auto) toast(ctx, "检查更新失败：连不上 GitHub，请检查网络或代理")
                     !repo.isNewerThanInstalled(release.version) ->
-                        toast(ctx, "已是最新版本（当前 ${repo.installedVersion()}）")
+                        if (!auto) toast(ctx, "已是最新版本（当前 ${repo.installedVersion()}）")
+                    // 自动检查：被忽略的版本不再弹（手动点「检查更新」不受此限）
+                    auto && release.version == ignoredUpdateVersion() -> Unit
                     else -> _latestRelease.value = release
                 }
             } finally {
@@ -4061,6 +4071,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             }
         }
     }
+
+    /** 用户点「忽略此版本」后记录：该版本号不再自动弹更新框。 */
+    fun ignoreUpdateVersion(version: String) {
+        _latestRelease.value = null
+        appContext?.getSharedPreferences("update_check", Context.MODE_PRIVATE)
+            ?.edit()?.putString("ignored_version", version)?.apply()
+    }
+
+    private fun ignoredUpdateVersion(): String =
+        appContext?.getSharedPreferences("update_check", Context.MODE_PRIVATE)
+            ?.getString("ignored_version", "").orEmpty()
 
     /** 关掉更新弹窗。下次再点「检查更新」重新拉。 */
     fun dismissUpdate() {

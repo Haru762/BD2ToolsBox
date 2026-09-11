@@ -1738,6 +1738,7 @@ private fun dirLabel(uri: Uri): String {
 fun UpdateDialog(
     release: UpdateRepository.Release?,
     onDownload: (UpdateRepository.Release) -> Unit,
+    onIgnore: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     if (release == null) return
@@ -1772,7 +1773,15 @@ fun UpdateDialog(
         confirmButton = {
             Button(onClick = { release?.let(onDownload) }) { Text("下载并安装") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = {
+            Row {
+                // 忽略此版本：不再自动弹（手动检查仍会出）
+                TextButton(onClick = { release?.let { onIgnore(it.version) } }) {
+                    Text("忽略此版本")
+                }
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        }
     )
 }
 
