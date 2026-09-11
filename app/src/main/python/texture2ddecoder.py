@@ -54,9 +54,14 @@ def _make_decoder(symbol):
         )
         if ret != 0:
             raise RuntimeError(f"{symbol} failed with return code {ret}")
-        # 返回数组本体而非 bytes 拷贝：PIL frombytes 走缓冲区协议
-        # 直接读，一张 4096² 贴图省 67MB 峰值；调用方用完即随 out 一起释放。
-        return out
+        # 返回前做 BGRA→RGBA 通道交换：C 侧按 uint32 打包输出，小端机器
+        # 上字节序是 B,G,R,A，而 PIL/UnityPy 期望 R,G,B,A。所有压缩格式
+        # （ETC/BC/ATC/PVRTC）都有这个问题，不只是 ASTC。
+        # bytearray 扩展切片在 C 层做，比逐像素快得多。
+        _b = bytearray(out)
+        _src = bytes(out)
+        _b[0::4], _b[2::4] = _src[2::4], _src[0::4]   # swap R↔B
+        return bytes(_b)
     return decode
 
 
@@ -123,8 +128,11 @@ def _decode_astc(data, width, height, block_x, block_y):
     )
     if ret != 0:
         raise RuntimeError(f"decode_astc failed with return code {ret}")
-    # 同 _make_decoder：返回数组本体，免一次整图拷贝
-    return out
+    # 同 _make_decoder：BGRA→RGBA 通道交换
+    _b = bytearray(out)
+    _src = bytes(out)
+    _b[0::4], _b[2::4] = _src[2::4], _src[0::4]
+    return bytes(_b)
 
 
 decode_astc = _decode_astc

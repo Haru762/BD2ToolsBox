@@ -32,7 +32,7 @@ class PreviewCacheRepository(private val context: Context) {
          * 旧的黑图缓存会一直被当作有效命中继续显示。换代即整体失效，下次
          * 预解包重新生成。解码逻辑再改必须 bump。
          */
-        private const val CACHE_GENERATION = 2
+        private const val CACHE_GENERATION = 3
         private const val DIR_NAME = "preview_cache"
         private const val SRC_SIZE_FILE = ".srcsize"
     }
