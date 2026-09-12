@@ -145,6 +145,22 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    /**
+     * mod 目录重扫的进度。null = 不在扫。用户反馈「点了重新扫描根本不知道
+     * 有没有开始」—— [isLoading] 只是个布尔，冷启动/大库时好几秒毫无反馈。
+     * 这里的粒度是**目录**级（逐目录 SAF 遍历 + 解析是耗时大头）加上
+     * 后段的固定阶段（校验/装机状态），够回答「开始了没、到哪了」。
+     */
+    data class ModScanProgress(
+        val doneDirs: Int,
+        val totalDirs: Int,
+        /** 当前阶段的说明文案，如「扫描目录 2/3」「校验 mod 状态」。 */
+        val stage: String
+    )
+
+    private val _modScanProgress = MutableStateFlow<ModScanProgress?>(null)
+    val modScanProgress: StateFlow<ModScanProgress?> = _modScanProgress.asStateFlow()
+
     private val _isUpdatingCharacters = MutableStateFlow(false)
     val isUpdatingCharacters: StateFlow<Boolean> = _isUpdatingCharacters.asStateFlow()
 
@@ -782,7 +798,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             val measured = previewCacheRepository.measuredExpansionRatio()
             val ratio = measured ?: 1.6
             val free = try {
-                (context.getExternalFilesDir(null) ?: context.filesDir).usableSpace
+                (context.getExternalFilesDir(null) ?: context.filesDir).freeSpace
             } catch (e: Exception) {
                 0L
             }
@@ -1134,18 +1150,59 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     /**
-     * 手动触发游戏资源扫描（设置 → 游戏目录）。
+     * 手动触发游戏资源扫描（左上角目录菜单 → 扫描游戏资源）。
      *
      * 自动检查只在冷启动时跑一次，且要求 Shizuku 当时已就绪 —— 用户先开 app 后
      * 启动 Shizuku、或 Shizuku 中途挂掉，就永远等不到扫描提示，表现为「装了
      * 新版 mod 还是大量未识别」。这里走与启动检查完全相同的链路（check →
      * 确认框 → confirmBundleScan），入口常驻。
      */
+    /**
+     * 导出诊断日志（设置 → 诊断 → 导出日志）。
+     *
+     * 真机排查的主通道：收集本进程 logcat（Kotlin 的 Log + Python 的
+     * stdout/stderr 都在里面）存到 Download 并拉分享面板。比如「预解包
+     * 哪些目标没缓存」——PrepackService 每个目标一行日志，导出即定位。
+     */
+    fun exportLogs() {
+        val context = appContext ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            var temp: java.io.File? = null
+            try {
+                temp = com.bd2toolsbox.data.repository.LogExporter.collect(context)
+                val uri = com.bd2toolsbox.data.repository.LogExporter
+                    .exportToDownloads(context, temp)
+                viewModelScope.launch(Dispatchers.Main) {
+                    if (uri != null) {
+                        toast(context, "日志已保存到 Download，可直接分享")
+                        com.bd2toolsbox.data.repository.LogExporter.share(context, uri)
+                    } else {
+                        toast(context, "日志保存失败，请重试")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "导出日志失败", e)
+                viewModelScope.launch(Dispatchers.Main) {
+                    toast(context, "导出日志失败：${e.message ?: "未知错误"}")
+                }
+            } finally {
+                temp?.delete()
+            }
+        }
+    }
+
     fun requestGameScan() {
         val context = appContext ?: return
         if (ShizukuManager.scanRunning) return   // 已在扫，进度框自会显示
         viewModelScope.launch {
             try {
+                if (PrepackService.progress.value != null) {
+                    // 预解包占着 Python（Chaquopy 单解释器，长解包期间其它 python
+                    // 调用都在排队）—— 现在启动扫描只会两头互相拖，且 check 阶段
+                    // 就可能超时误报「读取游戏目录失败」。等它跑完再点。
+                    toast(context, "预解包尚未完成，请等待其结束后再执行游戏资源扫描")
+                    return@launch
+                }
                 if (!ShizukuManager.isAvailable()) {
                     toast(context, "Shizuku 未运行，请先在 Shizuku 中启动服务")
                     return@launch
@@ -1156,8 +1213,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     ) { }
                 }
                 when {
+                    // 失败原因不再笼统地归为「游戏没装」：绑定失败/目录列举失败/
+                    // 目录为空在用户眼里完全不同，笼统提示会让人白跑一趟重装游戏
+                    // （真机实测：预解包期间误报，用户以为要重装）。
                     checkResult == null ->
-                        toast(context, "读取游戏目录失败，请确认游戏已安装")
+                        toast(context, "读取游戏资源目录失败：请确认游戏已安装、Shizuku 正在运行且已授权")
                     checkResult.needsScanCount == 0 ->
                         toast(context, "游戏资源索引已是最新，无需重扫")
                     else -> {
@@ -2762,6 +2822,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
                 withContext(Dispatchers.Main) {
                     _isLoading.value = true
+                    _modScanProgress.value = ModScanProgress(0, dirs.size, "准备扫描")
                 }
 
                 isUpdatingCharacters.first { !it } // Wait for character data to be ready
@@ -2771,7 +2832,14 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     // 出现在两处时，只留第一次扫到的那份。
                     val seen = HashSet<String>()
                     val mods = ArrayList<ModInfo>()
-                    for (dir in dirs) {
+                    for ((dirIndex, dir) in dirs.withIndex()) {
+                        withContext(Dispatchers.Main) {
+                            _modScanProgress.value = ModScanProgress(
+                                doneDirs = dirIndex,
+                                totalDirs = dirs.size,
+                                stage = "扫描目录 ${dirIndex + 1}/${dirs.size}"
+                            )
+                        }
                         val found = try {
                             modRepository.scanMods(dir)
                         } catch (e: ModRepository.IncompleteScanException) {
@@ -2789,6 +2857,13 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                             if (key in hidden) continue
                             if (seen.add(key)) mods.add(m)
                         }
+                        withContext(Dispatchers.Main) {
+                            _modScanProgress.value = ModScanProgress(
+                                doneDirs = dirIndex + 1,
+                                totalDirs = dirs.size,
+                                stage = "已发现 ${mods.size} 个 mod"
+                            )
+                        }
                     }
                     // 用户在扫描期间移除/重选目录，旧任务不再覆盖当前列表。
                     if (dirs != _modSourceDirs.value) {
@@ -2796,6 +2871,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                         continue
                     }
                     Log.d("MainViewModel", "扫描 ${dirs.size} 个目录，合计 ${mods.size} 个 mod")
+                    withContext(Dispatchers.Main) {
+                        _modScanProgress.value = ModScanProgress(
+                            doneDirs = dirs.size, totalDirs = dirs.size, stage = "校验 mod 状态"
+                        )
+                    }
                     refreshBundleCleanStates()
                     // 四道检查在扫描链尾全量跑一遍（缓存命中的条目也重判）—— 每次扫描
                     // 即复查：游戏更新/画质切换后 catalog 变了，这遍重新分四类 ——
@@ -2839,6 +2919,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 } finally {
                     withContext(Dispatchers.Main) {
                         _isLoading.value = false
+                        _modScanProgress.value = null
                     }
                 }
 

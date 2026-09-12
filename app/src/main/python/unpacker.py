@@ -83,8 +83,11 @@ except ImportError:
 # 预览模式只处理这三类（预览 = png + atlas + skel）
 PREVIEW_TYPES = ("Texture2D", "TextAsset", "MonoBehaviour")
 
-# 每 10 个对象做一次 gc：贴图解码的内存大头不进 gc 代际，得主动收
-GC_INTERVAL = 10
+# 对象循环里的 gc 间隔。历史值是 10（为贴图解码内存设的），但贴图解码
+# 已挪到 _export_textures 的独立批量路径（那里按张回收）—— 循环里只剩
+# TextAsset/MonoBehaviour 这类小对象，每 10 个收一次全代回收纯属缴税：
+# 实测 3218 对象的包 322 次 gc.collect() 吃掉 13s，改 500 后同包 2.3s。
+GC_INTERVAL = 500
 
 # 单张贴图解码的像素帽（16384x16384 = 上限；正常 spine 页最大 4096²）
 MAX_DECODE_PIXELS = 16384 * 16384
@@ -92,7 +95,10 @@ MAX_DECODE_PIXELS = 16384 * 16384
 # 单个 bundle 的体量门槛：超过则拒绝解码（加载本身就要吃等量内存，
 # 448MB 的特殊插画合集在手机上会把进程直接顶爆——预解包队列死在它身上、
 # 整个 app 无声消失。跳过只影响「预览」，安装是整文件拷贝不受影响）。
-MAX_BUNDLE_BYTES = 350 * 1024 * 1024
+# 2026-09 门槛从 350MB 抬到 500MB：UnityPy 加了磁盘溢出（解压块落盘、
+# .resS 按需读），422MB 约会大包的解包峰值从 1.66GB 降到 372MB ——
+# 约会/好感剧情类 mod 的目标包正是它，350 的旧帽子把它们的预览全灭了。
+MAX_BUNDLE_BYTES = 500 * 1024 * 1024
 
 
 def _unique_export_path(output_dir, base_name, extension, path_id):
@@ -168,7 +174,8 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print, fast=False):
 
     fast=True 是预览模式：只处理 Texture2D/TextAsset/MonoBehaviour（其余
     类型连 obj.read() 都不做——完整反序列化对用不上的对象是纯浪费），
-    PNG 用 compress_level=1 换写盘速度。
+    PNG 用 compress_level=1 换写盘速度，且**只解码 atlas 登记过的页**
+    （表情差分/小图标预览用不上，解码占实测耗时的 8 成）。
     """
     # 体量门槛（见 MAX_BUNDLE_BYTES 注释）：宁可明说「预览不了」，
     # 也不能让一个巨包把整个预解包队列连带 app 进程一起带走。
@@ -196,53 +203,7 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print, fast=False):
     env = None
     try:
         env = UnityPy.load(bundle_path)
-        total = len(env.objects)
-        progress_callback(f"Successfully loaded bundle. Found {total} assets.")
-
-        pages_by_lower, atlas_cache = _collect_atlas_pages(env)
-
-        for i, obj in enumerate(env.objects):
-            data = None
-            try:
-                if fast and obj.type.name not in PREVIEW_TYPES:
-                    continue
-                if obj.type.name == "TextAsset" and obj.path_id in atlas_cache:
-                    data = atlas_cache[obj.path_id]  # 预扫 atlas 时已读过
-                else:
-                    data = obj.read()
-                name = getattr(data, 'm_Name', None)
-                if not name:
-                    continue
-                dest_name = name.replace('/', '_')
-                if obj.type.name == "Texture2D":
-                    # 贴图名与 atlas 登记名只差大小写时，按登记名落盘（Android
-                    # 区分大小写，差一个字母 Spine 就找不到页文件）
-                    registered = pages_by_lower.get(name.lower())
-                    if registered:
-                        dest_name = registered.replace('/', '_')
-                path_id = getattr(obj, 'path_id', 'dup')
-                _current_asset_name = dest_name
-                if progress_callback(f"Processing asset {i + 1}/{total}: {dest_name}"):
-                    raise UnpackCancelled()
-
-                if obj.type.name == "Texture2D":
-                    _export_texture(data, _unique_export_path(output_dir, dest_name, ".png", path_id), fast)
-                elif obj.type.name in ("TextAsset", "MonoBehaviour"):
-                    # MonoBehaviour 只导 .skel（骨架存这类对象里）
-                    if obj.type.name == "MonoBehaviour" and ".skel" not in dest_name.lower():
-                        continue
-                    _export_text(data, _unique_export_path(output_dir, dest_name, "", path_id))
-            except Exception as e:
-                import traceback
-                asset_name = getattr(data, 'm_Name', None) or "Unknown"
-                progress_callback(f"FAILED to export asset '{asset_name}': {e}")
-                print(traceback.format_exc())
-            finally:
-                del data
-                if (i + 1) % GC_INTERVAL == 0:
-                    gc.collect()
-
-        gc.collect()
+        _export_objects(env, output_dir, progress_callback, fast)
         progress_callback("Unpacking complete.")
         return True, "Unpacking complete."
     except UnpackCancelled:
@@ -257,3 +218,185 @@ def unpack_bundle(bundle_path, output_dir, progress_callback=print, fast=False):
     finally:
         del env
         gc.collect()
+
+
+# fast 模式下贴图解码的并行度。解码走 C 扩展（libtexture2ddecoder），
+# 调用期间释放 GIL，多线程是真并行；但每张 2048x2048 RGBA 占 ~32MB，
+# 并发数必须压着内存来 —— 3 是「8 核手机吃得下且峰值可控」的折中。
+# min(3, ...) 保守对待核数低的设备。非 fast（正式解包给 repacker 用）
+# 保持串行：那条路贴图还要走替换/写回，并行只会放大内存峰值。
+FAST_DECODE_WORKERS = min(3, (os.cpu_count() or 2))
+
+# 有界队列的容量（背压）：主线程读出的原始字节最多压 workers*2 张，
+# 喂不进去就阻塞 —— 否则 170 张 × 4MB 的包会一次性攒出 700MB 内存。
+_DECODE_QUEUE_DEPTH = FAST_DECODE_WORKERS * 2
+
+
+def _read_texture_bytes(tex):
+    """主线程：取贴图原始编码字节。
+
+    UnityPy 的资源 reader（CAB 归档）是共享对象，读靠 Position 读写
+    （helpers/ResourceReader._get_resource_data），两个线程同时取流
+    数据会互相踩位置、静默产出坏图 —— 这一步绝不能进工作线程。
+    """
+    return tex.get_image_data()
+
+
+def _decode_texture(tex, raw):
+    """工作线程：原始字节 → PIL 图。纯计算（C 解码 + frombytes），线程安全。
+
+    与 Texture2DConverter.get_image_from_texture2d 等价，只是拆开了
+    get_image_data（必须串行）这一步。"""
+    from UnityPy.export.Texture2DConverter import parse_image_data
+    from UnityPy.enums import BuildTarget
+    return parse_image_data(
+        raw, tex.m_Width, tex.m_Height, tex.m_TextureFormat,
+        getattr(tex.object_reader, "version", (0, 0, 0, 0)),
+        getattr(tex.object_reader, "platform", BuildTarget.UnknownPlatform),
+        getattr(tex, "m_PlatformBlob", None),
+    )
+
+
+def _export_objects(env, output_dir, progress_callback, fast):
+    """遍历 env.objects 导出。fast 模式两件事省时间（见 unpack_bundle 文档）：
+    跳过非预览类型、只解码 atlas 登记页，贴图并行解码。"""
+    global _current_asset_name
+    total = len(env.objects)
+    progress_callback(f"Successfully loaded bundle. Found {total} assets.")
+
+    pages_by_lower, atlas_cache = _collect_atlas_pages(env)
+
+    # fast 模式的贴图先攒名单：读字节留主线程（串行），解码+落盘丢线程池
+    # （C 扩展释放 GIL）。其余类型（atlas/skel 文本）串行导出 —— 毫秒级，
+    # 并行没意义还要抢队列。文本先走，贴图最后并行。
+    texture_jobs = []
+
+    for i, obj in enumerate(env.objects):
+        data = None
+        try:
+            if fast and obj.type.name not in PREVIEW_TYPES:
+                continue
+            if obj.type.name == "TextAsset" and obj.path_id in atlas_cache:
+                data = atlas_cache[obj.path_id]  # 预扫 atlas 时已读过
+            else:
+                data = obj.read()
+            name = getattr(data, 'm_Name', None)
+            if not name:
+                continue
+            dest_name = name.replace('/', '_')
+            if obj.type.name == "Texture2D":
+                # fast 模式只解 atlas 登记页：预览 = spine 渲染，没登记的页
+                # （表情差分/小图标/背景碎片）解了也白解 —— 解码占实测
+                # 耗时 8 成，这一刀对 spine 类大包立竿见影。
+                # atlas 为空的包（纯立绘合集）保持全解：没有登记表可对照。
+                if fast and pages_by_lower and name.lower() not in pages_by_lower:
+                    continue
+                # 贴图名与 atlas 登记名只差大小写时，按登记名落盘（Android
+                # 区分大小写，差一个字母 Spine 就找不到页文件）
+                registered = pages_by_lower.get(name.lower())
+                if registered:
+                    dest_name = registered.replace('/', '_')
+                path_id = getattr(obj, 'path_id', 'dup')
+                _current_asset_name = dest_name
+                if progress_callback(f"Processing asset {i + 1}/{total}: {dest_name}"):
+                    raise UnpackCancelled()
+                texture_jobs.append((data, dest_name, path_id))
+                continue
+            path_id = getattr(obj, 'path_id', 'dup')
+            _current_asset_name = dest_name
+            if progress_callback(f"Processing asset {i + 1}/{total}: {dest_name}"):
+                raise UnpackCancelled()
+
+            if obj.type.name in ("TextAsset", "MonoBehaviour"):
+                # MonoBehaviour 只导 .skel（骨架存这类对象里）
+                if obj.type.name == "MonoBehaviour" and ".skel" not in dest_name.lower():
+                    continue
+                _export_text(data, _unique_export_path(output_dir, dest_name, "", path_id))
+        except UnpackCancelled:
+            raise
+        except Exception as e:
+            import traceback
+            asset_name = getattr(data, 'm_Name', None) or "Unknown"
+            progress_callback(f"FAILED to export asset '{asset_name}': {e}")
+            print(traceback.format_exc())
+        finally:
+            del data
+            if (i + 1) % GC_INTERVAL == 0:
+                gc.collect()
+
+    if not texture_jobs:
+        return
+    _export_textures(texture_jobs, output_dir, progress_callback, fast)
+
+
+def _export_textures(texture_jobs, output_dir, progress_callback, fast):
+    """贴图批量导出。fast 走「主线程读字节 + 工作线程解码」的流水线，
+    非 fast 保持老路径（串行 .image 直出，供 repacker 用）。"""
+    if not fast:
+        for data, dest_name, path_id in texture_jobs:
+            _export_texture(data, _unique_export_path(output_dir, dest_name, ".png", path_id), fast)
+            gc.collect()
+        return
+
+    def _decode_and_save(job):
+        tex, raw, dest_name, path_id = job
+        img = _decode_texture(tex, raw)
+        img.save(_unique_export_path(output_dir, dest_name, ".png", path_id),
+                 compress_level=1)
+
+    use_pool = FAST_DECODE_WORKERS > 1 and len(texture_jobs) > 1
+    if not use_pool:
+        # 少量贴图开池不划算；主线程直接走同一条读+解路径
+        for tex, dest_name, path_id in texture_jobs:
+            try:
+                raw = _read_texture_bytes(tex)
+                _decode_and_save((tex, raw, dest_name, path_id))
+            except Exception as e:
+                progress_callback(f"FAILED to export asset '{dest_name}': {e}")
+        gc.collect()
+        return
+
+    import queue
+    import threading
+    q = queue.Queue(maxsize=_DECODE_QUEUE_DEPTH)
+    failures = []
+
+    def worker():
+        while True:
+            job = q.get()
+            try:
+                if job is None:
+                    return
+                _decode_and_save(job)
+            except Exception as e:
+                failures.append((job[2], e))
+            finally:
+                q.task_done()
+
+    threads = [threading.Thread(target=worker, daemon=True)
+               for _ in range(FAST_DECODE_WORKERS)]
+    for t in threads:
+        t.start()
+    try:
+        n = len(texture_jobs)
+        for idx, (tex, dest_name, path_id) in enumerate(texture_jobs):
+            # 取消在喂料口检查：返回 True 就不再喂，工作线程把在手里的
+            # 做完即收（与老行为「下一张贴图前停手」等价）
+            if progress_callback(f"Decoding texture {idx + 1}/{n}: {dest_name}"):
+                raise UnpackCancelled()
+            try:
+                raw = _read_texture_bytes(tex)
+            except Exception as e:
+                progress_callback(f"FAILED to export asset '{dest_name}': {e}")
+                continue
+            # 队列满时阻塞 —— 原始字节的驻留量被 _DECODE_QUEUE_DEPTH 封顶
+            q.put((tex, raw, dest_name, path_id))
+    finally:
+        for _ in threads:
+            q.put(None)
+        for t in threads:
+            t.join()
+        gc.collect()
+
+    for name, e in failures:
+        progress_callback(f"FAILED to export asset '{name}': {e}")

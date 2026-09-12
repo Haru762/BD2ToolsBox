@@ -112,11 +112,7 @@ class PrepackService : Service() {
             // API 26+ 起后台启动的服务必须用 startForegroundService，且服务要在 5 秒内
             // 调 startForeground。这里由用户点击触发，app 在前台，不受 Android 12 的
             // 「后台不得启动前台服务」限制。
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startForegroundService(intent)
         }
 
         fun cancel(context: Context) {
@@ -157,10 +153,12 @@ class PrepackService : Service() {
             Log.d(TAG, "收到取消")
             cancelRequested = true
             worker?.cancel()
-            worker = null
-            _progress.value = null
-            stopForegroundCompat()
-            stopSelf()
+            // 不在这里收场：python 解包是阻塞调用，取消旗标要等回调间隙才生效，
+            // 现在置 null progress 会谎报「已经闲了」—— 残留的 python 调用还占着
+            // 解释器，此时启动扫描/新一轮预解包都会跟它抢（真机症状：停了预解包
+            // 依旧扫不了）。run() 的 finally 是唯一收场点；这里只把状态改成
+            // 「正在取消」，界面与通知如实反映。
+            _progress.value = _progress.value?.copy(detail = "正在取消…")
             return START_NOT_STICKY
         }
 
@@ -178,12 +176,15 @@ class PrepackService : Service() {
         // 必须先 startForeground 再干活，否则 5 秒后系统会判定违规
         startForeground(NOTIFICATION_ID, buildNotification(0, targets.size, "准备中…"))
 
-        // 已经在跑就不重复启动 —— 重复点击只会互相抢 CPU
-        if (worker?.isActive == true) {
+        // 已经在跑就不重复启动 —— 重复点击只会互相抢 CPU。判 progress 而不是
+        // worker.isActive：取消进行中 isActive 已是 false，但 python 还在收尾，
+        // 这时放新批次进来会把 cancelRequested 重置、旧批次在后台复活。
+        if (_progress.value != null || worker?.isActive == true) {
             Log.d(TAG, "已有任务在跑，忽略本次请求")
             return START_NOT_STICKY
         }
 
+        _progress.value = Progress(0, targets.size, "", "准备中…")
         worker = scope.launch { run(targets) }
         return START_NOT_STICKY
     }
@@ -300,11 +301,13 @@ class PrepackService : Service() {
             }
             Log.d(TAG, "批量预解包结束: $done/${targets.size}")
         } finally {
-            // 无论正常结束、出错还是被取消，都要把进度清掉并收掉服务，
-            // 否则通知会一直挂着，用户以为还在跑
+            // 无论正常结束、出错还是被取消，这里都是唯一收场点：
+            // python 调用真正返回后才清进度、收服务 —— 取消窗口内 progress
+            // 一直非空，扫描入口的忙碌判定才靠得住（见 onStartCommand 注释）
             _progress.value = null
             stopForegroundCompat()
             stopSelf()
+            worker = null
         }
     }
 
@@ -346,7 +349,6 @@ class PrepackService : Service() {
     // ---------------------------------------------------------------- 通知
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = getSystemService(NotificationManager::class.java) ?: return
         // IMPORTANCE_LOW：要常驻但不该响铃或弹横幅，它只是个进度指示
         val ch = NotificationChannel(CHANNEL_ID, "批量预解包", NotificationManager.IMPORTANCE_LOW)
@@ -361,8 +363,7 @@ class PrepackService : Service() {
         current: String,
         detail: String = ""
     ): Notification {
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), flags
@@ -399,12 +400,7 @@ class PrepackService : Service() {
 
     private fun stopForegroundCompat() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
             // 还得显式 cancel 一次。STOP_FOREGROUND_REMOVE 只撤销「由 startForeground
             // 关联的」那条通知，而进度是用 NotificationManager.notify() 按同一 id 覆盖
             // 更新的 —— 覆盖之后它就成了一条独立通知，stopForeground 撤不掉。

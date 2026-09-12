@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- Suppress ObsoleteSdkInt for mipmap-anydpi-v26: adaptive icons require API 26+ qualifier -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+
+    <!-- Suppress GradleDependency: newer versions require AGP 8.9.1+ or 9.1.0+, incompatible with current AGP 8.4.1 -->
+    <issue id="GradleDependency" severity="ignore" />
+</lint>

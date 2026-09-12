@@ -94,7 +94,7 @@ fun GuideScreen(viewModel: GuideViewModel) {
     // 下拉刷新：重拉分类树（树每次进入也会自动拉新，这是即时的手动入口）
     val pullToRefreshState = rememberPullToRefreshState()
     // 与 ModScreen 同款：量出内容 Box 距窗口顶端的距离，给容器做锚点补偿。
-    var boxTopInWindow by remember { mutableStateOf(10_000f) }
+    var boxTopInWindow by remember { mutableFloatStateOf(10_000f) }
     if (pullToRefreshState.isRefreshing) {
         LaunchedEffect(true) { viewModel.refreshTree() }
     }
@@ -792,10 +792,11 @@ private fun GuideArticleViewer(
 
 // ---------------------------------------------------------------- 工具
 
-private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-
-private fun formatDate(epochSeconds: Long): String =
-    if (epochSeconds <= 0) "" else dateFormat.format(Date(epochSeconds * 1000))
+private fun formatDate(epochSeconds: Long): String {
+    if (epochSeconds <= 0) return ""
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    return dateFormat.format(Date(epochSeconds * 1000))
+}
 
 private fun formatCacheSize(bytes: Long): String = when {
     bytes >= 1024L * 1024 -> String.format(Locale.US, "%.1f MB", bytes / 1024.0 / 1024)

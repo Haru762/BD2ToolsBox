@@ -66,7 +66,6 @@ fun WorkbenchSheet(
     onUnpackTool: () -> Unit,
     onRecheckShizuku: () -> Unit,
     onPrepack: () -> Unit,
-    onScanGame: () -> Unit,
     onPickWallpaper: () -> Unit,
     onReplayOnboarding: () -> Unit,
     onDismiss: () -> Unit
@@ -84,7 +83,7 @@ fun WorkbenchSheet(
     val spineRuntime by viewModel.spineRuntimeUsage.collectAsState()
     val prepackProgress by viewModel.prepackProgress.collectAsState()
 
-    val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val dynamicSupported = true
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -95,8 +94,7 @@ fun WorkbenchSheet(
     val versionText = remember(context) {
         try {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
-                       else info.versionCode.toLong()
+            val code = info.longVersionCode
             "${info.versionName}（$code）"
         } catch (e: Exception) {
             "未知"
@@ -228,12 +226,6 @@ fun WorkbenchSheet(
                     title = "重新检测 Shizuku",
                     subtitle = "无需重跑转换",
                     onClick = onRecheckShizuku,
-                    trailing = { Icon(Icons.Default.ChevronRight, null) }
-                )
-                WorkbenchRow(
-                    title = "扫描游戏资源",
-                    subtitle = "重建识别 mod 用的资源索引；识别大量未识别时点这里",
-                    onClick = onScanGame,
                     trailing = { Icon(Icons.Default.ChevronRight, null) }
                 )
             }
@@ -490,8 +482,8 @@ private fun openUrl(context: Context, url: String) {
 }
 
 private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1024L * 1024 * 1024 -> String.format("%.2f GB", bytes / 1024.0 / 1024 / 1024)
-    bytes >= 1024L * 1024 -> String.format("%.1f MB", bytes / 1024.0 / 1024)
-    bytes >= 1024L -> String.format("%.0f KB", bytes / 1024.0)
+    bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f GB", bytes / 1024.0 / 1024 / 1024)
+    bytes >= 1024L * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024)
+    bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
     else -> "$bytes B"
 }

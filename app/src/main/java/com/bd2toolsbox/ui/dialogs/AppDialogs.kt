@@ -453,9 +453,9 @@ fun PreviewProgressDialog(state: PreviewState, onDismiss: () -> Unit) {
 private fun dialogContainerColor() = MaterialTheme.colorScheme.surfaceContainerHigh
 
 private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1024L * 1024 * 1024 -> String.format("%.2f GB", bytes / 1024.0 / 1024 / 1024)
-    bytes >= 1024L * 1024 -> String.format("%.1f MB", bytes / 1024.0 / 1024)
-    bytes >= 1024L -> String.format("%.0f KB", bytes / 1024.0)
+    bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f GB", bytes / 1024.0 / 1024 / 1024)
+    bytes >= 1024L * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024)
+    bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
     else -> "$bytes B"
 }
 
@@ -934,7 +934,7 @@ fun ParallelInstallDialog(
                                 val elapsedSeconds = finalResult.elapsedTimeMs / 1000.0
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = String.format("总耗时 %.1f 秒", elapsedSeconds),
+                                    text = String.format(java.util.Locale.US, "总耗时 %.1f 秒", elapsedSeconds),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -1798,7 +1798,7 @@ fun ImageViewerDialog(
     onDismiss: () -> Unit
 ) {
     if (imagePaths.isEmpty()) return
-    var index by remember { mutableStateOf(0) }
+    var index by remember { mutableIntStateOf(0) }
     var bitmap by remember(imagePaths, index) { mutableStateOf<android.graphics.Bitmap?>(null) }
     val context = LocalContext.current
     val density = LocalDensity.current

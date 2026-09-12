@@ -82,7 +82,7 @@ class ScanService : Service() {
             try {
                 // 与 InstallService 同理：只有 START 需要 startForegroundService（5 秒内
                 // 必须调 startForeground），后续走普通 startService。
-                if (action == ACTION_START && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (action == ACTION_START) {
                     context.startForegroundService(intent)
                 } else {
                     context.startService(intent)
@@ -174,7 +174,6 @@ class ScanService : Service() {
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = getSystemService(NotificationManager::class.java) ?: return
         if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
         mgr.createNotificationChannel(
@@ -188,8 +187,7 @@ class ScanService : Service() {
     }
 
     private fun buildProgressNotification(): Notification {
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), flags
         )
@@ -214,8 +212,7 @@ class ScanService : Service() {
         // 先撤下常驻进度条（它由 startForeground 关联，STOP_FOREGROUND_REMOVE 只收它），
         // 再用同 id post 一条普通通知 —— 顺序反了会闪一条「空」的过渡帧
         stopForegroundCompat()
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), flags
         )
@@ -232,12 +229,7 @@ class ScanService : Service() {
     /** 与 InstallService.stopForegroundCompat 同构：收掉 startForeground 关联的通知。 */
     private fun stopForegroundCompat() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (e: Exception) {
             Log.w(TAG, "stopForeground 失败: ${e.message}")
         }

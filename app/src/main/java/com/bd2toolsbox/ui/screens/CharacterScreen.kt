@@ -312,7 +312,7 @@ private fun CategoryBadge(category: ModCategory, count: Int) {
 @Composable
 private fun AlphabetIndex(letters: List<Char>, onPick: (Char) -> Unit) {
     if (letters.size < 2) return
-    var height by remember { mutableStateOf(1) }
+    var height by remember { mutableIntStateOf(1) }
     Column(
         modifier = Modifier
             .fillMaxHeight()

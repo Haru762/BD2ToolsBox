@@ -74,7 +74,7 @@ class InstallService : Service() {
                 // 调 startForeground。后续的 UPDATE/STOP 走普通 startService 就够了 ——
                 // 服务已经在前台，再走 startForegroundService 反而会在某些机型上
                 // 因为「重复要求前台」被记一笔违规。
-                if (action == ACTION_START && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (action == ACTION_START) {
                     context.startForegroundService(intent)
                 } else {
                     context.startService(intent)
@@ -136,7 +136,6 @@ class InstallService : Service() {
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = getSystemService(NotificationManager::class.java) ?: return
         if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
         mgr.createNotificationChannel(
@@ -150,8 +149,7 @@ class InstallService : Service() {
     }
 
     private fun buildNotification(done: Int, total: Int, text: String): Notification {
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), flags
         )
@@ -175,12 +173,7 @@ class InstallService : Service() {
      */
     private fun stopForegroundCompat() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (e: Exception) {
             Log.w(TAG, "stopForeground 失败: ${e.message}")
         }

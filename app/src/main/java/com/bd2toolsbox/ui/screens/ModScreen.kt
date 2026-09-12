@@ -123,7 +123,7 @@ fun ModScreen(
     // 之后只有比上一轮多才算新情况（游戏更新后重扫常会一次多出一批）。
     // 基准用未筛选的 allMods 计数：搜索词/状态筛选一变，筛选后的 abnormalMods 计数
     // 会跟着跳，拿它当基准会把「改了下筛选」误报成「新增异常」。
-    var lastAbnormalCount by remember { mutableStateOf(-1) }
+    var lastAbnormalCount by remember { mutableIntStateOf(-1) }
     val abnormalTotal = remember(allMods) { allMods.count { it.defect != null } }
     LaunchedEffect(abnormalTotal) {
         if (lastAbnormalCount >= 0 && abnormalTotal > lastAbnormalCount) {
@@ -133,7 +133,7 @@ fun ModScreen(
     }
     // 「待更新」区同样默认收起，且它往往是游戏更新后**突然**多出一大批 ——
     // 不指一下的话，用户只会看到正常列表里少了东西，不知道顶部有个一键修复。
-    var lastOutdatedCount by remember { mutableStateOf(-1) }
+    var lastOutdatedCount by remember { mutableIntStateOf(-1) }
     val outdatedTotal = remember(allMods) { allMods.count { it.outdatedCurrentHash != null } }
     LaunchedEffect(outdatedTotal) {
         if (lastOutdatedCount >= 0 && outdatedTotal > lastOutdatedCount) {
@@ -167,7 +167,7 @@ fun ModScreen(
     // M3 容器 rest 态的圆停在锚点上方一个身位处，锚点要贴窗口顶端才出得了屏。
     // 量出本屏内容 Box 距窗口顶端的距离存进来，容器用它做负偏移补偿（见下方
     // PullToRefreshContainer）；初值取一个必在屏外的量，首帧量测完成前先藏住。
-    var boxTopInWindow by remember { mutableStateOf(10_000f) }
+    var boxTopInWindow by remember { mutableFloatStateOf(10_000f) }
     if (pullToRefreshState.isRefreshing) {
         LaunchedEffect(true) {
             // 下拉刷新重扫的是「记住的所有目录」，不是当前第一个 ——
@@ -292,6 +292,37 @@ fun ModScreen(
                             selectAllState = selectAllState,
                             onSelectAll = { viewModel.toggleSelectAll() }
                         )
+
+                        // 目录重扫进度条：用户反馈「点了重新扫描不知道有没有开始」。
+                        // 位置按用户要求 —— 分类筛选行下方、异常区上方的那条空间。
+                        // 不占独立高度：不扫时整条不渲染，列表布局不跳动。
+                        val modScanProgress by viewModel.modScanProgress.collectAsState()
+                        modScanProgress?.let { progress ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp, end = 16.dp, top = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    progress = {
+                                        if (progress.totalDirs > 0)
+                                            progress.doneDirs.toFloat() / progress.totalDirs
+                                        else 0f
+                                    },
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    "正在扫描：${progress.stage}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
 
                         if (modSourceDirectoryUri == null) {
                             WelcomeScreen(onSelectModSource)
@@ -1212,9 +1243,9 @@ private fun ModCardMenu(
 }
 
 private fun formatSize(bytes: Long): String = when {
-    bytes >= 1024L * 1024 * 1024 -> String.format("%.1f GB", bytes / 1024.0 / 1024 / 1024)
-    bytes >= 1024L * 1024 -> String.format("%.1f MB", bytes / 1024.0 / 1024)
-    bytes >= 1024L -> String.format("%.0f KB", bytes / 1024.0)
+    bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f GB", bytes / 1024.0 / 1024 / 1024)
+    bytes >= 1024L * 1024 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024)
+    bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
     else -> "$bytes B"
 }
 

@@ -1141,10 +1141,10 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
 </html>"""
     }
 
-    private val commentDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-
-    private fun formatCommentDate(epochSeconds: Long): String =
-        commentDateFormat.format(Date(epochSeconds * 1000))
+    private fun formatCommentDate(epochSeconds: Long): String {
+        val commentDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return commentDateFormat.format(Date(epochSeconds * 1000))
+    }
 
     // ---------------------------------------------------------------- 评论正文 → HTML
 

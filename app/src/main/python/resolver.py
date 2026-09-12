@@ -269,15 +269,42 @@ def resolve_mod_folder(mod_file_names, local_index):
     elif len(union) == 1:
         target_bundle = next(iter(union))
     else:
-        # 各文件指向不同 bundle，没法装进一个目标
-        return {
-            'targetHash': None,
-            'resolvedFamilyKey': None,
-            'resolvedTargets': [_target(m) for m in matches],
-            'unresolvedFiles': unresolved,
-            'resolutionState': 'INVALID',
-            'errorReason': 'Mod files map to different bundles'
-        }
+        # 各文件没有公共包。**先别急着判 INVALID**：贴图分页（_2.png/_back1.png
+        # 之类）可能被两种情况误伤 —— 前缀桥接把它指向过场包（游戏里该分页只有
+        # cutscene 版），或多包同名消歧挑了贴图集包。装哪个包由骨架文件
+        # （skel/atlas/prefab）说了算：以骨架文件的公共包为目标，与它不相交的
+        # 贴图分页降级 unresolved —— 一个分页不该绑架整个 mod（真机案例：
+        # char020801 立绘被 _2.png 拖成 INVALID、specialillust65 被 png 的
+        # 四包歧义拖成 INVALID，其余文件全都能落到同一个包）。
+        skeleton_matches = [m for m in matches
+                            if _infer_asset_type(m['fileName']) in
+                            ('TextAsset', 'JsonSkeleton')]
+        base = skeleton_matches or matches
+        base_intersection = set(base[0]['bundles'])
+        for m in base[1:]:
+            base_intersection &= m['bundles']
+
+        if base_intersection:
+            target_bundle = sorted(base_intersection)[0]
+            # 与骨架公共包不相交的命中降级 unresolved：桥接误伤的分页、
+            # 消歧到别的包的 png 都在这里出列。骨架文件必须自己命中目标包。
+            demoted = []
+            for m in matches:
+                if target_bundle not in m['bundles']:
+                    demoted.append(m)
+                    unresolved.append(m['fileName'])
+            for m in demoted:
+                matches.remove(m)
+        else:
+            # 骨架文件自己也分家 —— 那是真的装不进一个目标
+            return {
+                'targetHash': None,
+                'resolvedFamilyKey': None,
+                'resolvedTargets': [_target(m) for m in matches],
+                'unresolvedFiles': unresolved,
+                'resolutionState': 'INVALID',
+                'errorReason': 'Mod files map to different bundles'
+            }
 
     stems = {_stem_of(m['fileName']) for m in matches}
     stems.discard(None)

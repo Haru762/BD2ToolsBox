@@ -51,9 +51,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CharacterAvatar(
     characterName: String,
+    modifier: Modifier = Modifier,
     size: Dp = 40.dp,
-    cornerRadius: Dp = 8.dp,
-    modifier: Modifier = Modifier
+    cornerRadius: Dp = 8.dp
 ) {
     val context = LocalContext.current
     val repo = remember(context) { AvatarRepository.get(context) }
@@ -100,10 +100,10 @@ private fun initialOf(name: String): String {
 @Composable
 fun SkinThumbnail(
     fileId: String?,
+    modifier: Modifier = Modifier,
     size: Dp = 44.dp,
     cornerRadius: Dp = 6.dp,
-    contentDescription: String? = null,
-    modifier: Modifier = Modifier
+    contentDescription: String? = null
 ) {
     val context = LocalContext.current
     val repo = remember(context) { AvatarRepository.get(context) }
@@ -131,7 +131,7 @@ private fun AvatarFrame(
     cornerRadius: Dp,
     contentDescription: String?,
     fallbackText: String?,
-    modifier: Modifier
+    modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier

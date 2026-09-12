@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -229,7 +230,7 @@ class MainActivity : ComponentActivity() {
                 // 阅读，与 mod 处理互不牵扯，所以顶栏那排目录/筛选只在 Mods 出现；
                 // 「设置」照旧不占 tab，挂在顶栏右上角齿轮 —— 齿轮在另两页也会
                 // 出现（壁纸/配色是全局的）。
-                var currentTab by remember { mutableStateOf(0) }
+                var currentTab by remember { mutableIntStateOf(0) }
                 var settingsOpen by remember { mutableStateOf(false) }
 
                 // 三个 tab 共用的「打开设置」动作：先刷一遍各缓存的占用数，
@@ -247,7 +248,7 @@ class MainActivity : ComponentActivity() {
                 // 批量多选转换要用它，认不出角色的 mod 也只能在那里看到。
                 var byCharacter by remember { mutableStateOf(true) }
                 // 左右滑切换视图的累积位移
-                var viewSwipeAccum by remember { mutableStateOf(0f) }
+                var viewSwipeAccum by remember { mutableFloatStateOf(0f) }
                 var openedCharacter by remember { mutableStateOf<String?>(null) }
                 var characterFilter by remember { mutableStateOf(CharacterFilter.ALL) }
 
@@ -343,6 +344,15 @@ class MainActivity : ComponentActivity() {
                                         onClick = {
                                             folderMenu = false
                                             viewModel.rescanAllModSources()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("扫描游戏资源") },
+                                        leadingIcon = { Icon(Icons.Default.FindInPage, null) },
+                                        onClick = {
+                                            folderMenu = false
+                                            ensureNotificationPermission()
+                                            viewModel.requestGameScan()
                                         }
                                     )
                                     DropdownMenuItem(
@@ -683,11 +693,6 @@ class MainActivity : ComponentActivity() {
                             ensureNotificationPermission()
                             viewModel.preparePrepack()
                         },
-                        onScanGame = {
-                            settingsOpen = false
-                            ensureNotificationPermission()
-                            viewModel.requestGameScan()
-                        },
                         onPickWallpaper = {
                             // 弹层不关：选完图回来能立刻看到效果、还能接着拖滑块
                             wallpaperLauncher.launch(arrayOf("image/*"))
@@ -958,9 +963,7 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "安装包不存在，请重新检查更新", Toast.LENGTH_SHORT).show()
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !packageManager.canRequestPackageInstalls()
-        ) {
+        if (!packageManager.canRequestPackageInstalls()) {
             Toast.makeText(
                 this,
                 "请先允许 BD2 ToolsBox 安装应用，回来后再点一次安装",

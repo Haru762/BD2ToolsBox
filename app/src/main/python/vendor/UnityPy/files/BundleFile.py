@@ -1,4 +1,5 @@
 # TODO: implement encryption for saving files
+import io
 import re
 import tempfile
 from collections import namedtuple
@@ -7,14 +8,85 @@ from typing import Optional, Union, cast
 
 from .. import config
 from ..enums import ArchiveFlags, ArchiveFlagsOld, CompressionFlags
-from ..helpers import ArchiveStorageManager, CompressionHelper
+from ..helpers import ArchiveStorageManager, CompressionHelper, ImportHelper
 from ..helpers.UnityVersion import UnityVersion
 from ..streams import EndianBinaryReader, EndianBinaryWriter
-from . import File
+from ..streams.EndianBinaryReader import EndianBinaryReader_Streamable
+from . import File, SerializedFile
 
 BlockInfo = namedtuple("BlockInfo", "uncompressedSize compressedSize flags")
 DirectoryInfoFS = namedtuple("DirectoryInfoFS", "offset size flags path")
 reVersion = re.compile(r"(\d+)\.(\d+)\.(\d+)\w.+")
+
+
+# ---------------------------------------------------------------------------
+# 磁盘溢出（spill）：大包不再整包进内存
+#
+# BD2 的约会大包有 422MB。改造前 read_fs 把全部解压块 b"".join 成一块内存、
+# read_files 再给每个 CAB 节点复制一份 —— 实测峰值 RSS 1.66GB，手机上必被
+# LMK 杀，于是 unpacker 只能用 350MB 体量帽把这类包整个拒之门外（预览全灭）。
+# 改造后（总量超 SPILL_THRESHOLD）解压块落临时文件，.resS/.resource 像素流
+# 节点用 SpillWindow 按需读盘，.assets 对象树仍驻内存。resS 从不反序列化、
+# 只被 ResourceReader 顺序读，惰性化不影响任何解析路径。
+# ---------------------------------------------------------------------------
+
+SPILL_THRESHOLD = 48 * 1024 * 1024     # 解压总量超过它 → 落盘
+SPILL_NODE_THRESHOLD = 8 * 1024 * 1024  # 单节点超过它且是资源流 → 惰性窗口
+
+
+class SpillWindow(io.RawIOBase):
+    """溢出文件上 [offset, offset+size) 窗口的惰性视图。
+
+    所有窗口共享同一个句柄 —— Windows 上 os.dup 出的句柄共享文件指针
+    （POSIX 才独立），靠 dup 分家在 PC 上就错。改为每次 IO 前显式
+    seek 到窗口内逻辑位置，多窗口交错读写各自安好（resS 的读取模式
+    正是「Position=xx 再 read」，无流式依赖）。
+    读到窗口边界即 EOF，绝不越界 —— save 路径的 f.bytes 依赖这一点，
+    越界会把别的节点内容写进新包。
+    """
+
+    def __init__(self, fileobj, offset, size):
+        super().__init__()
+        self._file = fileobj
+        self._offset = offset
+        self._size = size
+        self._pos = 0
+
+    def readable(self):
+        return True
+
+    def seekable(self):
+        return True
+
+    def readinto(self, b):
+        remaining = self._size - self._pos
+        if remaining <= 0:
+            return 0
+        n = min(len(b), remaining)
+        self._file.seek(self._offset + self._pos)
+        data = self._file.read(n)
+        mv = memoryview(b)
+        mv[:len(data)] = data
+        self._pos += len(data)
+        return len(data)
+
+    def seek(self, offset, whence=io.SEEK_SET):
+        if whence == io.SEEK_SET:
+            target = offset
+        elif whence == io.SEEK_CUR:
+            target = self._pos + offset
+        elif whence == io.SEEK_END:
+            target = self._size + offset
+        else:
+            raise ValueError(f"invalid whence: {whence}")
+        if target < 0:
+            raise ValueError("negative seek")
+        # 允许 seek 到窗口尾（EOF），不允许越过
+        self._pos = min(target, self._size)
+        return self._pos
+
+    def tell(self):
+        return self._pos
 
 
 class BundleFile(File.File):
@@ -172,20 +244,73 @@ class BundleFile(File.File):
         if isinstance(self.dataflags, ArchiveFlags) and self.dataflags & ArchiveFlags.BlockInfoNeedPaddingAtStart:
             reader.align_stream(16)
 
-        blocksReader = EndianBinaryReader(
-            b"".join(
-                self.decompress_data(
-                    reader.read_bytes(blockInfo.compressedSize),
-                    blockInfo.uncompressedSize,
-                    blockInfo.flags,
-                    i,
+        total_uncompressed = sum(b.uncompressedSize for b in m_BlocksInfo)
+        if total_uncompressed > SPILL_THRESHOLD:
+            # 磁盘溢出路径（见 SpillWindow 类注释）：解压块写临时文件，
+            # 大资源流节点按需读盘。节点 offset 是解压数据的相对坐标，
+            # 临时文件恰好从 0 起整存解压数据 → offset=0。
+            self._spill_file = tempfile.TemporaryFile()
+            for i, blockInfo in enumerate(m_BlocksInfo):
+                self._spill_file.write(
+                    self.decompress_data(
+                        reader.read_bytes(blockInfo.compressedSize),
+                        blockInfo.uncompressedSize,
+                        blockInfo.flags,
+                        i,
+                    )
                 )
-                for i, blockInfo in enumerate(m_BlocksInfo)
-            ),
-            offset=(blocksInfoReader.real_offset()),
-        )
+            self._spill_file.flush()
+            self._spill_file.seek(0)
+            blocksReader = EndianBinaryReader_Streamable(self._spill_file, offset=0)
+        else:
+            blocksReader = EndianBinaryReader(
+                b"".join(
+                    self.decompress_data(
+                        reader.read_bytes(blockInfo.compressedSize),
+                        blockInfo.uncompressedSize,
+                        blockInfo.flags,
+                        i,
+                    )
+                    for i, blockInfo in enumerate(m_BlocksInfo)
+                ),
+                offset=(blocksInfoReader.real_offset()),
+            )
 
         return m_DirectoryInfo, blocksReader
+
+    def read_files(self, reader: EndianBinaryReader, files: list):
+        """覆写基类：磁盘溢出模式下，大资源流节点不再整块读进内存。
+
+        .resS/.resource 只被 ResourceReader「Position=xx 再 read」顺序读、
+        从不反序列化，惰性窗口化不影响任何解析路径；其余节点（.assets
+        对象树、小文件）照旧整体读入。非溢出模式与基类行为逐字相同。
+        """
+        spill = getattr(self, "_spill_file", None)
+        for node in files:
+            name = node.path
+            if (
+                spill is not None
+                and node.size > SPILL_NODE_THRESHOLD
+                and name.lower().endswith((".ress", ".resource"))
+            ):
+                window = io.BufferedReader(SpillWindow(spill, node.offset, node.size))
+                node_reader = EndianBinaryReader_Streamable(window, offset=0)
+            else:
+                reader.Position = node.offset
+                node_reader = EndianBinaryReader(
+                    reader.read(node.size), offset=(reader.BaseOffset + node.offset)
+                )
+            f = ImportHelper.parse_file(
+                node_reader, self, name, is_dependency=self.is_dependency
+            )
+
+            if isinstance(f, (EndianBinaryReader, SerializedFile.SerializedFile)):
+                if self.environment:
+                    self.environment.register_cab(name, f)
+
+            # required for BundleFiles
+            f.flags = getattr(node, "flags", 0)
+            self.files[name] = f
 
     def save(self, writer: Union[EndianBinaryWriter, IOBase] = None, packer=None):
         """

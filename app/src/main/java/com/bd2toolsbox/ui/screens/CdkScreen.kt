@@ -423,10 +423,10 @@ private fun RedeemChip(text: String, emphasized: Boolean) {
     }
 }
 
-private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-
-private fun formatDate(epochSeconds: Long): String =
-    dateFormat.format(Date(epochSeconds * 1000))
+private fun formatDate(epochSeconds: Long): String {
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    return dateFormat.format(Date(epochSeconds * 1000))
+}
 
 /**
  * 官方兑换区：账号列表（可多个，本地持久化，删了才停）+ 一键兑换 + 记录入口。
