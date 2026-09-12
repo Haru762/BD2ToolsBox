@@ -202,6 +202,14 @@ object ModdingService {
         return Triple(r[0].toBoolean(), r[1].toInt(), r[2].toString())
     }
 
+    /** Step 2.5：把在途扫描的已扫结果落盘（断点续扫）。进程被杀后下次从断点继续，
+     *  不再从第一个 bundle 重来。 */
+    fun checkpointScan(outputDir: String): Pair<Boolean, String> {
+        val r = callMain("checkpoint_scan", outputDir)
+            ?: return Pair(false, "Unknown error during scan checkpoint.")
+        return r[0].toBoolean() to r[1].toString()
+    }
+
     /** Step 3：合并缓存与新扫结果、索引落盘。返回 (成功, 消息)。 */
     fun finalizeScan(outputDir: String, onProgress: (String) -> Unit): Pair<Boolean, String> {
         val r = callMain("finalize_scan", outputDir, progressAdapter(onProgress))

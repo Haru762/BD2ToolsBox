@@ -304,6 +304,15 @@ def scan_single_bundle(bundle_name, bundle_hash, temp_data_path, progress_callba
         bundle_name, bundle_hash, temp_data_path, progress_callback)
 
 
+def checkpoint_scan(output_dir):
+    """Step 2.5：把在途扫描的已扫结果落盘（断点续扫）。
+
+    真机上进程被杀是常态；没有 checkpoint，一死全部归零、重扫从第一个
+    bundle 开始。Kotlin 侧按固定间隔调（每 10 个），不必判断时机。
+    """
+    return local_bundle_indexer.checkpoint_scan(output_dir)
+
+
 def finalize_scan(output_dir, progress_callback=None):
     """Step 3：合并缓存与新扫结果，索引落盘。返回 (成功, 消息)。"""
     return local_bundle_indexer.finalize_scan(output_dir, progress_callback)

@@ -35,6 +35,14 @@ class PreviewCacheRepository(private val context: Context) {
         private const val CACHE_GENERATION = 3
         private const val DIR_NAME = "preview_cache"
         private const val SRC_SIZE_FILE = ".srcsize"
+
+        /**
+         * 负缓存标记文件：产物解包成功但没有 skel/atlas（立绘/UI 类），
+         * 没有预览价值。此前这类产物永远不满足 [isValid]，预解包每次都
+         * 从头重解它们（用户实测：约 20 个这种的卡在列表开头反复解）。
+         * 标记后预解包的目标筛选跳过；换产物（size 变）自动失效。
+         */
+        private const val NO_PREVIEW_FILE = ".nopreview"
     }
 
     private fun root(): File = File(context.getExternalFilesDir(null), DIR_NAME)
@@ -146,6 +154,31 @@ class PreviewCacheRepository(private val context: Context) {
 
     fun delete(bundleName: String, hashDir: String) {
         entryDir(bundleName, hashDir).deleteRecursively()
+    }
+
+    /**
+     * 标记「解包成功但没有预览价值」（无 skel/atlas）。只对**解包成功**的产物用 ——
+     * 解包失败可能是临时原因（磁盘满/进程被杀），不该拿负缓存糊弄掉重试机会。
+     */
+    fun markNoPreview(bundleName: String, hashDir: String, srcSize: Long) {
+        try {
+            val dir = entryDir(bundleName, hashDir)
+            dir.mkdirs()
+            File(dir, NO_PREVIEW_FILE).writeText(CACHE_GENERATION.toString())
+            File(dir, SRC_SIZE_FILE).writeText(srcSize.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /** 是否已标记为无预览价值（且产物没换过）。 */
+    fun isKnownNoPreview(bundleName: String, hashDir: String, srcSize: Long): Boolean {
+        val dir = entryDir(bundleName, hashDir)
+        val mark = File(dir, NO_PREVIEW_FILE)
+        if (!mark.isFile) return false
+        // 代数不符 = 解码逻辑换过，负缓存作废重判
+        if (mark.readText().trim() != CACHE_GENERATION.toString()) return false
+        return readSrcSize(bundleName, hashDir) == srcSize
     }
 
     fun clearAll() {

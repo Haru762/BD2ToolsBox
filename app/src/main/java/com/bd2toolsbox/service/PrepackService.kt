@@ -268,12 +268,24 @@ class PrepackService : Service() {
                         cancelRequested
                     }
                     if (ok) {
-                        val hasSkel = outDir.listFiles()?.any {
+                        val files = outDir.listFiles()?.filter { it.isFile } ?: emptyList()
+                        val hasSkel = files.any {
                             it.name.endsWith(".skel", true) || it.name.endsWith(".json", true)
-                        } == true
-                        if (hasSkel && t.size > 0) previewCache.commit(t.bundleName, t.hashDir, t.size)
-                        else if (!hasSkel) previewCache.delete(t.bundleName, t.hashDir)
+                        }
+                        val hasAtlas = files.any { it.name.endsWith(".atlas", true) }
+                        // 提交条件必须与 isValid 完全一致（skel + atlas + size）：
+                        // 此前只查 skel，skel-but-no-atlas 的产物 commit 了却永远
+                        // isValid=false，每次预解包都重解。无预览价值的统一走负缓存
+                        // —— 否则它们永远不被跳过，每轮都从头解一遍（真机实测
+                        // 卡在列表开头那二十几个包的就是这类）。
+                        if (t.size > 0 && hasSkel && hasAtlas) {
+                            previewCache.commit(t.bundleName, t.hashDir, t.size)
+                        } else {
+                            previewCache.delete(t.bundleName, t.hashDir)
+                            previewCache.markNoPreview(t.bundleName, t.hashDir, t.size)
+                        }
                     } else {
+                        // 解包失败可能是临时的（磁盘满/进程被杀），不记负缓存，留重试机会
                         previewCache.delete(t.bundleName, t.hashDir)
                     }
                 } catch (e: Exception) {

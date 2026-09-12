@@ -66,6 +66,7 @@ fun WorkbenchSheet(
     onUnpackTool: () -> Unit,
     onRecheckShizuku: () -> Unit,
     onPrepack: () -> Unit,
+    onScanGame: () -> Unit,
     onPickWallpaper: () -> Unit,
     onReplayOnboarding: () -> Unit,
     onDismiss: () -> Unit
@@ -227,6 +228,12 @@ fun WorkbenchSheet(
                     title = "重新检测 Shizuku",
                     subtitle = "无需重跑转换",
                     onClick = onRecheckShizuku,
+                    trailing = { Icon(Icons.Default.ChevronRight, null) }
+                )
+                WorkbenchRow(
+                    title = "扫描游戏资源",
+                    subtitle = "重建识别 mod 用的资源索引；识别大量未识别时点这里",
+                    onClick = onScanGame,
                     trailing = { Icon(Icons.Default.ChevronRight, null) }
                 )
             }

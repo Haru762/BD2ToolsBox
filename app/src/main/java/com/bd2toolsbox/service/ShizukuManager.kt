@@ -354,6 +354,11 @@ object ShizukuManager {
 
             var scanned = 0
             var failed = 0
+            // 断点续扫：真机上扫描进程会被系统杀（LMK/厂商省电），每扫一批就把
+            // 已扫结果落盘 —— 进程死了下次 check_scan_needed 按哈希缓存跳过已扫的，
+            // 从断点继续。间隔取 10：小 bundle 一两秒一个，10 个落一次盘的 fsync
+            // 开销可忽略；被杀最多损失 10 个的进度。
+            val checkpointEvery = 10
             for (i in 0 until total) {
                 val bundleName = needsScan.getString(i)
                 val bundleHash = checkResult.hashMap[bundleName] ?: continue
@@ -376,6 +381,10 @@ object ShizukuManager {
                 if (ok) scanned++ else failed++
 
                 tempDataFile.delete()     // 立刻清，60MB 级文件不留过夜
+
+                if ((i + 1) % checkpointEvery == 0) {
+                    ModdingService.checkpointScan(outputDir)
+                }
             }
             tempDir.deleteRecursively()
 

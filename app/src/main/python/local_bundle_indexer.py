@@ -248,6 +248,12 @@ def scan_single_bundle(bundle_name, bundle_hash, temp_data_path, progress_callba
     try:
         assets = _scan_bundle_file(temp_data_path)
         _scan_state["scanned"][bundle_name] = {"hash": bundle_hash, "assets": assets}
+        # 一次全量要解 1700+ 个 bundle（最大的 400MB+），全部挤在同一个
+        # Python 进程里。CPython 把内存还给分配器池但不还给 OS，RSS 只涨
+        # 不降 —— 真机上这就是 LMK 杀进程的直接诱因。每个 bundle 扫完
+        # 显式回收一轮，把能还给 OS 的还回去。
+        import gc
+        gc.collect()
         msg = f"OK: {len(assets)} assets"
         if progress_callback:
             progress_callback(f"Scanned {bundle_name}: {len(assets)} assets")
@@ -322,6 +328,70 @@ def _apply_catalog_disambiguation(index_data, output_dir):
     return ambiguous, resolved
 
 
+def _write_index_atomic(output_dir, index):
+    """索引落盘，原子替换：先写临时文件再 os.rename。
+
+    真机上扫描进程会被系统杀（LMK/厂商省电），写到一半死掉不能留下半截
+    JSON —— _load_existing_cache 会判废整份索引，一次完整扫描（或一次
+    checkpoint 攒下的进度）全部归零，重扫又从第一个 bundle 开始。
+    """
+    path = os.path.join(output_dir, "local_bundle_index.json")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False, separators=(",", ":"))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def checkpoint_scan(output_dir):
+    """把在途扫描的已扫结果合并落盘（断点续扫）。返回 (成功, 消息)。
+
+    真机上全量扫描 20–40 分钟，进程被杀是常态而非例外；此前已扫结果只在
+    _scan_state 内存里，finalize_scan 前不落盘，一死全部归零。本函数把
+    cached+scanned 写成一份合法索引（schema 与 finalize 一致），下次
+    check_scan_needed 按哈希缓存跳过已扫的，从断点继续。
+
+    与 finalize_scan 的差别：不做 catalog 歧义消解（加载时会重算，见
+    _apply_catalog_disambiguation），也不清 _scan_state —— 扫描继续跑。
+    没有在途扫描时是安全的空操作（Kotlin 侧按固定间隔调，不必判断时机）。
+    """
+    global _scan_state
+    if _scan_state is None:
+        return True, "No scan in progress."
+
+    try:
+        all_bundles = dict(_scan_state["cached"])
+        all_bundles.update(_scan_state["scanned"])
+
+        asset_to_bundles = {}
+        for bundle_name, info in all_bundles.items():
+            for asset_name in info.get("assets", []):
+                bundles = asset_to_bundles.setdefault(asset_name, [])
+                if bundle_name not in bundles:
+                    bundles.append(bundle_name)
+
+        os.makedirs(output_dir, exist_ok=True)
+        index = {
+            "schemaVersion": INDEX_SCHEMA_VERSION,
+            "scannedAt": int(time.time()),
+            "bundleCount": len(all_bundles),
+            "assetCount": len(asset_to_bundles),
+            "assetToBundles": asset_to_bundles,
+            "catalogAssetToBundle": {},
+            "scannedBundles": all_bundles,
+        }
+        _write_index_atomic(output_dir, index)
+        msg = f"Checkpoint: {len(all_bundles)} bundles on disk."
+        print(msg)
+        return True, msg
+    except Exception:
+        import traceback
+        error_msg = traceback.format_exc()
+        print(f"Error checkpointing scan: {error_msg}")
+        return False, error_msg
+
+
 def finalize_scan(output_dir, progress_callback=None):
     """Step 3：合并缓存与新扫结果，建索引落盘。返回 (成功, 消息)。
 
@@ -363,9 +433,7 @@ def finalize_scan(output_dir, progress_callback=None):
         ambiguous, resolved = _apply_catalog_disambiguation(index, output_dir)
         report(f"Catalog disambiguation: {ambiguous} ambiguous assets, {resolved} resolved")
 
-        with open(os.path.join(output_dir, "local_bundle_index.json"), "w",
-                  encoding="utf-8") as f:
-            json.dump(index, f, ensure_ascii=False, separators=(",", ":"))
+        _write_index_atomic(output_dir, index)
 
         msg = (f"Index saved: {len(all_bundles)} bundles, {len(asset_to_bundles)} assets "
                f"(cached: {cached_count}, scanned: {scanned_count}, failed: {failed_count})")

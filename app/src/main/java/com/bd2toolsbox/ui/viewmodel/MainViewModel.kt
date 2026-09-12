@@ -825,7 +825,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     val n = m.targetHash ?: return@mapNotNull null
                     val h = m.convertedHashDir ?: return@mapNotNull null
                     val s = m.convertedDataSize
+                    // 有效缓存跳过；负缓存（解包成功但没有 skel/atlas 的立绘/UI 类）
+                    // 也要跳过 —— 否则它们永远不满足 isValid，每轮预解包都从头重解
+                    // （真机「总是回到开始那二十几个包」的根因）
                     if (s > 0 && previewCacheRepository.isValid(n, h, s)) return@mapNotNull null
+                    if (s > 0 && previewCacheRepository.isKnownNoPreview(n, h, s)) return@mapNotNull null
                     PrepackService.Target(
                         treeUri = m.uri.toString(),
                         bundleName = n,
@@ -1127,6 +1131,46 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     fun dismissVersionMismatchWarning() {
         _showVersionMismatchWarning.value = false
+    }
+
+    /**
+     * 手动触发游戏资源扫描（设置 → 游戏目录）。
+     *
+     * 自动检查只在冷启动时跑一次，且要求 Shizuku 当时已就绪 —— 用户先开 app 后
+     * 启动 Shizuku、或 Shizuku 中途挂掉，就永远等不到扫描提示，表现为「装了
+     * 新版 mod 还是大量未识别」。这里走与启动检查完全相同的链路（check →
+     * 确认框 → confirmBundleScan），入口常驻。
+     */
+    fun requestGameScan() {
+        val context = appContext ?: return
+        if (ShizukuManager.scanRunning) return   // 已在扫，进度框自会显示
+        viewModelScope.launch {
+            try {
+                if (!ShizukuManager.isAvailable()) {
+                    toast(context, "Shizuku 未运行，请先在 Shizuku 中启动服务")
+                    return@launch
+                }
+                val checkResult = withContext(Dispatchers.IO) {
+                    ShizukuManager.checkLocalBundles(
+                        outputDir = context.filesDir.absolutePath
+                    ) { }
+                }
+                when {
+                    checkResult == null ->
+                        toast(context, "读取游戏目录失败，请确认游戏已安装")
+                    checkResult.needsScanCount == 0 ->
+                        toast(context, "游戏资源索引已是最新，无需重扫")
+                    else -> {
+                        pendingCheckResult = checkResult
+                        _bundleScanState.value =
+                            BundleScanState.Confirmation(checkResult.needsScanCount)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "手动扫描检查失败", e)
+                toast(context, "扫描检查失败：${e.message ?: "未知错误"}")
+            }
+        }
     }
 
     fun setSearchActive(isActive: Boolean) {

@@ -683,6 +683,11 @@ class MainActivity : ComponentActivity() {
                             ensureNotificationPermission()
                             viewModel.preparePrepack()
                         },
+                        onScanGame = {
+                            settingsOpen = false
+                            ensureNotificationPermission()
+                            viewModel.requestGameScan()
+                        },
                         onPickWallpaper = {
                             // 弹层不关：选完图回来能立刻看到效果、还能接着拖滑块
                             wallpaperLauncher.launch(arrayOf("image/*"))
