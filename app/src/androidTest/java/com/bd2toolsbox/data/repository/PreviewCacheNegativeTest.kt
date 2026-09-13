@@ -62,7 +62,7 @@ class PreviewCacheNegativeTest {
     @Test
     fun deleteClearsNegativeMark() {
         repo.markNoPreview("bundleA", "hashA", 100L)
-        repo.delete("bundleA", "hashA")
+        repo.delete("bundleA", "hashA", 100L)
         assertFalse(repo.isKnownNoPreview("bundleA", "hashA", 100L))
     }
 }

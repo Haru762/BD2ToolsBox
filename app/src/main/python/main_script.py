@@ -286,16 +286,22 @@ def check_scan_needed(output_dir, bundle_list_json, progress_callback=None, full
     默认全量扫描（不预筛）—— 预筛会误杀装着 spine 资产但 catalog 地址
     不含 illust/skeletondata 的 bundle（timeline/storypack 等），详见
     local_bundle_indexer.check_scan_needed 的文档。
+
+    返回**单元素元组** (json_str,)。不能直接返回裸 str：Kotlin 侧 callMain
+    对返回值调 asList()，裸字符串会被拆成单字符列表（str 可迭代），
+    firstOrNull 拿到的是 "[" 一个字符 —— 真机表现为待扫名单解析必然
+    失败（JSONException Unterminated array），弹「游戏未安装」。
+    resolve_mod_batch 一直返回 tuple 所以从没炸过，这里对齐它的形状。
     """
     report = _reporter(progress_callback)
     try:
         result = local_bundle_indexer.check_scan_needed(
             output_dir, bundle_list_json, full_scan=full_scan)
         report(f"Scan check complete: {len(json.loads(result))} bundles need scanning.")
-        return result
+        return (result,)
     except Exception:
         report(f"Error checking scan: {_fail(None)[1]}")
-        return json.dumps([])
+        return (json.dumps([]),)
 
 
 def scan_single_bundle(bundle_name, bundle_hash, temp_data_path, progress_callback=None):
@@ -460,6 +466,11 @@ def _resolution_index(output_dir, quality, file_names, report):
         prefixed = "cutscene_" + name
         if prefixed in wanted:
             catalog_needed.add(prefixed)
+        # 约会 prefab 桥的建表侧：resolver 对 illust_dating 词干补了
+        # {stem}.prefab 候选（catalog 里约会 spine 只有 prefab 地址），
+        # 建表范围必须同步带上，否则解析时表里没有这个键照样落空。
+        if name.startswith("illust_dating") and "." in name:
+            catalog_needed.add(name.rsplit(".", 1)[0] + ".prefab")
     try:
         assets = catalog_indexer.build_catalog_asset_index(
             catalog_content, catalog_needed)

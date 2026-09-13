@@ -69,6 +69,20 @@ def _expand_candidates(base_name):
             prefixed = 'cutscene_' + c
             if prefixed not in expanded:
                 expanded.append(prefixed)
+    # 约会 prefab 桥：illust_dating11.atlas → 也试 illust_dating11.prefab。
+    # catalog 里约会 spine 只登记为 prefab 地址（char/datingillust/
+    # illust_datingNN.prefab），atlas/skel/png 名一概没有 —— 没有本地扫描
+    # 索引时（「建立文件索引」未完成）约会 mod 全落 UNKNOWN，UI 上表现为
+    # 角色页的「心契之约」分区整体消失。限定 illust_dating 词干：通用的
+    # {stem}.prefab 桥会把立绘 mod 错配到 UI prefab 包（char020801.prefab
+    # 确实存在但属于立绘包，不是过场目标）。分页后缀（_2/_3）产生的
+    # prefab 变体在 catalog 里不存在，查不到就留在 unresolved，无害。
+    for c in candidates:
+        stem = c.split('.', 1)[0]
+        if stem.startswith('illust_dating'):
+            prefab = stem + '.prefab'
+            if prefab not in expanded:
+                expanded.append(prefab)
     return expanded
 
 

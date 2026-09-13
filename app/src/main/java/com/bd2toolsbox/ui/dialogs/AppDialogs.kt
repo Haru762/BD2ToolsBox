@@ -1424,8 +1424,8 @@ fun BundleScanDialog(
         },
         title = {
             val text = when (state) {
-                is BundleScanState.Confirmation -> "需要扫描游戏资源"
-                is BundleScanState.Scanning -> "正在扫描游戏资源..."
+                is BundleScanState.Confirmation -> "需要建立文件索引"
+                is BundleScanState.Scanning -> "正在建立文件索引..."
                 is BundleScanState.Finished -> "扫描完成"
                 is BundleScanState.Failed -> "扫描失败"
                 else -> ""
@@ -1453,16 +1453,33 @@ fun BundleScanDialog(
                         )
                     }
                     is BundleScanState.Scanning -> {
-                        Text(
-                            "正在扫描 ${s.currentIndex + 1} / ${s.totalCount}",
-                            style = MaterialTheme.typography.titleMedium,
-                            textAlign = TextAlign.Center
-                        )
+                        // -1/-1 是「界面重建恢复」的不确定态：扫描在途但总进度未知
+                        // （installScope 里的扫描循环下次回调会带回真实数字）
+                        if (s.currentIndex >= 0 && s.totalCount > 0) {
+                            Text(
+                                "正在扫描 ${s.currentIndex + 1} / ${s.totalCount}",
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                "正在扫描",
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                         Spacer(Modifier.height(16.dp))
-                        LinearProgressIndicator(
-                            progress = { s.currentIndex.toFloat() / s.totalCount.toFloat() },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        // 不确定态（total<=0，界面重建恢复）用 indeterminate 版本：
+                        // 进度未知时画假数字反而误导
+                        if (s.totalCount > 0) {
+                            LinearProgressIndicator(
+                                progress = { (s.currentIndex + 1).toFloat()
+                                    .coerceAtMost(s.totalCount.toFloat()) / s.totalCount.toFloat() },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
                         Spacer(Modifier.height(12.dp))
                         if (s.currentBundle.isNotEmpty()) {
                             Text(
@@ -1482,7 +1499,7 @@ fun BundleScanDialog(
                         if (s.failedCount > 0) {
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "有 ${s.failedCount} 个资源扫描失败（不影响其余的）。",
+                                "有 ${s.failedCount} 个文件索引失败（不影响其余的）。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
                                 textAlign = TextAlign.Center

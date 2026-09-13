@@ -179,15 +179,19 @@ class ScanService : Service() {
         mgr.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "资源扫描",
+                "文件索引",
                 // LOW：常驻进度条不出声不弹横幅
                 NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "扫描游戏资源建立索引时显示进度" }
+            ).apply { description = "建立文件索引时显示进度" }
         )
     }
 
     private fun buildProgressNotification(): Notification {
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or Intent.FLAG_ACTIVITY_NEW_TASK
+        // SINGLE_TOP 不能加：它的位值(0x20000000)落在 PendingIntent 保留位区间，
+        // 与 UPDATE_CURRENT 组合后 getActivity 静默返回 null —— 通知点不动
+        // （模拟器探针实测：base ✓ +NEW_TASK ✓ +both null）。NEW_TASK 本身
+        // 已让已有实例置顶，足够。
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), flags
         )
@@ -196,7 +200,7 @@ class ScanService : Service() {
             .joinToString(" · ")
             .ifBlank { "处理中…" }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(if (total > 0) "正在扫描游戏资源 $done/$total" else "正在扫描游戏资源")
+            .setContentTitle(if (total > 0) "正在建立文件索引 $done/$total" else "正在建立文件索引")
             .setContentText(content)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setProgress(total, done, total <= 0)
@@ -212,12 +216,16 @@ class ScanService : Service() {
         // 先撤下常驻进度条（它由 startForeground 关联，STOP_FOREGROUND_REMOVE 只收它），
         // 再用同 id post 一条普通通知 —— 顺序反了会闪一条「空」的过渡帧
         stopForegroundCompat()
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or Intent.FLAG_ACTIVITY_NEW_TASK
+        // SINGLE_TOP 不能加：它的位值(0x20000000)落在 PendingIntent 保留位区间，
+        // 与 UPDATE_CURRENT 组合后 getActivity 静默返回 null —— 通知点不动
+        // （模拟器探针实测：base ✓ +NEW_TASK ✓ +both null）。NEW_TASK 本身
+        // 已让已有实例置顶，足够。
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), flags
         )
         val n = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("资源扫描完成")
+            .setContentTitle("文件索引建立完成")
             .setContentText("成功 $succeeded 个，失败 $failed 个。回到应用后请重新扫描 mod 文件夹。")
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)

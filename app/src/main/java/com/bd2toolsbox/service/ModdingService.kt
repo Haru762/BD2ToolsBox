@@ -187,7 +187,10 @@ object ModdingService {
 
     // ---------------------------------------------------------------- 本地扫描（三步 API）
 
-    /** Step 1：待扫 bundle 名单（JSON 数组串）；异常返回空名单。 */
+    /** Step 1：待扫 bundle 名单（JSON 数组串）；异常返回空名单。
+     *  python 侧返回单元素元组 (json_str,)——裸 str 会被 asList 拆成
+     *  单字符列表，firstOrNull 只拿到 "["（真机：名单解析必炸，见
+     *  main_script.check_scan_needed 的文档）。 */
     fun checkScanNeeded(outputDir: String, bundleListJson: String,
                         onProgress: (String) -> Unit): String =
         callMain("check_scan_needed", outputDir, bundleListJson, progressAdapter(onProgress))

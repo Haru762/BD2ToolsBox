@@ -11,7 +11,7 @@ import java.io.File
  * 经 Shizuku 跑在 shell 权限里的文件服务（AIDL 实现）。
  *
  * App 自己没有权限写游戏目录（/Android/data/...），一切对游戏目录的读写
- * 都经这里的 [copyFile] / [copyDirectory] / [listBundleDirectory] 完成。
+ * 都经这里的 [copyFile] / [copyDirectory] / [listBundleDirectoryPaged] 完成。
  */
 class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
 
@@ -44,7 +44,7 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
         }
     }
 
-    override fun listBundleDirectory(sharedDirPath: String): String {
+    override fun listBundleDirectoryPaged(sharedDirPath: String, offset: Int, limit: Int): String {
         return try {
             val sharedDir = File(sharedDirPath)
             if (!sharedDir.isDirectory) {
@@ -55,14 +55,17 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
             // Shared/{bundleName}/{hash}/__data；一个 bundle 只取第一个含 __data 的 hash 目录。
             // size 是 __data 实际字节数，供「干净检测」与 catalog 的官方大小比对 ——
             // 重打包产物沿用原版路径结构（目录名相同），只有大小能区分原版和装着 mod。
-            val result = JSONArray()
+            // 分页：先全量收进内存（服务进程侧无 binder 限制），再切 [offset, offset+limit)
+            // 出去 —— 调用方循环拉到「返回条数 < limit」即最后一页。单页必须显著小于
+            // binder 1MB 事务上限：500 条 × ~120B ≈ 60KB，余量充足。
+            val all = JSONArray()
             sharedDir.listFiles()?.forEach { bundleDir ->
                 if (!bundleDir.isDirectory) return@forEach
                 bundleDir.listFiles()?.forEach inner@{ hashDir ->
                     if (!hashDir.isDirectory) return@inner
                     val dataFile = File(hashDir, "__data")
                     if (dataFile.isFile) {
-                        result.put(JSONObject().apply {
+                        all.put(JSONObject().apply {
                             put("name", bundleDir.name)
                             put("hash", hashDir.name)
                             put("size", dataFile.length())
@@ -71,8 +74,15 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
                     }
                 }
             }
-            Log.d(TAG, "Listed ${result.length()} bundles from $sharedDirPath")
-            result.toString()
+            val total = all.length()
+            val page = JSONArray()
+            var i = offset
+            while (i < total && i < offset + limit) {
+                page.put(all.get(i))
+                i++
+            }
+            Log.d(TAG, "Listed bundles $offset..${i - 1} of $total from $sharedDirPath")
+            page.toString()
         } catch (e: Exception) {
             Log.e(TAG, "Error listing bundle directory $sharedDirPath", e)
             "[]"

@@ -26,8 +26,8 @@ android {
         applicationId = "com.bd2toolsbox"
         minSdk = 29
         targetSdk = 34
-        versionCode = 16
-        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.14"
+        versionCode = 17
+        versionName = System.getenv("APP_VERSION_NAME") ?: "0.2.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -72,12 +72,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
     }
 
     buildFeatures {
@@ -140,6 +140,9 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("com.google.code.gson:gson:2.11.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.0")
+    testImplementation("io.mockk:mockk:1.13.8")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))

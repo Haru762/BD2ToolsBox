@@ -370,6 +370,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         initialized = true
         appContext = context.applicationContext
 
+        // 界面重建恢复：扫描在 installScope（进程级）上跑，MIUI 等激进 ROM 会把
+        // 后台 Activity 连同 ViewModel 回收掉 —— 用户从通知栏点回来时拿到的是新
+        // VM，_bundleScanState 归零成 Idle，进度框消失（真机场景 B）。扫描还在跑
+        // （scanRunning 是进程级标志），这里把 Scanning 状态接回来，后续进度由
+        // 扫描循环的 viewModelScope 更新继续驱动。总进度未知就显示 -1（不确定态）。
+        if (ShizukuManager.scanRunning && _bundleScanState.value is BundleScanState.Idle) {
+            _bundleScanState.value = BundleScanState.Scanning(
+                currentIndex = -1, totalCount = -1, currentBundle = "", progressMessage = "正在建立文件索引"
+            )
+        }
+
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         restoreSettings(prefs)
         restoreWallpaper(prefs)
@@ -1105,7 +1116,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                         message = "扫描完成：成功 $scanned 个，失败 $failed 个。"
                     )
                 } else {
-                    BundleScanState.Failed("资源扫描失败。")
+                    BundleScanState.Failed("建立文件索引失败。")
                 }
                 if (success) {
                     // 摘要通知留着给用户看（可划掉）；失败走 stop 直接收掉
@@ -1150,7 +1161,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     /**
-     * 手动触发游戏资源扫描（左上角目录菜单 → 扫描游戏资源）。
+     * 手动触发建立文件索引（左上角目录菜单 → 建立文件索引）。
      *
      * 自动检查只在冷启动时跑一次，且要求 Shizuku 当时已就绪 —— 用户先开 app 后
      * 启动 Shizuku、或 Shizuku 中途挂掉，就永远等不到扫描提示，表现为「装了
@@ -1200,7 +1211,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     // 预解包占着 Python（Chaquopy 单解释器，长解包期间其它 python
                     // 调用都在排队）—— 现在启动扫描只会两头互相拖，且 check 阶段
                     // 就可能超时误报「读取游戏目录失败」。等它跑完再点。
-                    toast(context, "预解包尚未完成，请等待其结束后再执行游戏资源扫描")
+                    toast(context, "预解包尚未完成，请等待其结束后再建立文件索引")
                     return@launch
                 }
                 if (!ShizukuManager.isAvailable()) {
@@ -3837,10 +3848,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         if (renamedUri == null) return HashRenameResult.Failed("改名失败，可能没有该目录的写入权限")
 
         // 预览缓存的键就是 hash 目录名，旧名下那份再也对不上（内容没变，但键变了），
-        // 留着只会白占空间，直到用户手动清缓存
+        // 留着只会白占空间，直到用户手动清缓存。size 段拿产物的（改名不动内容，
+        // size 不变）；拿不到就退无后缀槽（size<=0 的兼容路径）。
         if (::previewCacheRepository.isInitialized) {
             try {
-                previewCacheRepository.delete(bundleName, oldHash)
+                previewCacheRepository.delete(bundleName, oldHash, mod.convertedDataSize)
             } catch (e: Exception) {
                 Log.w("MainViewModel", "清理旧哈希的预览缓存失败", e)
             }
@@ -4011,11 +4023,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // 命中缓存就整段跳过解包 —— 这正是「批量预解包」的收益所在：
         // 预热过的 mod 再看只是读文件，不用再等那几秒。
         if (srcSize > 0 && previewCacheRepository.isValid(bundleName, hashDir, srcSize)) {
-            previewCacheRepository.resolvePair(bundleName, hashDir)?.let { cached ->
+            previewCacheRepository.resolvePair(bundleName, hashDir, srcSize)?.let { cached ->
                 Log.d("MainViewModel", "预览命中缓存: $bundleName")
                 // 不能把缓存目录直接交给 SpinePreviewActivity —— 它 onDestroy 里会
                 // deleteRecursively 传入的目录，那样看一次就把缓存删了。拷副本给它删。
-                previewCacheRepository.entryDir(bundleName, hashDir).listFiles()
+                previewCacheRepository.entryDir(bundleName, hashDir, srcSize).listFiles()
                     ?.filter { it.isFile && !it.name.startsWith(".") }
                     ?.forEach { it.copyTo(File(tempDir, it.name), overwrite = true) }
                 return PreviewAssets(
@@ -4041,7 +4053,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             Python.start(com.chaquo.python.android.AndroidPlatform(context))
         }
         // 直接解到缓存位置，省掉「解到临时目录再整体拷进缓存」那一趟
-        val outDir = previewCacheRepository.prepareDir(bundleName, hashDir)
+        val outDir = previewCacheRepository.prepareDir(bundleName, hashDir, srcSize)
         val (ok, msg) = ModdingService.unpackBundle(
             bundleFile.absolutePath, outDir.absolutePath, fast = true
         ) { p ->
@@ -4050,7 +4062,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         }
         bundleFile.delete()
         if (!ok) {
-            previewCacheRepository.delete(bundleName, hashDir)   // 不留半成品当缓存
+            previewCacheRepository.delete(bundleName, hashDir, srcSize)   // 不留半成品当缓存
             _previewState.value = PreviewState.Failed("解包失败：$msg")
             return null
         }
@@ -4067,7 +4079,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             if (pngs.isNotEmpty()) {
                 return PreviewAssets(null, null, pngs)
             }
-            previewCacheRepository.delete(bundleName, hashDir)
+            previewCacheRepository.delete(bundleName, hashDir, srcSize)
             _previewState.value = PreviewState.Failed(
                 "这个 bundle 里没有可预览的素材（解出 ${files.size} 个文件）"
             )

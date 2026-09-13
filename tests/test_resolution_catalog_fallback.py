@@ -791,5 +791,77 @@ class RealCatalogCompatTest(unittest.TestCase):
         return index, error, None
 
 
+class DatingPrefabBridgeTest(unittest.TestCase):
+    """约会 mod（illust_datingNN.*）的 prefab 桥 —— 真机缺陷的回归。
+
+    「建立文件索引」未完成时（无本地扫描索引），约会类 mod 全部落 UNKNOWN：
+    catalog 里约会 spine 只登记为 prefab 地址（char/datingillust/
+    illust_datingNN.prefab），atlas/skel/png 名一概查不到。后果在 UI 上是
+    「角色页的心契之约分区整体消失」—— UNKNOWN 条目的 costume 是占位值，
+    categoryOf 判不出 DATING。老版本（0.1.x）有 prefab 桥所以正常，
+    0.2 重写时丢了，本测试把它钉住。
+    """
+
+    DATING_FILES = [u"illust_dating11.atlas", u"illust_dating11.json",
+                    u"illust_dating11.png", u"illust_dating11_2.png"]
+    DATING_PREFAB = u"illust_dating11.prefab"
+    DATING_BUNDLE = u"f17229717fff2baf0b72e1eb98e19b91"
+
+    def test_real_catalog_maps_dating_prefab(self):
+        """锚定常量：约会 prefab 地址确实在真实 catalog 里指向约会大包。"""
+        idx = real_catalog_asset_index([self.DATING_PREFAB])
+        if idx is None:
+            self.skipTest(u"真实 catalog 快照不在")
+        self.assertIn(self.DATING_PREFAB, idx)
+        self.assertIn(self.DATING_BUNDLE, idx[self.DATING_PREFAB])
+
+    def test_dating_mod_resolves_without_local_index(self):
+        """无本地索引 + 真实 catalog：约会 mod 经 prefab 桥判 KNOWN。
+
+        走 _resolution_index 全链路（含 catalog_needed 的计算）——
+        只测 resolver 侧的桥而漏了建表侧的话，现场照样查不到。
+        """
+        real_content = load_real_catalog()
+        if real_content is None:
+            self.skipTest(u"真实 catalog 快照不在")
+        patches = [
+            mock.patch.object(main_script.local_bundle_indexer,
+                              "load_local_index", return_value=None),
+            mock.patch.object(main_script.cdn_downloader,
+                              "get_cdn_version", return_value=u"testver"),
+            mock.patch.object(main_script.cdn_downloader,
+                              "download_catalog",
+                              return_value=(real_content, None)),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        with quiet():
+            index, error = main_script._resolution_index(
+                u"/tmp/does-not-matter", u"HD", self.DATING_FILES,
+                lambda m: None)
+        self.assertIsNone(error)
+        r = resolver.resolve_mod_folder(self.DATING_FILES, index)
+        self.assertEqual(
+            u"KNOWN", r["resolutionState"],
+            u"约会 mod 必须可解析（心契之约分类依赖它）: %s" % r["errorReason"])
+        self.assertEqual(self.DATING_BUNDLE, r["targetHash"])
+        # 主文件全落在约会包；分页 _2 的 prefab 不存在，留在 unresolved 是预期
+        self.assertIn(u"illust_dating11_2.png", r["unresolvedFiles"])
+
+    def test_dating_mod_with_local_index_prefers_local_names(self):
+        """有本地索引时（建过文件索引）：本地 m_Name 直接命中，桥不添乱。"""
+        local = {"assetToBundles": {
+            u"illust_dating11.atlas": [self.DATING_BUNDLE],
+            u"illust_dating11.skel": [self.DATING_BUNDLE],
+            u"illust_dating11.png": [self.DATING_BUNDLE],
+            u"illust_dating11_2.png": [self.DATING_BUNDLE],
+        }, "catalogAssetToBundle": {}, "scannedBundles": {}}
+        r = resolver.resolve_mod_folder(self.DATING_FILES, local)
+        self.assertEqual(u"KNOWN", r["resolutionState"])
+        self.assertEqual(self.DATING_BUNDLE, r["targetHash"])
+        self.assertEqual([], r["unresolvedFiles"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

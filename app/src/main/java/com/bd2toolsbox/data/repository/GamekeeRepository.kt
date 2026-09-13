@@ -72,12 +72,16 @@ class GamekeeRepository private constructor(private val appContext: android.cont
         /** 正文缓存头部的渲染器版本前缀。改渲染逻辑时同步递增；缓存里缺失即视为
          *  旧渲染，自动失效重拉（见 loadArticleDetail）。
          *  v3：评论正文解析重做 —— 表情标记 `_(… […])` 换成表情图、发言上传的
-         *  图片排到文字下方（v2 缓存里这两样都是转义后的代码文本，必须重渲染）。 */
-        private const val RENDERER_STAMP = "<!--renderer:v3"
+         *  图片排到文字下方（v2 缓存里这两样都是转义后的代码文本，必须重渲染）。
+         *  v4：接入 v2 阵容接口，淘汰旧版组件无法显示的错误占位。 */
+        private const val RENDERER_STAMP = "<!--renderer:v4"
 
         /** 渲染器戳后面跟着的内容版本号（来自 content_cdn 的 ?v=），两者都对上
          *  才复用缓存 —— 官方改了文章版本号就变，缓存自动过期。 */
         private const val CONTENT_STAMP = "|v="
+
+        /** 暂时失败的阵容不应让整篇正文永久命中缓存；离线仍可阅读已下载部分。 */
+        private const val BATTLE_UNAVAILABLE_STAMP = "<!--battle:unavailable-->"
 
         /** 表情表磁盘缓存的有效期。表情包很少增补，一天一次足够；过期只用旧表兜底。 */
         private const val EMOJI_TTL_MS = 24 * 60 * 60 * 1000L
@@ -391,6 +395,7 @@ class GamekeeRepository private constructor(private val appContext: android.cont
 
             // 缓存命中：渲染器版本 + 内容版本都对上才复用
             if (cachedHtml != null && cachedHtml.contains(RENDERER_STAMP) &&
+                !cachedHtml.contains(BATTLE_UNAVAILABLE_STAMP) &&
                 contentVersion.isNotBlank() && cachedHtml.contains("$CONTENT_STAMP$contentVersion")
             ) {
                 return@withContext GuideDetail(
@@ -410,22 +415,14 @@ class GamekeeRepository private constructor(private val appContext: android.cont
             val bodyHtml = when {
                 contentType == 1 || inner.trimStart().startsWith("[") -> {
                     val blocks = JsonParser.parseString(inner).asJsonArray
-                    // battle-array（阵容组件）需要逐个拉阵容数据，先把块里用到的
-                    // 阵容 id 都收集出来预取（带磁盘缓存），渲染时查表拼 HTML。
-                    // 只有 version=3 的新版组件能取到数据 —— 实测网页版也只请求这些，
-                    // 旧版（version=2）连官网自己都不再渲染，统一走「网页版查看」兜底卡。
-                    val battleIds = collectBattleIds(blocks)
-                    currentBattleCache.clear()
-                    battleIds.forEach { id ->
-                        currentBattleCache[id] = battleCardHtml(id)
+                    // v2/v3 使用不同接口和 ID 空间，预取及渲染都用 (version, id) 查表。
+                    val battleCards = HashMap<BattleRef, String>()
+                    collectBattleRefs(blocks).forEach { ref ->
+                        battleCardHtml(ref)?.let { battleCards[ref] = it }
                     }
-                    // battle-array 块渲染时需要指回原文页面，先记下再说
-                    currentArticleUrl = "https://www.gamekee.com/$GAME_ALIAS/${article.id}.html"
-                    try {
-                        renderSlateBlocks(blocks)
-                    } finally {
-                        currentArticleUrl = null
-                    }
+                    renderSlateBlocks(blocks, ArticleRenderContext(
+                        battleCards, "$API/$GAME_ALIAS/" + article.id + ".html"
+                    ))
                 }
                 // editor_type 3（表格编辑器）：角色档案/测评这类表格页（2026-09 起
                 // 的新格式）。不认它的话整坨 JSON 会被当 HTML 塞进 WebView，用户
@@ -498,7 +495,11 @@ class GamekeeRepository private constructor(private val appContext: android.cont
     // ---------------------------------------------------------------- 阵容组件 / 评论
 
     private val battleDir: File get() = File(cacheDir, "battles")
-    private val battleHtmlMemory = ConcurrentHashMap<Long, String>()
+
+    /** v2 模板 ID 与 v3 阵容 ID 不属于同一命名空间。 */
+    private data class BattleRef(val version: Int, val id: Long)
+
+    private val battleHtmlMemory = ConcurrentHashMap<BattleRef, String>()
 
     /** 表情表（[loadEmojiMap]）的落盘文件与内存副本。 */
     private val emojiFile: File get() = File(cacheDir, "emoji.json")
@@ -506,83 +507,94 @@ class GamekeeRepository private constructor(private val appContext: android.cont
     @Volatile
     private var emojiMapMemory: Map<String, String>? = null
 
-    /** 正在渲染的文章用到的阵容卡 HTML，渲染前由 loadArticleDetail 预取填充。 */
-    private val currentBattleCache = HashMap<Long, String>()
+    /** 每篇文章独立持有预取结果、原文链接和页签编号，避免并发加载时互相覆盖。 */
+    private class ArticleRenderContext(
+        val battleCards: Map<BattleRef, String>,
+        val articleUrl: String,
+        var tabsGroupCounter: Int = 0
+    )
 
-    /** 当前渲染文章的网页地址（battle-array 兜底卡要链接回原文）。 */
-    private var currentArticleUrl: String? = null
+    private fun parseBattleRef(data: JsonObject?): BattleRef? {
+        if (data == null) return null
+        val version = data.get("version")?.takeIf { it.isJsonPrimitive }?.asString?.toIntOrNull()
+            ?: return null
+        val id = data.get("tempId")?.takeIf { it.isJsonPrimitive }?.asString?.toLongOrNull()
+            ?: return null
+        return if ((version == 2 || version == 3) && id > 0) BattleRef(version, id) else null
+    }
 
-    /** 选项卡组的递增编号，保证一篇文章内多组 tabs 的 radio name 不串。 */
-    private var tabsGroupCounter = 0
-
-    /** 从 Slate 块树里收集 battle-array 组件引用的阵容 id（仅新版 version=3）。 */
-    private fun collectBattleIds(node: com.google.gson.JsonElement, into: MutableSet<Long> = mutableSetOf()): Set<Long> {
+    /** 递归收集 Slate 块树中受支持的阵容引用，包含 tabs / 折叠块中的组件。 */
+    private fun collectBattleRefs(
+        node: com.google.gson.JsonElement,
+        into: MutableSet<BattleRef> = linkedSetOf()
+    ): Set<BattleRef> {
         when {
             node.isJsonObject -> {
                 val o = node.asJsonObject
-                if (o.get("type")?.asString == "battle-array") {
+                if (o.get("type")?.takeIf { it.isJsonPrimitive }?.asString == "battle-array") {
                     val data = o.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-                    val version = data?.get("version")?.takeIf { it.isJsonPrimitive }?.asInt
-                    val tempId = data?.get("tempId")?.takeIf { it.isJsonPrimitive }?.asLong
-                    if (version == 3 && tempId != null && tempId > 0) into.add(tempId)
+                    parseBattleRef(data)?.let { into.add(it) }
                 }
-                o.entrySet().forEach { collectBattleIds(it.value, into) }
+                o.entrySet().forEach { collectBattleRefs(it.value, into) }
             }
-            node.isJsonArray -> node.asJsonArray.forEach { collectBattleIds(it, into) }
+            node.isJsonArray -> node.asJsonArray.forEach { collectBattleRefs(it, into) }
         }
         return into
     }
 
     /**
-     * 一个阵容组件的展示卡 HTML（带磁盘缓存）。
-     *
-     * 数据来自 POST /v1/bd2Battle/detail {"id": 阵容id}：team 是「队伍 → 成员」
-     * 两层数组，每个成员自带头像图、属性（暗/水/风/光/火）、伤害类型、练度等级，
-     * 足够拼一张可读的阵容卡 —— 角色名要另拉 2MB 的全量名册才映射得出来，不值得。
+     * v2: GET /v1/userBattleTemp/detail?id=...，回合记录在 data.content JSON 字符串中。
+     * v3: POST /v1/bd2Battle/detail，继续使用已有 team 渲染。
+     * 只有成功的卡片才进入缓存；失败由文章渲染器就地生成带原文链接的提示。
      */
-    private suspend fun battleCardHtml(battleId: Long): String =
-        withContext(Dispatchers.IO) {
-            battleHtmlMemory[battleId]?.let { return@withContext it }
-            val cached = File(battleDir, "$battleId.html")
-            if (cached.exists() && cached.length() > 0) {
-                try {
-                    return@withContext cached.readText().also { battleHtmlMemory[battleId] = it }
-                } catch (e: Exception) {
-                    Log.w(TAG, "阵容缓存读取失败: $battleId", e)
-                    cached.delete()
-                }
-            }
-
-            val body = httpPostJson("$API/v1/bd2Battle/detail", """{"id":$battleId}""")
-            val html = if (body == null) {
-                fallbackBattleCard(battleId, "阵容数据加载失败")
-            } else {
-                try {
-                    val data = JsonParser.parseString(body).asJsonObject
-                        .get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-                    if (data == null) fallbackBattleCard(battleId, "阵容不存在")
-                    else buildBattleCard(battleId, data)
-                } catch (e: Exception) {
-                    Log.w(TAG, "阵容解析失败: $battleId", e)
-                    fallbackBattleCard(battleId, "阵容数据异常")
-                }
-            }
+    private suspend fun battleCardHtml(ref: BattleRef): String? = withContext(Dispatchers.IO) {
+        battleHtmlMemory[ref]?.let { return@withContext it }
+        val key = "v" + ref.version + "_" + ref.id
+        val cached = File(battleDir, "$key.html")
+        if (cached.exists() && cached.length() > 0) {
             try {
-                battleDir.mkdirs()
-                val tmp = File(battleDir, "$battleId.html.part")
-                tmp.writeText(html)
-                tmp.renameTo(cached)
-            } catch (_: Exception) {
+                return@withContext cached.readText().also { battleHtmlMemory[ref] = it }
+            } catch (e: Exception) {
+                Log.w(TAG, "阵容缓存读取失败: $ref", e)
+                cached.delete()
             }
-            battleHtmlMemory[battleId] = html
-            html
         }
 
-    private fun fallbackBattleCard(battleId: Long, reason: String): String {
-        val url = currentArticleUrl
-        val link = if (url != null) "<a href=\"${esc(url)}\">在网页版查看</a>" else ""
-        return "<div class=\"battle\"><div class=\"b-head\"><span class=\"b-title\">⚔️ 阵容组件 #$battleId</span>" +
-            "<span class=\"b-meta\">$reason" + (if (link.isNotBlank()) " · $link" else "") + "</span></div></div>"
+        val body = when (ref.version) {
+            2 -> httpGet("$API/v1/userBattleTemp/detail?id=" + ref.id)
+            3 -> httpPostJson("$API/v1/bd2Battle/detail", "{\"id\":" + ref.id + "}")
+            else -> null
+        } ?: return@withContext null
+        val html = try {
+            val response = JsonParser.parseString(body).asJsonObject
+            val code = response.get("code")?.takeIf { it.isJsonPrimitive }?.asString?.toIntOrNull()
+            if (code != 0) {
+                Log.w(TAG, "阵容接口未返回成功: $ref (code=$code)")
+                return@withContext null
+            }
+            val data = response.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: return@withContext null
+            if (ref.version == 2) GamekeeBattleV2Renderer.render(ref.id, data)
+            else buildBattleCard(ref.id, data)
+        } catch (e: Exception) {
+            Log.w(TAG, "阵容解析失败: $ref", e)
+            return@withContext null
+        }
+        try {
+            battleDir.mkdirs()
+            val tmp = File(battleDir, "$key.html.part")
+            tmp.writeText(html)
+            tmp.renameTo(cached)
+        } catch (_: Exception) {
+        }
+        battleHtmlMemory[ref] = html
+        html
+    }
+
+    private fun fallbackBattleCard(battleId: Long, reason: String, articleUrl: String): String {
+        val link = "<a href=\"" + esc(articleUrl) + "\">在网页版查看原文</a>"
+        return "<div class=\"battle b-fallback\"><div class=\"b-head\"><span class=\"b-title\">⚔️ 阵容组件 #$battleId</span>" +
+            "<span class=\"b-meta\">" + esc(reason) + " · $link</span></div></div>"
     }
 
     private fun buildBattleCard(battleId: Long, data: JsonObject): String {
@@ -695,7 +707,7 @@ class GamekeeRepository private constructor(private val appContext: android.cont
      *
      * TODO 正文（Slate/HTML）不替换表情标记：抽样的三篇正文（editor_type 1/3）
      * 一个标记都没有，网页端也只在对评论调 replaceEmoji。哪天正文里真出现
-     * `_(… […])`，把 [currentBattleCache] 那套「渲染前预置、渲染时查表」照搬过来
+     * `_(… […])`，把 [ArticleRenderContext] 那套「渲染前预置、渲染时查表」照搬过来
      * 接进 renderRuns 即可。
      */
     private suspend fun loadEmojiMap(): Map<String, String> = withContext(Dispatchers.IO) {
@@ -769,7 +781,7 @@ class GamekeeRepository private constructor(private val appContext: android.cont
      *
      * 只覆盖攻略里实际出现的块型；没见过的类型按「渲染其子块」兜底，
      * 保证新块型上线时页面不至于整篇空白。battle-array（阵容组件）在
-     * 渲染前已由 [loadArticleDetail] 把数据预取进 [currentBattleCache]，
+     * 渲染前已由 [loadArticleDetail] 把数据预取进 [ArticleRenderContext]，
      * 这里只查表拼卡。
      */
     /**
@@ -819,19 +831,19 @@ class GamekeeRepository private constructor(private val appContext: android.cont
         }
     }
 
-    private fun renderSlateBlocks(blocks: JsonArray): String {
+    private fun renderSlateBlocks(blocks: JsonArray, context: ArticleRenderContext): String {
         val sb = StringBuilder()
-        for (b in blocks) sb.append(renderBlock(b.asJsonObject))
+        for (b in blocks) sb.append(renderBlock(b.asJsonObject, context))
         return sb.toString()
     }
 
-    private fun renderBlock(b: JsonObject): String {
+    private fun renderBlock(b: JsonObject, context: ArticleRenderContext): String {
         val children = b.get("children")?.takeIf { it.isJsonArray }?.asJsonArray
         fun renderChildren(): String {
             val out = StringBuilder()
             children?.forEach { c ->
                 val o = c.asJsonObject
-                out.append(if (o.has("type") && o.get("type").isJsonPrimitive) renderBlock(o)
+                out.append(if (o.has("type") && o.get("type").isJsonPrimitive) renderBlock(o, context)
                            else renderRuns(o))
             }
             return out.toString()
@@ -862,7 +874,7 @@ class GamekeeRepository private constructor(private val appContext: android.cont
                 // 纯 CSS 选项卡（radio + label，WebView 不开 JS 也能切换）：
                 // 每组一个递增编号保证 radio name 不串组，结构必须是
                 // input+label+panel 三元组相邻，选择器才命中
-                val gid = "tabs${tabsGroupCounter++}"
+                val gid = "tabs" + context.tabsGroupCounter++
                 val sb = StringBuilder("<div class=\"tabs\">")
                 children?.forEachIndexed { idx, t ->
                     val tab = t.asJsonObject
@@ -875,13 +887,12 @@ class GamekeeRepository private constructor(private val appContext: android.cont
                     var panelLen = 0
                     tab.get("children")?.takeIf { it.isJsonArray }?.asJsonArray?.forEach { c ->
                         val before = sb.length
-                        sb.append(renderBlock(c.asJsonObject))
+                        sb.append(renderBlock(c.asJsonObject, context))
                         panelLen += sb.length - before
                     }
-                    // 旧版阵容组件（version<3）官网也不再渲染，页签会是空的；
-                    // 说明一句，免得用户以为坏了
+                    // 空页签只描述当前内容，不推断官网或源数据已经失效。
                     if (panelLen == 0) {
-                        sb.append("<span class=\"tp-e\">此页签的阵容组件在官方数据里已失效（网页版同样无法显示）</span>")
+                        sb.append("<span class=\"tp-e\">此页签暂无可显示的内容</span>")
                     }
                     sb.append("</div>")
                 }
@@ -889,19 +900,14 @@ class GamekeeRepository private constructor(private val appContext: android.cont
             }
             "battle-array" -> {
                 val data = b.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-                val version = data?.get("version")?.takeIf { it.isJsonPrimitive }?.asInt
-                val tempId = data?.get("tempId")?.takeIf { it.isJsonPrimitive }?.asLong
+                val ref = parseBattleRef(data)
+                val tempId = data?.get("tempId")?.takeIf { it.isJsonPrimitive }?.asString?.toLongOrNull()
                 when {
-                    tempId != null && version == 3 ->
-                        currentBattleCache[tempId]
-                            ?: "<div class=\"battle\"><div class=\"b-head\"><span class=\"b-title\">⚔️ 阵容组件 #$tempId</span><span class=\"b-meta\">数据未预取</span></div></div>"
-                    tempId != null -> {
-                        // 旧版组件（version<3）连网页版都不再渲染，给个说明卡
-                        val url = currentArticleUrl
-                        val link = if (url != null) "<a href=\"${esc(url)}\">在网页版查看原文</a>" else ""
-                        "<div class=\"array-card\">⚔️ 这里原本有一个旧版阵容组件，本地无法还原$link</div>"
-                    }
-                    else -> "" // 无 data 的空组件，官网也不渲染
+                    ref != null -> context.battleCards[ref] ?: (BATTLE_UNAVAILABLE_STAMP +
+                        fallbackBattleCard(ref.id, "阵容暂时无法加载，请刷新重试", context.articleUrl))
+                    tempId != null && tempId > 0 ->
+                        fallbackBattleCard(tempId, "暂不支持此版本的阵容组件", context.articleUrl)
+                    else -> "" // 无引用的空组件
                 }
             }
             "table" -> "<table>${renderChildren()}</table>"
@@ -1107,6 +1113,35 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
   .b-desc { font-size:.9em; color:#5a5240; background:#f7f2e2; border-radius:6px;
             padding:6px 8px; margin-top:6px; line-height:1.6; }
   .b-foot { font-size:.72em; color:#b3a877; margin-top:6px; }
+  /* v2 阵容：保留网格位置，原生 details 切换回合，无需脚本或全局控件 ID。 */
+  .battle-v2 .b-head, .b-fallback .b-head { flex-wrap:wrap; }
+  .battle-v2 .b-meta, .b-fallback .b-meta { white-space:normal; }
+  .battle-v2 .b-team-t { color:#665a40; }
+  .b-v2-group { font-size:1em; margin:1em 0 .4em; }
+  .b-v2-round { border-top:1px solid #d9c89a; margin-top:8px; }
+  .b-v2-round > summary, .b-v2-enemy > summary { cursor:pointer; padding:10px 0;
+      min-height:44px; box-sizing:border-box; font-weight:600; color:#5c4a1e; }
+  .b-v2-round > summary:focus-visible, .b-v2-enemy > summary:focus-visible {
+      outline:2px solid #5c4a1e; outline-offset:2px; }
+  .b-v2-grid { display:grid; grid-template-columns:repeat(4,minmax(44px,1fr));
+      gap:4px; overflow-x:auto; margin:.4em 0; }
+  .b-v2-grid-5 { grid-template-columns:repeat(5,minmax(44px,1fr)); }
+  .b-v2-cell { position:relative; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; min-width:0; min-height:76px; padding:6px 3px;
+      box-sizing:border-box; border:1px solid #e0d6b8; border-radius:6px; background:#fff; }
+  .b-v2-empty { background:transparent; color:#807051; }
+  .b-v2-order { position:absolute; top:2px; right:2px; min-width:16px; padding:0 2px;
+      border-radius:3px; background:#5c4a1e; color:#fff; font-size:12px; line-height:18px; text-align:center; }
+  .b-v2-avatar { width:32px !important; height:32px !important; flex:none;
+      object-fit:cover; border-radius:6px; }
+  .b-v2-no-avatar { display:flex; align-items:center; justify-content:center; color:#665a40; }
+  .b-v2-name { margin-top:4px; font-size:.875em; line-height:1.4;
+      text-align:center; overflow-wrap:anywhere; }
+  .b-v2-actions { padding-inline-start:24px; margin:.4em 0; }
+  .b-v2-actions li { margin:8px 0; }
+  .b-v2-action { display:flex; gap:8px; align-items:flex-start; }
+  .b-v2-action-info { min-width:0; overflow-wrap:anywhere; }
+  .b-v2-note, .b-v2-skin { font-size:.875em; line-height:1.6; color:#665a40; }
   /* 评论区 */
   .cmt { border-top:2px solid #eee; margin-top:1.6em; padding-top:.6em; }
   .cmt-h { font-weight:700; font-size:1.05em; margin-bottom:.6em; }
@@ -1349,6 +1384,7 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
         cacheDir.deleteRecursively()
         treeCache = null
         thumbs.clear()
+        battleHtmlMemory.clear()
         emojiMapMemory = null
     }
 

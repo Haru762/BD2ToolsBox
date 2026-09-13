@@ -45,6 +45,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -347,12 +348,20 @@ class MainActivity : ComponentActivity() {
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("扫描游戏资源") },
+                                        text = { Text("建立文件索引") },
                                         leadingIcon = { Icon(Icons.Default.FindInPage, null) },
                                         onClick = {
                                             folderMenu = false
                                             ensureNotificationPermission()
                                             viewModel.requestGameScan()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("导出日志") },
+                                        leadingIcon = { Icon(Icons.Default.BugReport, null) },
+                                        onClick = {
+                                            folderMenu = false
+                                            viewModel.exportLogs()
                                         }
                                     )
                                     DropdownMenuItem(

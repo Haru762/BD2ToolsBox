@@ -13,12 +13,14 @@ import java.io.File
  *   - 第二次预览同一个 mod 几乎瞬间打开（只是读文件）
  *   - 「批量预解包」本质上就是提前把这个缓存填满，之后逐个看都不用等
  *
- * 缓存键是 `<bundle 名>/<内容哈希>`，与游戏缓存的目录结构对齐 ——
- * 游戏更新后哈希会变（实测跨版本 176 个 bundle 哈希全变），旧缓存靠路径天然失效，
- * 不会把上个版本的素材拿来当这个版本的用。
+ * 缓存键是 `<bundle 名>/<hash>_<size>`，**size 参与路径**：同一个 bundle 常有
+ * 多个不同内容的变体拷贝（实测一个包 44 份、size 各异），此前键里没有 size，
+ * 变体们挤一个槽互相覆盖 —— 预解包全部白干、预览每个变体都现场重解
+ * （真机：「点预览还是要准备预览」）。带 size 后每个变体独立一个槽。
+ * 代价是缓存条目数 = 产物数（不再去重），空间占用按变体数放大 —— 用户
+ * 明确接受（测试库 836 产物 ≈ 17GB；正常库几十个 mod 远到不了）。
  *
- * 另外记一份 `.srcsize` 存产物 `__data` 的字节数：用户可能用同名目录换了新产物，
- * 这时哈希目录名可能没变但内容变了，靠大小对比能发现并重解。
+ * `.srcsize` 仍保留在槽内：count/体积统计与膨胀比测量都读它。
  *
  * 放外部私有目录（`/sdcard/Android/data/<包名>/files/preview_cache/`），
  * 和原版备份一致 —— 用户看得见、能自己清，卸载 app 时一起消失。
@@ -32,7 +34,7 @@ class PreviewCacheRepository(private val context: Context) {
          * 旧的黑图缓存会一直被当作有效命中继续显示。换代即整体失效，下次
          * 预解包重新生成。解码逻辑再改必须 bump。
          */
-        private const val CACHE_GENERATION = 3
+        private const val CACHE_GENERATION = 4
         private const val DIR_NAME = "preview_cache"
         private const val SRC_SIZE_FILE = ".srcsize"
 
@@ -47,17 +49,22 @@ class PreviewCacheRepository(private val context: Context) {
 
     private fun root(): File = File(context.getExternalFilesDir(null), DIR_NAME)
 
-    fun entryDir(bundleName: String, hashDir: String): File =
-        File(root(), "$bundleName/$hashDir")
+    /** size=0/-1（拿不到产物大小的异常场景）退回无后缀路径，不参与分槽。 */
+    private fun slotName(hashDir: String, srcSize: Long): String =
+        if (srcSize > 0) "${hashDir}_$srcSize" else hashDir
+
+    fun entryDir(bundleName: String, hashDir: String, srcSize: Long = 0L): File =
+        File(root(), "$bundleName/${slotName(hashDir, srcSize)}")
 
     /**
      * 缓存是否可用。
      *
      * 要求目录里既有骨架（.skel 或 .json）又有 .atlas —— 少一个都没法预览。
-     * 同时校验 [srcSize] 与当初解包时记录的一致，防止用户换了产物却沿用旧素材。
+     * size 已编进目录名，这里的 .srcsize 校验是双保险（目录对得上但戳丢失
+     * 的半成品不能算数）。
      */
     fun isValid(bundleName: String, hashDir: String, srcSize: Long): Boolean {
-        val dir = entryDir(bundleName, hashDir)
+        val dir = entryDir(bundleName, hashDir, srcSize)
         if (!dir.isDirectory) return false
         // 旧代缓存（无戳或代数不符）一律无效，逼一次重新解包
         val genFile = File(dir, "gen")
@@ -67,12 +74,13 @@ class PreviewCacheRepository(private val context: Context) {
         val hasSkel = files.any { it.name.endsWith(".skel", true) || it.name.endsWith(".json", true) }
         val hasAtlas = files.any { it.name.endsWith(".atlas", true) }
         if (!hasSkel || !hasAtlas) return false
-        return readSrcSize(bundleName, hashDir) == srcSize
+        return readSrcSize(dir) == srcSize
     }
 
     /** 缓存里的 skel 与 atlas 路径；不完整则返回 null。 */
-    fun resolvePair(bundleName: String, hashDir: String): Pair<String, String>? {
-        val files = entryDir(bundleName, hashDir).listFiles()?.filter { it.isFile } ?: return null
+    fun resolvePair(bundleName: String, hashDir: String, srcSize: Long): Pair<String, String>? {
+        val files = entryDir(bundleName, hashDir, srcSize).listFiles()
+            ?.filter { it.isFile } ?: return null
         val skel = files.firstOrNull { it.name.endsWith(".skel", true) }
             ?: files.firstOrNull { it.name.endsWith(".json", true) }
         val atlas = files.firstOrNull { it.name.endsWith(".atlas", true) }
@@ -81,8 +89,8 @@ class PreviewCacheRepository(private val context: Context) {
     }
 
     /** 解包前调用：清空目标目录并返回它，让解包结果直接落在缓存位置。 */
-    fun prepareDir(bundleName: String, hashDir: String): File {
-        val dir = entryDir(bundleName, hashDir)
+    fun prepareDir(bundleName: String, hashDir: String, srcSize: Long): File {
+        val dir = entryDir(bundleName, hashDir, srcSize)
         if (dir.exists()) dir.deleteRecursively()
         dir.mkdirs()
         return dir
@@ -91,31 +99,31 @@ class PreviewCacheRepository(private val context: Context) {
     /** 解包成功后记录源产物大小，作为后续校验依据。 */
     fun commit(bundleName: String, hashDir: String, srcSize: Long) {
         try {
-            File(entryDir(bundleName, hashDir), "gen").writeText(CACHE_GENERATION.toString())
+            File(entryDir(bundleName, hashDir, srcSize), "gen").writeText(CACHE_GENERATION.toString())
         } catch (_: Exception) {
             // 写不进戳只是下次会重复解包，不当错误处理
         }
         try {
-            File(entryDir(bundleName, hashDir), SRC_SIZE_FILE).writeText(srcSize.toString())
+            File(entryDir(bundleName, hashDir, srcSize), SRC_SIZE_FILE).writeText(srcSize.toString())
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    private fun readSrcSize(bundleName: String, hashDir: String): Long =
+    private fun readSrcSize(dir: File): Long =
         try {
-            File(entryDir(bundleName, hashDir), SRC_SIZE_FILE)
+            File(dir, SRC_SIZE_FILE)
                 .takeIf { it.isFile }?.readText()?.trim()?.toLongOrNull() ?: -1L
         } catch (e: Exception) {
             -1L
         }
 
-    /** 已缓存的条目数（bundle 数，不含内部文件）。 */
+    /** 已缓存的条目数（槽数 = 变体数，不含内部文件）。 */
     fun count(): Int {
         var n = 0
         root().listFiles()?.forEach { bundleDir ->
-            bundleDir.listFiles()?.forEach { hashDir ->
-                if (hashDir.isDirectory) n++
+            bundleDir.listFiles()?.forEach { slotDir ->
+                if (slotDir.isDirectory) n++
             }
         }
         return n
@@ -137,12 +145,12 @@ class PreviewCacheRepository(private val context: Context) {
         var src = 0L
         var out = 0L
         root().listFiles()?.forEach { bundleDir ->
-            bundleDir.listFiles()?.forEach { hashDir ->
-                if (!hashDir.isDirectory) return@forEach
-                val s = File(hashDir, SRC_SIZE_FILE).takeIf { it.isFile }
+            bundleDir.listFiles()?.forEach { slotDir ->
+                if (!slotDir.isDirectory) return@forEach
+                val s = File(slotDir, SRC_SIZE_FILE).takeIf { it.isFile }
                     ?.readText()?.trim()?.toLongOrNull() ?: return@forEach
                 if (s <= 0) return@forEach
-                val o = hashDir.listFiles()?.filter { it.isFile && it.name != SRC_SIZE_FILE }
+                val o = slotDir.listFiles()?.filter { it.isFile && it.name != SRC_SIZE_FILE }
                     ?.sumOf { it.length() } ?: 0L
                 if (o <= 0) return@forEach
                 src += s
@@ -152,8 +160,8 @@ class PreviewCacheRepository(private val context: Context) {
         return if (src > 0) out.toDouble() / src else null
     }
 
-    fun delete(bundleName: String, hashDir: String) {
-        entryDir(bundleName, hashDir).deleteRecursively()
+    fun delete(bundleName: String, hashDir: String, srcSize: Long) {
+        entryDir(bundleName, hashDir, srcSize).deleteRecursively()
     }
 
     /**
@@ -162,7 +170,7 @@ class PreviewCacheRepository(private val context: Context) {
      */
     fun markNoPreview(bundleName: String, hashDir: String, srcSize: Long) {
         try {
-            val dir = entryDir(bundleName, hashDir)
+            val dir = entryDir(bundleName, hashDir, srcSize)
             dir.mkdirs()
             File(dir, NO_PREVIEW_FILE).writeText(CACHE_GENERATION.toString())
             File(dir, SRC_SIZE_FILE).writeText(srcSize.toString())
@@ -173,12 +181,12 @@ class PreviewCacheRepository(private val context: Context) {
 
     /** 是否已标记为无预览价值（且产物没换过）。 */
     fun isKnownNoPreview(bundleName: String, hashDir: String, srcSize: Long): Boolean {
-        val dir = entryDir(bundleName, hashDir)
+        val dir = entryDir(bundleName, hashDir, srcSize)
         val mark = File(dir, NO_PREVIEW_FILE)
         if (!mark.isFile) return false
         // 代数不符 = 解码逻辑换过，负缓存作废重判
         if (mark.readText().trim() != CACHE_GENERATION.toString()) return false
-        return readSrcSize(bundleName, hashDir) == srcSize
+        return readSrcSize(dir) == srcSize
     }
 
     fun clearAll() {

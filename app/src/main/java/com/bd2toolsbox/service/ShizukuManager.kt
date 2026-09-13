@@ -73,7 +73,10 @@ object ShizukuManager {
         // v3: copyDirectory 加了源目录存在性检查；listBundleDirectory 返回带 __data
         //     的 size。AIDL 签名未变但实现变了，必须升版本号让 Shizuku 丢弃旧 dex。
         // v4: 守护模式（见上）。版本变化 = Shizuku 起新进程。
-        .version(4)
+        // v5: listBundleDirectory 改分页版（listBundleDirectoryPaged）—— 全量 JSON
+        //     在 bundle 数 1800+ 时撑爆 binder 1MB 事务被截断，真机表现为
+        //     JSONException Unterminated array，进而被笼统报成「游戏未安装」。
+        .version(5)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -201,7 +204,25 @@ object ShizukuManager {
         try {
             if (!isAvailable()) return@withContext null
             val service = ensureServiceBound() ?: return@withContext null
-            parseBundleListing(service.listBundleDirectory(GAME_SHARED_PATH))
+            // 同 checkLocalBundles：分页拉取，全量 JSON 会撑爆 binder 1MB 事务
+            val all = StringBuilder("[")
+            val pageSize = 500
+            var offset = 0
+            var first = true
+            while (true) {
+                val pageJson = service.listBundleDirectoryPaged(GAME_SHARED_PATH, offset, pageSize)
+                // 页内容拼进总数组：去掉页 JSON 的首尾方括号
+                val inner = pageJson.trim().removePrefix("[").removeSuffix("]")
+                if (inner.isNotBlank()) {
+                    if (!first) all.append(',')
+                    all.append(inner)
+                    first = false
+                }
+                if (JSONArray(pageJson).length() < pageSize) break
+                offset += pageSize
+            }
+            all.append(']')
+            parseBundleListing(all.toString())
         } catch (e: Exception) {
             Log.e(TAG, "Error listing game bundles", e)
             null
@@ -294,8 +315,19 @@ object ShizukuManager {
             }
 
             onProgress("Listing local game bundles...")
-            val bundleListJson = service.listBundleDirectory(GAME_SHARED_PATH)
-            val bundleList = JSONArray(bundleListJson)
+            // 分页拉取：全量 JSON 在 1800+ bundle 时撑爆 binder 1MB 事务被截断
+            // （真机：JSONException Unterminated array → 被笼统报成「游戏未安装」）。
+            // 每页 500 条 ≈ 60KB，安全；返回条数 < 500 即最后一页。
+            val bundleList = JSONArray()
+            val pageSize = 500
+            var offset = 0
+            while (true) {
+                val pageJson = service.listBundleDirectoryPaged(GAME_SHARED_PATH, offset, pageSize)
+                val page = JSONArray(pageJson)
+                for (i in 0 until page.length()) bundleList.put(page.get(i))
+                if (page.length() < pageSize) break
+                offset += pageSize
+            }
             if (bundleList.length() == 0) {
                 onProgress("No bundles found in game directory.")
                 return@withContext null
@@ -303,7 +335,7 @@ object ShizukuManager {
             onProgress("Found ${bundleList.length()} bundles. Checking cache...")
 
             // python 侧对照缓存给出待扫名单
-            val needsScanJson = ModdingService.checkScanNeeded(outputDir, bundleListJson, onProgress)
+            val needsScanJson = ModdingService.checkScanNeeded(outputDir, bundleList.toString(), onProgress)
             val needsScan = JSONArray(needsScanJson)
 
             val hashMap = HashMap<String, String>(bundleList.length())
@@ -313,7 +345,7 @@ object ShizukuManager {
             }
 
             BundleCheckResult(
-                bundleListJson = bundleListJson,
+                bundleListJson = bundleList.toString(),
                 needsScanJson = needsScanJson,
                 hashMap = hashMap,
                 needsScanCount = needsScan.length()

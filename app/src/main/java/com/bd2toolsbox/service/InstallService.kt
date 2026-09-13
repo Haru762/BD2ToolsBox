@@ -149,7 +149,11 @@ class InstallService : Service() {
     }
 
     private fun buildNotification(done: Int, total: Int, text: String): Notification {
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or Intent.FLAG_ACTIVITY_NEW_TASK
+        // SINGLE_TOP 不能加：它的位值(0x20000000)落在 PendingIntent 保留位区间，
+        // 与 UPDATE_CURRENT 组合后 getActivity 静默返回 null —— 通知点不动
+        // （模拟器探针实测：base ✓ +NEW_TASK ✓ +both null）。NEW_TASK 本身
+        // 已让已有实例置顶，足够。
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), flags
         )
