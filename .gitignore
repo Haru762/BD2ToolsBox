@@ -50,6 +50,12 @@ pip-log.txt
 pip-delete-this-directory.txt
 .pytest_cache/
 
+# Refactor: local-only preserved artifacts, test inputs and environment config
+# (T01 / 2026-09-15 refactor todo §2.3 — never commit)
+/local/refactor-artifacts/
+/local/refactor-inputs/
+/docs/refactor/evidence/environment.local.json
+
 # OS specific
 .DS_Store
 Thumbs.db

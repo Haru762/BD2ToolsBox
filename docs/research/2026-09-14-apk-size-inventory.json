@@ -1,0 +1,1375 @@
+{
+  "schemaVersion": 1,
+  "auditDate": "2026-09-14",
+  "sourceBaseline": "b83c1c0",
+  "artifactVersion": {
+    "versionName": "0.2.16",
+    "versionCode": 17
+  },
+  "measurementNotes": [
+    "MiB = 1048576 bytes",
+    "APK category sizes sum ZIP entry compressed payloads; overhead is reported separately",
+    "Nested IMY figures use inner ZIP compressed payloads; this is not installed-size or RAM measurement",
+    "No APK was rebuilt, re-signed, installed, modified or stripped during this audit",
+    "Candidate pools are measured contents to investigate, not guaranteed achievable net savings"
+  ],
+  "primaryApk": {
+    "path": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+    "publishedCopy": "D:/bd2 mod/发布包/2-手机端转换器/BD2ToolsBox-0.2.16-android-arm64-v8a.apk",
+    "sha256": "a52fa13909e7d4b8d79dd3b4d2ba4054693fdd9324c68fc850a0785bd713bee8",
+    "aapt": {
+      "applicationId": "com.bd2toolsbox",
+      "debuggable": false,
+      "minSdk": 29,
+      "targetSdk": 34,
+      "nativeAbis": [
+        "arm64-v8a"
+      ],
+      "extractNativeLibs": false
+    }
+  },
+  "artifacts": [
+    {
+      "path": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+      "bytes": 34095289,
+      "entries": 189,
+      "containerOverheadBytes": 255080,
+      "groups": {
+        "Chaquopy assets": {
+          "count": 34,
+          "compressed": 20798045,
+          "raw": 20932410
+        },
+        "Native lib/": {
+          "count": 7,
+          "compressed": 9557096,
+          "raw": 9557096
+        },
+        "DEX": {
+          "count": 1,
+          "compressed": 2877404,
+          "raw": 2877404
+        },
+        "Android resources": {
+          "count": 79,
+          "compressed": 437346,
+          "raw": 448947
+        },
+        "WebView assets": {
+          "count": 5,
+          "compressed": 132192,
+          "raw": 482187
+        },
+        "Other assets": {
+          "count": 4,
+          "compressed": 23582,
+          "raw": 156040
+        },
+        "Manifest / metadata / other": {
+          "count": 59,
+          "compressed": 14544,
+          "raw": 41557
+        }
+      }
+    },
+    {
+      "path": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-x86_64-release.apk",
+      "bytes": 33947733,
+      "entries": 188,
+      "containerOverheadBytes": 240052,
+      "groups": {
+        "Chaquopy assets": {
+          "count": 34,
+          "compressed": 20798045,
+          "raw": 20932410
+        },
+        "Native lib/": {
+          "count": 6,
+          "compressed": 9424568,
+          "raw": 9424568
+        },
+        "DEX": {
+          "count": 1,
+          "compressed": 2877404,
+          "raw": 2877404
+        },
+        "Android resources": {
+          "count": 79,
+          "compressed": 437346,
+          "raw": 448947
+        },
+        "WebView assets": {
+          "count": 5,
+          "compressed": 132192,
+          "raw": 482187
+        },
+        "Other assets": {
+          "count": 4,
+          "compressed": 23582,
+          "raw": 156040
+        },
+        "Manifest / metadata / other": {
+          "count": 59,
+          "compressed": 14544,
+          "raw": 41557
+        }
+      }
+    },
+    {
+      "path": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-universal-release.apk",
+      "bytes": 43565691,
+      "entries": 195,
+      "containerOverheadBytes": 300914,
+      "groups": {
+        "Chaquopy assets": {
+          "count": 34,
+          "compressed": 20798045,
+          "raw": 20932410
+        },
+        "Native lib/": {
+          "count": 13,
+          "compressed": 18981664,
+          "raw": 18981664
+        },
+        "DEX": {
+          "count": 1,
+          "compressed": 2877404,
+          "raw": 2877404
+        },
+        "Android resources": {
+          "count": 79,
+          "compressed": 437346,
+          "raw": 448947
+        },
+        "WebView assets": {
+          "count": 5,
+          "compressed": 132192,
+          "raw": 482187
+        },
+        "Other assets": {
+          "count": 4,
+          "compressed": 23582,
+          "raw": 156040
+        },
+        "Manifest / metadata / other": {
+          "count": 59,
+          "compressed": 14544,
+          "raw": 41557
+        }
+      }
+    },
+    {
+      "path": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk",
+      "bytes": 94061039,
+      "entries": 200,
+      "containerOverheadBytes": 6769761,
+      "groups": {
+        "DEX": {
+          "count": 12,
+          "compressed": 56293084,
+          "raw": 56293084
+        },
+        "Chaquopy assets": {
+          "count": 34,
+          "compressed": 20807297,
+          "raw": 20932410
+        },
+        "Native lib/": {
+          "count": 7,
+          "compressed": 9557096,
+          "raw": 9557096
+        },
+        "Android resources": {
+          "count": 79,
+          "compressed": 440070,
+          "raw": 451671
+        },
+        "WebView assets": {
+          "count": 5,
+          "compressed": 157154,
+          "raw": 482187
+        },
+        "Other assets": {
+          "count": 2,
+          "compressed": 22324,
+          "raw": 151616
+        },
+        "Manifest / metadata / other": {
+          "count": 61,
+          "compressed": 14253,
+          "raw": 41356
+        }
+      }
+    },
+    {
+      "path": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/debug/app-x86_64-debug.apk",
+      "bytes": 93913483,
+      "entries": 199,
+      "containerOverheadBytes": 6754733,
+      "groups": {
+        "DEX": {
+          "count": 12,
+          "compressed": 56293084,
+          "raw": 56293084
+        },
+        "Chaquopy assets": {
+          "count": 34,
+          "compressed": 20807297,
+          "raw": 20932410
+        },
+        "Native lib/": {
+          "count": 6,
+          "compressed": 9424568,
+          "raw": 9424568
+        },
+        "Android resources": {
+          "count": 79,
+          "compressed": 440070,
+          "raw": 451671
+        },
+        "WebView assets": {
+          "count": 5,
+          "compressed": 157154,
+          "raw": 482187
+        },
+        "Other assets": {
+          "count": 2,
+          "compressed": 22324,
+          "raw": 151616
+        },
+        "Manifest / metadata / other": {
+          "count": 61,
+          "compressed": 14253,
+          "raw": 41356
+        }
+      }
+    },
+    {
+      "path": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/debug/app-universal-debug.apk",
+      "bytes": 103531441,
+      "entries": 206,
+      "containerOverheadBytes": 6815595,
+      "groups": {
+        "DEX": {
+          "count": 12,
+          "compressed": 56293084,
+          "raw": 56293084
+        },
+        "Chaquopy assets": {
+          "count": 34,
+          "compressed": 20807297,
+          "raw": 20932410
+        },
+        "Native lib/": {
+          "count": 13,
+          "compressed": 18981664,
+          "raw": 18981664
+        },
+        "Android resources": {
+          "count": 79,
+          "compressed": 440070,
+          "raw": 451671
+        },
+        "WebView assets": {
+          "count": 5,
+          "compressed": 157154,
+          "raw": 482187
+        },
+        "Other assets": {
+          "count": 2,
+          "compressed": 22324,
+          "raw": 151616
+        },
+        "Manifest / metadata / other": {
+          "count": 61,
+          "compressed": 14253,
+          "raw": 41356
+        }
+      }
+    }
+  ],
+  "r8": {
+    "compiler": "R8",
+    "version": "8.4.26",
+    "mappingPath": "D:/bd2 mod/bdroid_src/app/build/outputs/mapping/release/mapping.txt",
+    "resourceShrinkingDeclared": false,
+    "projectFullModeOptOutFound": false,
+    "releaseDexClassDefinitions": 3475,
+    "snapshotClass": {
+      "descriptor": "Lr1/p;",
+      "superclass": "Ljava/lang/Object;",
+      "fields": [
+        {
+          "kind": "instance",
+          "name": "a",
+          "type": "J"
+        },
+        {
+          "kind": "instance",
+          "name": "b",
+          "type": "Ljava/util/List;"
+        },
+        {
+          "kind": "instance",
+          "name": "c",
+          "type": "Ljava/util/List;"
+        }
+      ]
+    }
+  },
+  "python": {
+    "targetVersion": "3.8",
+    "extractPackages": [],
+    "archives": [
+      {
+        "name": "assets/chaquopy/app.imy",
+        "bytes": 6326542,
+        "entryCount": 164,
+        "pyFiles": 105,
+        "pycFiles": 0,
+        "topEntries": [
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Darwin/libfmod.dylib",
+            "compressed": 1143553,
+            "raw": 2430928
+          },
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Windows/x64/fmod.dll",
+            "compressed": 788439,
+            "raw": 1724416
+          },
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Windows/x86/fmod.dll",
+            "compressed": 696406,
+            "raw": 1491968
+          },
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Linux/x86_64/libfmod.so",
+            "compressed": 692546,
+            "raw": 1569032
+          },
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Linux/x86/libfmod.so",
+            "compressed": 692134,
+            "raw": 1625248
+          },
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Linux/arm64/libfmod.so",
+            "compressed": 612175,
+            "raw": 1254672
+          },
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Linux/arm/libfmod.so",
+            "compressed": 609225,
+            "raw": 1214580
+          },
+          {
+            "name": "vendor/UnityPy/lib/FMOD/Windows/arm/fmod.dll",
+            "compressed": 564813,
+            "raw": 1071104
+          },
+          {
+            "name": "vendor/UnityPy/resources/uncompressed.tpk",
+            "compressed": 274574,
+            "raw": 1326072
+          },
+          {
+            "name": "vendor/UnityPy/classes/generated.py",
+            "compressed": 53684,
+            "raw": 350165
+          },
+          {
+            "name": "main_script.py",
+            "compressed": 12054,
+            "raw": 38068
+          },
+          {
+            "name": "repacker/repacker.py",
+            "compressed": 10275,
+            "raw": 31337
+          },
+          {
+            "name": "repacker/json_to_skel.py",
+            "compressed": 7425,
+            "raw": 44097
+          },
+          {
+            "name": "unpacker.py",
+            "compressed": 7164,
+            "raw": 17826
+          }
+        ]
+      },
+      {
+        "name": "assets/chaquopy/bootstrap.imy",
+        "bytes": 429044,
+        "entryCount": 129,
+        "pyFiles": 0,
+        "pycFiles": 96,
+        "topEntries": [
+          {
+            "name": "pkg_resources/_vendor/more_itertools/more.pyc",
+            "compressed": 45188,
+            "raw": 125626
+          },
+          {
+            "name": "pkg_resources/__init__.pyc",
+            "compressed": 40949,
+            "raw": 101487
+          },
+          {
+            "name": "pkg_resources/_vendor/typing_extensions.pyc",
+            "compressed": 24222,
+            "raw": 66052
+          },
+          {
+            "name": "java/_vendor/elftools/construct/core.pyc",
+            "compressed": 14404,
+            "raw": 44022
+          },
+          {
+            "name": "java/android/importer.pyc",
+            "compressed": 12376,
+            "raw": 27195
+          },
+          {
+            "name": "pkg_resources/_vendor/more_itertools/recipes.pyc",
+            "compressed": 11005,
+            "raw": 26660
+          },
+          {
+            "name": "setuptools-68.2.2.dist-info/RECORD",
+            "compressed": 9575,
+            "raw": 22109
+          },
+          {
+            "name": "pkg_resources/_vendor/packaging/specifiers.pyc",
+            "compressed": 9357,
+            "raw": 30283
+          },
+          {
+            "name": "java/_vendor/elftools/elf/elffile.pyc",
+            "compressed": 9010,
+            "raw": 19978
+          },
+          {
+            "name": "java/_vendor/elftools/elf/descriptions.pyc",
+            "compressed": 8539,
+            "raw": 18968
+          },
+          {
+            "name": "java/_vendor/elftools/elf/enums.pyc",
+            "compressed": 8272,
+            "raw": 23276
+          },
+          {
+            "name": "java/_vendor/elftools/dwarf/descriptions.pyc",
+            "compressed": 8084,
+            "raw": 17712
+          },
+          {
+            "name": "java/_vendor/elftools/dwarf/callframe.pyc",
+            "compressed": 7839,
+            "raw": 17362
+          },
+          {
+            "name": "java/_vendor/elftools/construct/macros.pyc",
+            "compressed": 7705,
+            "raw": 23016
+          }
+        ]
+      },
+      {
+        "name": "assets/chaquopy/requirements-arm64-v8a.imy",
+        "bytes": 1573381,
+        "entryCount": 18,
+        "pyFiles": 0,
+        "pycFiles": 0,
+        "topEntries": [
+          {
+            "name": "chaquopy/lib/libc++_shared.so",
+            "compressed": 406557,
+            "raw": 1292904
+          },
+          {
+            "name": "_brotli.so",
+            "compressed": 361039,
+            "raw": 774936
+          },
+          {
+            "name": "chaquopy/lib/libfreetype.so",
+            "compressed": 310238,
+            "raw": 834864
+          },
+          {
+            "name": "PIL/_imaging.so",
+            "compressed": 169994,
+            "raw": 369832
+          },
+          {
+            "name": "chaquopy/lib/libjpeg_chaquopy.so",
+            "compressed": 147868,
+            "raw": 483520
+          },
+          {
+            "name": "lz4/frame/_frame.so",
+            "compressed": 72288,
+            "raw": 161320
+          },
+          {
+            "name": "lz4/block/_block.so",
+            "compressed": 57309,
+            "raw": 123320
+          },
+          {
+            "name": "lz4/_version.so",
+            "compressed": 22384,
+            "raw": 55528
+          },
+          {
+            "name": "PIL/_imagingft.so",
+            "compressed": 10827,
+            "raw": 28544
+          },
+          {
+            "name": "PIL/_imagingmath.so",
+            "compressed": 6131,
+            "raw": 20832
+          },
+          {
+            "name": "PIL/_imagingtk.so",
+            "compressed": 3513,
+            "raw": 9032
+          },
+          {
+            "name": "PIL/_imagingmorph.so",
+            "compressed": 2893,
+            "raw": 7336
+          },
+          {
+            "name": "PIL/",
+            "compressed": 2,
+            "raw": 0
+          },
+          {
+            "name": "chaquopy/",
+            "compressed": 2,
+            "raw": 0
+          }
+        ]
+      },
+      {
+        "name": "assets/chaquopy/requirements-common.imy",
+        "bytes": 1486578,
+        "entryCount": 510,
+        "pyFiles": 361,
+        "pycFiles": 0,
+        "topEntries": [
+          {
+            "name": "certifi/cacert.pem",
+            "compressed": 131827,
+            "raw": 240216
+          },
+          {
+            "name": "idna/uts46data.py",
+            "compressed": 39945,
+            "raw": 202681
+          },
+          {
+            "name": "typing_extensions.py",
+            "compressed": 39096,
+            "raw": 172654
+          },
+          {
+            "name": "PIL/Image.py",
+            "compressed": 32239,
+            "raw": 126619
+          },
+          {
+            "name": "bs4/element.py",
+            "compressed": 27673,
+            "raw": 125805
+          },
+          {
+            "name": "attr/_make.py",
+            "compressed": 23981,
+            "raw": 96664
+          },
+          {
+            "name": "PIL/TiffImagePlugin.py",
+            "compressed": 20088,
+            "raw": 75322
+          },
+          {
+            "name": "fsspec/spec.py",
+            "compressed": 19248,
+            "raw": 76032
+          },
+          {
+            "name": "tqdm-4.70.1.dist-info/METADATA",
+            "compressed": 18197,
+            "raw": 57366
+          },
+          {
+            "name": "google/protobuf/descriptor_pb2.py",
+            "compressed": 17189,
+            "raw": 343365
+          },
+          {
+            "name": "idna/idnadata.py",
+            "compressed": 17109,
+            "raw": 92613
+          },
+          {
+            "name": "tqdm/std.py",
+            "compressed": 15903,
+            "raw": 58047
+          },
+          {
+            "name": "charset_normalizer/constant.py",
+            "compressed": 15789,
+            "raw": 60749
+          },
+          {
+            "name": "charset_normalizer-3.5.1.dist-info/METADATA",
+            "compressed": 15518,
+            "raw": 45868
+          }
+        ]
+      },
+      {
+        "name": "assets/chaquopy/requirements-x86_64.imy",
+        "bytes": 1749185,
+        "entryCount": 18,
+        "pyFiles": 0,
+        "pycFiles": 0,
+        "topEntries": [
+          {
+            "name": "_brotli.so",
+            "compressed": 422711,
+            "raw": 954536
+          },
+          {
+            "name": "chaquopy/lib/libc++_shared.so",
+            "compressed": 416043,
+            "raw": 1252080
+          },
+          {
+            "name": "chaquopy/lib/libfreetype.so",
+            "compressed": 344197,
+            "raw": 973640
+          },
+          {
+            "name": "PIL/_imaging.so",
+            "compressed": 218352,
+            "raw": 489712
+          },
+          {
+            "name": "chaquopy/lib/libjpeg_chaquopy.so",
+            "compressed": 119104,
+            "raw": 518784
+          },
+          {
+            "name": "lz4/frame/_frame.so",
+            "compressed": 90325,
+            "raw": 201280
+          },
+          {
+            "name": "lz4/block/_block.so",
+            "compressed": 73432,
+            "raw": 159000
+          },
+          {
+            "name": "lz4/_version.so",
+            "compressed": 34362,
+            "raw": 77624
+          },
+          {
+            "name": "PIL/_imagingft.so",
+            "compressed": 12372,
+            "raw": 31736
+          },
+          {
+            "name": "PIL/_imagingmath.so",
+            "compressed": 8540,
+            "raw": 29608
+          },
+          {
+            "name": "PIL/_imagingtk.so",
+            "compressed": 3983,
+            "raw": 9648
+          },
+          {
+            "name": "PIL/_imagingmorph.so",
+            "compressed": 3424,
+            "raw": 8184
+          },
+          {
+            "name": "PIL/",
+            "compressed": 2,
+            "raw": 0
+          },
+          {
+            "name": "chaquopy/",
+            "compressed": 2,
+            "raw": 0
+          }
+        ]
+      },
+      {
+        "name": "assets/chaquopy/stdlib-arm64-v8a.imy",
+        "bytes": 1381765,
+        "entryCount": 46,
+        "pyFiles": 0,
+        "pycFiles": 0,
+        "topEntries": [
+          {
+            "name": "unicodedata.so",
+            "compressed": 383255,
+            "raw": 1081616
+          },
+          {
+            "name": "_decimal.so",
+            "compressed": 101396,
+            "raw": 286968
+          },
+          {
+            "name": "_codecs_cn.so",
+            "compressed": 99584,
+            "raw": 145696
+          },
+          {
+            "name": "_codecs_jp.so",
+            "compressed": 92420,
+            "raw": 262472
+          },
+          {
+            "name": "pyexpat.so",
+            "compressed": 76206,
+            "raw": 208968
+          },
+          {
+            "name": "_codecs_kr.so",
+            "compressed": 74845,
+            "raw": 132496
+          },
+          {
+            "name": "_codecs_tw.so",
+            "compressed": 61945,
+            "raw": 107936
+          },
+          {
+            "name": "_ssl.so",
+            "compressed": 52529,
+            "raw": 175304
+          },
+          {
+            "name": "_pickle.so",
+            "compressed": 38411,
+            "raw": 107024
+          },
+          {
+            "name": "_sha3.so",
+            "compressed": 36474,
+            "raw": 62912
+          },
+          {
+            "name": "_codecs_hk.so",
+            "compressed": 33886,
+            "raw": 154136
+          },
+          {
+            "name": "_socket.so",
+            "compressed": 30652,
+            "raw": 82368
+          },
+          {
+            "name": "_sqlite3.so",
+            "compressed": 25825,
+            "raw": 77936
+          },
+          {
+            "name": "_elementtree.so",
+            "compressed": 22545,
+            "raw": 64064
+          }
+        ]
+      },
+      {
+        "name": "assets/chaquopy/stdlib-common.imy",
+        "bytes": 2950909,
+        "entryCount": 600,
+        "pyFiles": 0,
+        "pycFiles": 598,
+        "topEntries": [
+          {
+            "name": "_pydecimal.pyc",
+            "compressed": 51011,
+            "raw": 160723
+          },
+          {
+            "name": "pydoc.pyc",
+            "compressed": 37518,
+            "raw": 83473
+          },
+          {
+            "name": "inspect.pyc",
+            "compressed": 33426,
+            "raw": 80581
+          },
+          {
+            "name": "urllib/request.pyc",
+            "compressed": 31731,
+            "raw": 72589
+          },
+          {
+            "name": "unittest/mock.pyc",
+            "compressed": 31272,
+            "raw": 77354
+          },
+          {
+            "name": "tarfile.pyc",
+            "compressed": 29888,
+            "raw": 69709
+          },
+          {
+            "name": "email/_header_value_parser.pyc",
+            "compressed": 28496,
+            "raw": 79921
+          },
+          {
+            "name": "doctest.pyc",
+            "compressed": 28491,
+            "raw": 75962
+          },
+          {
+            "name": "_pyio.pyc",
+            "compressed": 28061,
+            "raw": 74067
+          },
+          {
+            "name": "zipfile.pyc",
+            "compressed": 26526,
+            "raw": 58502
+          },
+          {
+            "name": "typing.pyc",
+            "compressed": 24891,
+            "raw": 62408
+          },
+          {
+            "name": "argparse.pyc",
+            "compressed": 24376,
+            "raw": 62265
+          },
+          {
+            "name": "logging/__init__.pyc",
+            "compressed": 24362,
+            "raw": 65266
+          },
+          {
+            "name": "http/cookiejar.pyc",
+            "compressed": 23340,
+            "raw": 53630
+          }
+        ]
+      },
+      {
+        "name": "assets/chaquopy/stdlib-x86_64.imy",
+        "bytes": 1479997,
+        "entryCount": 46,
+        "pyFiles": 0,
+        "pycFiles": 0,
+        "topEntries": [
+          {
+            "name": "unicodedata.so",
+            "compressed": 384389,
+            "raw": 1083016
+          },
+          {
+            "name": "_decimal.so",
+            "compressed": 122413,
+            "raw": 323560
+          },
+          {
+            "name": "_codecs_cn.so",
+            "compressed": 100003,
+            "raw": 147216
+          },
+          {
+            "name": "_codecs_jp.so",
+            "compressed": 92895,
+            "raw": 264144
+          },
+          {
+            "name": "pyexpat.so",
+            "compressed": 92350,
+            "raw": 254696
+          },
+          {
+            "name": "_codecs_kr.so",
+            "compressed": 75088,
+            "raw": 133488
+          },
+          {
+            "name": "_codecs_tw.so",
+            "compressed": 62290,
+            "raw": 108672
+          },
+          {
+            "name": "_ssl.so",
+            "compressed": 57559,
+            "raw": 181200
+          },
+          {
+            "name": "_pickle.so",
+            "compressed": 45803,
+            "raw": 120992
+          },
+          {
+            "name": "_sha3.so",
+            "compressed": 39637,
+            "raw": 82392
+          },
+          {
+            "name": "_codecs_hk.so",
+            "compressed": 34203,
+            "raw": 154976
+          },
+          {
+            "name": "_socket.so",
+            "compressed": 33668,
+            "raw": 89544
+          },
+          {
+            "name": "_sqlite3.so",
+            "compressed": 29730,
+            "raw": 82256
+          },
+          {
+            "name": "_elementtree.so",
+            "compressed": 26257,
+            "raw": 68256
+          }
+        ]
+      }
+    ]
+  },
+  "foreignAbiPayload": {
+    "arm64ApkContainsX86": {
+      "bytes": 4884646,
+      "entries": [
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/_bz2.so",
+          "method": 0,
+          "crc": 2675798308,
+          "compressed": 90984,
+          "raw": 90984,
+          "localOffset": 20528152
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/_ctypes.so",
+          "method": 0,
+          "crc": 200891140,
+          "compressed": 189640,
+          "raw": 189640,
+          "localOffset": 20620136
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/_datetime.so",
+          "method": 0,
+          "crc": 1083703611,
+          "compressed": 96008,
+          "raw": 96008,
+          "localOffset": 20817096
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/_lzma.so",
+          "method": 0,
+          "crc": 1949346789,
+          "compressed": 240152,
+          "raw": 240152,
+          "localOffset": 20920072
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/_random.so",
+          "method": 0,
+          "crc": 506344499,
+          "compressed": 12888,
+          "raw": 12888,
+          "localOffset": 21162520
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/_sha512.so",
+          "method": 0,
+          "crc": 615138253,
+          "compressed": 24568,
+          "raw": 24568,
+          "localOffset": 21181016
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/_struct.so",
+          "method": 0,
+          "crc": 1720058478,
+          "compressed": 44288,
+          "raw": 44288,
+          "localOffset": 21209080
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/binascii.so",
+          "method": 0,
+          "crc": 3651201721,
+          "compressed": 31288,
+          "raw": 31288,
+          "localOffset": 21261568
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/java/chaquopy.so",
+          "method": 0,
+          "crc": 3325449744,
+          "compressed": 812544,
+          "raw": 812544,
+          "localOffset": 21297720
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/math.so",
+          "method": 0,
+          "crc": 931115099,
+          "compressed": 54416,
+          "raw": 54416,
+          "localOffset": 22111744
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/mmap.so",
+          "method": 0,
+          "crc": 2950957101,
+          "compressed": 24208,
+          "raw": 24208,
+          "localOffset": 22172816
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/x86_64/zlib.so",
+          "method": 0,
+          "crc": 755322431,
+          "compressed": 34480,
+          "raw": 34480,
+          "localOffset": 22208144
+        },
+        {
+          "name": "assets/chaquopy/requirements-x86_64.imy",
+          "method": 0,
+          "crc": 3675131960,
+          "compressed": 1749185,
+          "raw": 1749185,
+          "localOffset": 25899346
+        },
+        {
+          "name": "assets/chaquopy/stdlib-x86_64.imy",
+          "method": 0,
+          "crc": 54390002,
+          "compressed": 1479997,
+          "raw": 1479997,
+          "localOffset": 31981405
+        }
+      ]
+    },
+    "x86ApkContainsArm64": {
+      "bytes": 4561482,
+      "entries": [
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/_bz2.so",
+          "method": 0,
+          "crc": 2691658994,
+          "compressed": 76424,
+          "raw": 76424,
+          "localOffset": 18672766
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/_ctypes.so",
+          "method": 0,
+          "crc": 1867258497,
+          "compressed": 203128,
+          "raw": 203128,
+          "localOffset": 18754184
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/_datetime.so",
+          "method": 0,
+          "crc": 601405879,
+          "compressed": 91136,
+          "raw": 91136,
+          "localOffset": 18962808
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/_lzma.so",
+          "method": 0,
+          "crc": 4244889353,
+          "compressed": 209728,
+          "raw": 209728,
+          "localOffset": 19063808
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/_random.so",
+          "method": 0,
+          "crc": 2910186440,
+          "compressed": 12112,
+          "raw": 12112,
+          "localOffset": 19280704
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/_sha512.so",
+          "method": 0,
+          "crc": 564210352,
+          "compressed": 21280,
+          "raw": 21280,
+          "localOffset": 19296080
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/_struct.so",
+          "method": 0,
+          "crc": 3322780933,
+          "compressed": 40144,
+          "raw": 40144,
+          "localOffset": 19321632
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/binascii.so",
+          "method": 0,
+          "crc": 517244736,
+          "compressed": 26760,
+          "raw": 26760,
+          "localOffset": 19373264
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/java/chaquopy.so",
+          "method": 0,
+          "crc": 1035396023,
+          "compressed": 820024,
+          "raw": 820024,
+          "localOffset": 19409032
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/math.so",
+          "method": 0,
+          "crc": 628878630,
+          "compressed": 50880,
+          "raw": 50880,
+          "localOffset": 20235064
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/mmap.so",
+          "method": 0,
+          "crc": 1398509330,
+          "compressed": 22952,
+          "raw": 22952,
+          "localOffset": 20301504
+        },
+        {
+          "name": "assets/chaquopy/bootstrap-native/arm64-v8a/zlib.so",
+          "method": 0,
+          "crc": 3971225189,
+          "compressed": 31768,
+          "raw": 31768,
+          "localOffset": 20339112
+        },
+        {
+          "name": "assets/chaquopy/requirements-arm64-v8a.imy",
+          "method": 0,
+          "crc": 1265139063,
+          "compressed": 1573381,
+          "raw": 1573381,
+          "localOffset": 22691788
+        },
+        {
+          "name": "assets/chaquopy/stdlib-arm64-v8a.imy",
+          "method": 0,
+          "crc": 2120459905,
+          "compressed": 1381765,
+          "raw": 1381765,
+          "localOffset": 27501145
+        }
+      ]
+    }
+  },
+  "fmod": {
+    "allBytes": 5799291,
+    "desktopWindowsMacBytes": 3193211,
+    "rawBytes": 12381948,
+    "entries": [
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Darwin/libfmod.dylib",
+        "compressed": 1143553,
+        "raw": 2430928
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/arm/libfmod.so",
+        "compressed": 609225,
+        "raw": 1214580
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/arm64/libfmod.so",
+        "compressed": 612175,
+        "raw": 1254672
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/x86/libfmod.so",
+        "compressed": 692134,
+        "raw": 1625248
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/x86_64/libfmod.so",
+        "compressed": 692546,
+        "raw": 1569032
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Windows/arm/fmod.dll",
+        "compressed": 564813,
+        "raw": 1071104
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Windows/x64/fmod.dll",
+        "compressed": 788439,
+        "raw": 1724416
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Windows/x86/fmod.dll",
+        "compressed": 696406,
+        "raw": 1491968
+      }
+    ],
+    "linuxElfDependencies": [
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/arm/libfmod.so",
+        "needed": [
+          "libdl.so.2",
+          "librt.so.1",
+          "libstdc++.so.6",
+          "libm.so.6",
+          "libgcc_s.so.1",
+          "libpthread.so.0",
+          "libc.so.6"
+        ],
+        "debugSections": [],
+        "staticSymbolsBytes": 0
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/arm64/libfmod.so",
+        "needed": [
+          "libdl.so.2",
+          "librt.so.1",
+          "libstdc++.so.6",
+          "libm.so.6",
+          "libgcc_s.so.1",
+          "libpthread.so.0",
+          "libc.so.6"
+        ],
+        "debugSections": [],
+        "staticSymbolsBytes": 0
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/x86/libfmod.so",
+        "needed": [
+          "libdl.so.2",
+          "librt.so.1",
+          "libstdc++.so.6",
+          "libm.so.6",
+          "libgcc_s.so.1",
+          "libpthread.so.0",
+          "libc.so.6"
+        ],
+        "debugSections": [],
+        "staticSymbolsBytes": 0
+      },
+      {
+        "name": "vendor/UnityPy/lib/FMOD/Linux/x86_64/libfmod.so",
+        "needed": [
+          "libdl.so.2",
+          "librt.so.1",
+          "libstdc++.so.6",
+          "libm.so.6",
+          "libpthread.so.0",
+          "libc.so.6"
+        ],
+        "debugSections": [],
+        "staticSymbolsBytes": 0
+      }
+    ]
+  },
+  "nativeStripCandidates": [
+    {
+      "name": "lib/arm64-v8a/libastcenc.so",
+      "apkEntryBytes": 1713680,
+      "debugBytes": 985468,
+      "staticSymbolsBytes": 205824,
+      "debugSections": [
+        {
+          "name": ".debug_loc",
+          "bytes": 248369
+        },
+        {
+          "name": ".debug_abbrev",
+          "bytes": 21667
+        },
+        {
+          "name": ".debug_info",
+          "bytes": 391838
+        },
+        {
+          "name": ".debug_ranges",
+          "bytes": 60912
+        },
+        {
+          "name": ".debug_str",
+          "bytes": 114913
+        },
+        {
+          "name": ".debug_line",
+          "bytes": 147769
+        }
+      ]
+    },
+    {
+      "name": "lib/arm64-v8a/libtexture2ddecoder.so",
+      "apkEntryBytes": 1042472,
+      "debugBytes": 310785,
+      "staticSymbolsBytes": 196534,
+      "debugSections": [
+        {
+          "name": ".debug_abbrev",
+          "bytes": 6257
+        },
+        {
+          "name": ".debug_info",
+          "bytes": 135469
+        },
+        {
+          "name": ".debug_ranges",
+          "bytes": 8272
+        },
+        {
+          "name": ".debug_str",
+          "bytes": 51779
+        },
+        {
+          "name": ".debug_line",
+          "bytes": 108820
+        },
+        {
+          "name": ".debug_loc",
+          "bytes": 188
+        }
+      ]
+    }
+  ],
+  "nativeDeflateWhatIf": {
+    "storedBytes": 9557096,
+    "deflatedBytes": 3694544,
+    "onlyInMemoryExperiment": true,
+    "netSavingsNotAdditiveWithStripping": true
+  },
+  "priorityCandidatePool": {
+    "bytes": 12382548,
+    "MiB": 11.809,
+    "definition": "foreign-ABI Chaquopy payload + FMOD binary compressed bytes + selected ELF debug/static symbol sections; not a promised final size reduction"
+  }
+}

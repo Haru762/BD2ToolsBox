@@ -1,0 +1,64 @@
+{
+  "manifestVersion": 1,
+  "createdAt": "2026-09-15",
+  "createdByTask": "T01",
+  "sourceRepo": "D:/bd2 mod/bdroid_src",
+  "sourceHead": "b83c1c076e95942b317649273fba559d9d3af5ca",
+  "sourceHeadShort": "b83c1c0",
+  "worktree": "D:/bd2 mod/worktrees/bdroid-android-refactor",
+  "branch": "refactor/android-architecture",
+  "note": "唯一有效执行清单为 2026-09-15-android-refactor-todo.md；两条 2026-09-14 文档仅作历史参考，不再维护。",
+  "files": [
+    {
+      "relativePath": "docs/superpowers/plans/2026-09-15-android-refactor-todo.md",
+      "role": "唯一执行清单（2026-09-15 交接修订版）",
+      "sha256": "48063b55ef1a47217d74a7e0f876f5d1b00999840df26a7189db67e9afa4d269"
+    },
+    {
+      "relativePath": "docs/superpowers/plans/2026-09-14-android-refactor-todo.md",
+      "role": "历史详细清单（已停用，仅供追溯差异）",
+      "sha256": "16e5381e639d3bf07726e4234a41766b4bc2caac084d8b9bfd7e7c56127e3dc2"
+    },
+    {
+      "relativePath": "docs/superpowers/plans/2026-09-14-android-refactor-plan.md",
+      "role": "历史源码盘点与粗分期（已停用）",
+      "sha256": "ac48b13803c644d5c556d7161acfb84f7f946c0e3fca17e5ee2e40ee39c39530"
+    },
+    {
+      "relativePath": "docs/research/2026-09-14-dependency-modernization.md",
+      "role": "工具链候选与支持约束研究",
+      "sha256": "b73f5bf6deb077968d5b2b7b9b01e018221c0360ebd3201e983cc5ff83ec207c"
+    },
+    {
+      "relativePath": "docs/research/2026-09-14-additional-findings.md",
+      "role": "安全与业务正确性问题证据（R1–R8）",
+      "sha256": "118cf05b649dd7de5c31a49e0734a4bda1625396f94f19371ae09b16540410ec"
+    },
+    {
+      "relativePath": "docs/research/2026-09-14-apk-size-audit.md",
+      "role": "历史 APK 包体实测口径",
+      "sha256": "4cfef0624091104a22b4ee4be450b877005cdc46c3af78e7b3078bc0bc8883e0"
+    },
+    {
+      "relativePath": "docs/research/2026-09-14-apk-size-inventory.json",
+      "role": "历史 APK 条目级测量数据",
+      "sha256": "b62c34239b6a262085b8ec1c025c866263074d574d399edc0c436da264eacc3f"
+    },
+    {
+      "relativePath": "docs/research/2026-09-14-r8-platform-constraints.md",
+      "role": "SDK、前台服务与 native 平台约束核对",
+      "sha256": "bfc3588b1a9f2c4da2ccbde7b84b547a59919b7fba6ae56baa32ec06c3aed2ae"
+    },
+    {
+      "relativePath": "docs/research/2026-09-14-ui-review-and-library-options.md",
+      "role": "UI 评审与已确认交互/壁纸原则",
+      "sha256": "fc4a0227412d2773ba0bf0b266ff4569f962475d4a713be2de20d26943f0bc9b"
+    }
+  ],
+  "notCarried": [
+    {
+      "path": ".impeccable/",
+      "reason": "非应用源码、非开工必需材料，按 §0.2 不加入携带清单"
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "manifestVersion": 1,
+  "createdAt": "2026-09-15",
+  "createdByTask": "T01",
+  "sourceCommit": "b83c1c076e95942b317649273fba559d9d3af5ca",
+  "note": "记录本地保全产物的类别、相对位置、字节、SHA-256、来源与归属。APK/mapping/符号/真实数据本身不提交（/local/ 已忽略）。未核对的字段如实标注，不猜测。",
+  "categories": [
+    {
+      "id": "historical-0.2.16",
+      "role": "历史 0.2.16 发布原件（T01 保全；T02 核对签名/构建身份；T03 冻结清单）",
+      "localDir": "local/refactor-artifacts/historical-0.2.16",
+      "gitTracked": false,
+      "items": [
+        {
+          "file": "app-arm64-v8a-release.apk",
+          "bytes": 34095289,
+          "sha256": "a52fa13909e7d4b8d79dd3b4d2ba4054693fdd9324c68fc850a0785bd713bee8",
+          "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+          "version": "0.2.16",
+          "abi": "arm64-v8a",
+          "certFingerprint": "未核对（T02 负责）",
+          "sourceVerifiedAt": "2026-09-15"
+        },
+        {
+          "file": "app-x86_64-release.apk",
+          "bytes": 33947733,
+          "sha256": "6bfa355b40b5483feec1104d8a017b2bbdceeca6f1f1d2cc43ab30a718bb2321",
+          "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-x86_64-release.apk",
+          "version": "0.2.16",
+          "abi": "x86_64",
+          "certFingerprint": "未核对（T02 负责）",
+          "sourceVerifiedAt": "2026-09-15"
+        },
+        {
+          "file": "mapping.txt",
+          "bytes": 35649626,
+          "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+          "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/mapping/release/mapping.txt",
+          "version": "0.2.16",
+          "abi": "通用（R8 mapping）",
+          "certFingerprint": "不适用",
+          "sourceVerifiedAt": "2026-09-15"
+        }
+      ]
+    },
+    {
+      "id": "rebuilt-original",
+      "role": "原工具链重建包（T02 生成后登记；不替代历史原件）",
+      "localDir": "local/refactor-artifacts/rebuilt-original",
+      "gitTracked": false,
+      "items": []
+    },
+    {
+      "id": "pre-shrink",
+      "role": "本轮专项裁剪前包（T48 冻结后登记，作逐项 A/B 基线）",
+      "localDir": "local/refactor-artifacts/pre-shrink",
+      "gitTracked": false,
+      "items": []
+    },
+    {
+      "id": "final",
+      "role": "最终交付与诊断材料（T51/T52/T61 登记）",
+      "localDir": "local/refactor-artifacts/final",
+      "gitTracked": false,
+      "items": []
+    }
+  ],
+  "localTestInputs": [
+    {
+      "file": "local/refactor-inputs/catalog-alpha.json",
+      "bytes": 63045832,
+      "sha256": "98fc0a1e47552116c6398bd7656b87b451adfcd97f5b3de7ebe5428314f10f3f",
+      "sourcePath": "D:/bd2 mod/测试用/com.neowizgames.game.browndust2/files/com.unity.addressables/catalog_alpha.json",
+      "purpose": "test_resolution_catalog_fallback.py 的外部真实 catalog 输入（T04 改为经 BD2_TEST_CATALOG 提供路径）",
+      "gitTracked": false,
+      "sourceVerifiedAt": "2026-09-15"
+    },
+    {
+      "file": "local/refactor-inputs/wiki-v2-detail-2238.source.json",
+      "bytes": 76902,
+      "sha256": "d8de5897bb5a4bfbb78d0bef111dba4c94fa8c1cf1d645869110a60fe4f4a9e6",
+      "sourcePath": "D:/bd2 mod/_大杂烩工作区/wiki-v2-detail-2238.json",
+      "purpose": "GamekeeBattleV2Renderer 测试的真实接口样本源件；T04 从它派生脱敏 classpath 夹具（派生夹具记录自己的哈希）",
+      "gitTracked": false,
+      "sourceVerifiedAt": "2026-09-15"
+    }
+  ]
+}
