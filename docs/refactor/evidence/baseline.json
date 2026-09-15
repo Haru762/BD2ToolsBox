@@ -501,34 +501,46 @@
         "InstalledModRepository.kt:23-83"
       ]
     },
-    "snapshotReadFailure": {
-      "knownReadFailure": true,
-      "status": "DISCARDED_BY_LOADER",
-      "mustNotBeCountedAsReadable": true,
-      "conclusionSource": "从源码与 JSON 形状推断；T03 未执行 Kotlin loader 实跑（只读、不构建）",
-      "detail": "历史 release 快照顶层键为 a/b/c，而 ModListSnapshot 读 version/savedAt/mods/sourceDirs（Gson 以 Unsafe 造实例，不走 Kotlin 默认值），三条路径都通向 emptyList()。",
-      "paths": [
-        {
-          "step": "版本闸门（主要路径，显式判定而非异常兜底）",
-          "evidence": "MainViewModel.kt:3077-3080",
-          "detail": "要求 snapshot.version == SNAPSHOT_VERSION（常量 1，见 MainViewModel.kt:106）；JSON 无 version 键，Int 字段落成 0，0 != 1 命中 Log.i「丢弃」并显式 return emptyList()"
-        },
-        {
-          "step": "sourceDirs 闸门",
-          "evidence": "MainViewModel.kt:3081",
-          "detail": "要求 snapshot.sourceDirs == _modSourceDirs.value；键缺失落成 null，判不等即 return emptyList()"
-        },
-        {
-          "step": "mods 空值兜底（第二道防线）",
-          "evidence": "MainViewModel.kt:3084-3087",
-          "detail": "mods 在 JSON 里缺失时 Gson 给 null，非空 List 被违反，mapNotNull 解引用抛 NPE，由 :3085-3087 catch 兜成 emptyList()"
-        }
-      ],
-      "successorTasks": [
-        "T10",
-        "T35",
-        "T36"
-      ]
+    "snapshotReadBehavior": {
+      "readStatus": "BUILD_DEPENDENT",
+      "mustNotBeCountedAsReadable": false,
+      "conclusionSource": "从发布产物（mapping.txt 与 classes.dex 字符串池）推断；T03 未执行 Kotlin loader 实跑（只读、不构建）。第一轮曾误判为 DISCARDED_BY_LOADER，第二轮以产物证据推翻并更正，见 T03.md §14",
+      "detail": "同一份历史快照在两种构建下结论相反：0.2.16 **release**（R8 之后）能读出它；源码/未混淆构建会丢弃它。任何断言都必须先钉住构建变体。",
+      "releaseReadsIt": {
+        "releaseEvidence": [
+          "mapping.txt: ModListSnapshot 只剩 3 个字段 savedAt->a / mods->b / sourceDirs->c，无 version 条目；合成构造器 <init>(int,long,List,List) 的 residualsignature 实为 (JLjava/util/List;Ljava/util/ArrayList;)V",
+          "mapping.txt: loadModListSnapshot 映射到的源码行为 3070/3071/3073/3074/3075 后直接跳到 3081，3077-3080 无任何映射——版本闸门整块不在产物里",
+          "classes.dex（历史包与重建包均 2877404 B，合并 SHA-256 前 16 位 5e6403de77cc3eb9）字符串池含「按没有快照处理」（MainViewModel.kt:3086 的 catch），不含「快照版本」「丢弃」（:3078 的 Log.i）",
+          "mapping.txt: com.bd2toolsbox.data.model.ModInfo 未被混淆（类名与 getter 名保持原样），故 b 内条目能完整反序列化",
+          "release 下仅剩两道闸门 MainViewModel.kt:3081（比对 sourceDirs）与 :3084（mods 的 mapNotNull）；本夹具的 c（两个源目录）与 b（5 条完整条目）均通过"
+        ],
+        "survivingGates": [
+          {
+            "step": "sourceDirs 闸门",
+            "evidence": "MainViewModel.kt:3081",
+            "detail": "要求 snapshot.sourceDirs == _modSourceDirs.value；本夹具 c 匹配，通过"
+          },
+          {
+            "step": "mods 反序列化",
+            "evidence": "MainViewModel.kt:3084",
+            "detail": "snapshot.mods.mapNotNull { it?.let(::normalizeSnapshotEntry) }；本夹具 b 为 5 条完整条目，通过"
+          }
+        ]
+      },
+      "unminifiedDiscardsIt": {
+        "evidence": "MainViewModel.kt:3077-3080",
+        "detail": "源码要求 snapshot.version == SNAPSHOT_VERSION（常量 1，见 MainViewModel.kt:106）；Gson 以 Unsafe 造实例、不走 Kotlin 默认值，缺 version 键时 Int 字段落成 0，0 != 1 命中 Log.i「丢弃」后显式 return emptyList()。该闸门在 release 中被 R8 常量折叠移除（version 只被这一处使用，折叠后即成死字段）。",
+        "corroboration": "classes.dex 字符串池含常量折叠后的字面量 ModListSnapshot(version=1，说明 version 在 release 中已是编译期常量而非运行时字段"
+      },
+      "handoff": {
+        "tasks": [
+          "T10",
+          "T35",
+          "T36"
+        ],
+        "requirement": "不再被要求「修一个会丢弃旧快照的 loader」——release 根本不丢弃。要处理的是构建相关分歧：断言「旧快照被丢弃/被接受」的测试必须显式声明跑在 debug 还是 minified release，否则同一份夹具得出相反结论。",
+        "alsoNotStable": "快照顶层键 a/b/c 是 R8 输出，不得当成跨版本稳定协议冻结（见 fixture-manifest.json 的 knownObfuscatedMapping）。"
+      }
     },
     "checkpoint": {
       "separateCheckpointFile": false,

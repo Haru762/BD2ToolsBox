@@ -350,23 +350,28 @@
         "a": "MainViewModel.ModListSnapshot.savedAt",
         "b": "MainViewModel.ModListSnapshot.mods",
         "c": "MainViewModel.ModListSnapshot.sourceDirs",
-        "version": "历史 release 中不存在"
+        "version": "历史 release 中不存在——R8 消除了该字段"
       },
-      "readStatus": "DISCARDED_BY_LOADER",
-      "knownReadFailure": {
-        "summary": "文件可得、哈希可核，但当前 loader 会丢弃它，因此**不得记作「可读」**。",
-        "conclusionSource": "从源码与 JSON 形状推断；T03 未执行 Kotlin loader 实跑（只读、不构建）",
-        "paths": [
-          "MainViewModel.kt:3077-3080 —— 要求 version == SNAPSHOT_VERSION(1，见 :106)；无 version 键、Int 落成 0，命中显式 Log.i 丢弃分支（主要路径，非异常兜底）",
-          "MainViewModel.kt:3081 —— sourceDirs 键缺失落成 null，判不等即 return emptyList()",
-          "MainViewModel.kt:3084-3087 —— mods 缺失时 Gson 给 null，mapNotNull 抛 NPE，由 catch 兜成 emptyList()"
+      "readStatus": "BUILD_DEPENDENT",
+      "readBehavior": {
+        "summary": "同一份 JSON 在两种构建下结论**相反**：0.2.16 release（R8 之后）能读出它；源码/未混淆（debug）构建会丢弃它。断言必须钉住构建变体，否则会得出相反结论。",
+        "releaseReadsIt": [
+          "mapping.txt: ModListSnapshot 只剩 3 个字段 savedAt->a / mods->b / sourceDirs->c，无 version 条目；合成构造器 <init>(int,long,List,List) 的 residualsignature 实为 (JLjava/util/List;Ljava/util/ArrayList;)V",
+          "mapping.txt: loadModListSnapshot 映射到的源码行为 3070/3071/3073/3074/3075 后直接跳到 3081，3077-3080 无任何映射——版本闸门整块不在产物里",
+          "classes.dex（历史包与重建包均 2877404 B，合并 SHA-256 前 16 位 5e6403de77cc3eb9）字符串池含「按没有快照处理」（MainViewModel.kt:3086 的 catch），不含「快照版本」「丢弃」（:3078 的 Log.i）",
+          "mapping.txt: com.bd2toolsbox.data.model.ModInfo 未被混淆（类名与 getter 名保持原样），故 b 内条目能完整反序列化",
+          "release 下仅剩两道闸门：MainViewModel.kt:3081（比对 sourceDirs）与 :3084（mods 的 mapNotNull）；本夹具的 c（两个源目录）与 b（5 条完整条目）均通过"
         ],
-        "mustNotBeCountedAsReadable": true,
-        "successorTasks": [
+        "unminifiedDiscardsIt": "MainViewModel.kt:3077-3080 要求 version == SNAPSHOT_VERSION(1，见 :106)；Gson 以 Unsafe 造实例、不走 Kotlin 默认值，缺 version 键时 Int 落成 0，0 != 1 命中 Log.i 丢弃分支后显式 return emptyList()。该闸门在 release 中被常量折叠移除。",
+        "constFoldCorroboration": "classes.dex 字符串池含常量折叠后的字面量 ModListSnapshot(version=1，说明 version 在 release 中已是编译期常量而非运行时字段",
+        "conclusionSource": "从发布产物（mapping.txt 与 classes.dex 字符串池）推断；T03 未执行 Kotlin loader 实跑（只读、不构建）。第一轮曾误判为 DISCARDED_BY_LOADER，第二轮以产物证据推翻并更正，见 docs/refactor/evidence/T03.md §14",
+        "mustNotBeCountedAsReadable": false,
+        "handoffTasks": [
           "T10",
           "T35",
           "T36"
-        ]
+        ],
+        "handoffRequirement": "不再被要求「修一个会丢弃旧快照的 loader」——release 根本不丢弃。要处理的是构建相关分歧：断言「旧快照被丢弃/被接受」的测试必须显式声明跑在 debug 还是 minified release。"
       }
     }
   ],
@@ -375,16 +380,18 @@
       "id": "repo.wiki-v2-detail-2238",
       "storageClass": "repo-resource",
       "targetPath": "app/src/test/resources/fixtures/wiki/wiki-v2-detail-2238.json",
+      "bytes": 55344,
+      "sha256": "3b3af73d74e37ba40943e811e1ef3a1be3b118acb44dcfcdcee1c3049cd97829",
       "sourceFixtureIds": [
         "external.wiki-v2-detail-2238-source"
       ],
       "producerTask": "T04",
-      "redaction": "保留真实回合、站位、行动与必要内容字段；去除来源 URL、作者或账号元数据",
+      "redaction": "删 meta（request/trace id）、author（账号/头像/IP 归属）、uid 与计数类字段；data 只留渲染器实读的 id/title/desc/content；content 内 252 处 cdnimg-v2.gamekee.com 图片 URL 全部置空。保留真实回合、站位、行动与技能名断言所需字段。",
       "usedBy": [
-        "GamekeeBattleV2RendererTest"
+        "app/src/test/java/com/bd2toolsbox/data/repository/GamekeeBattleV2RendererTest.kt"
       ],
       "requiredness": "g0-required",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "config.catalog-alpha",
@@ -399,7 +406,8 @@
         "tests/test_resolution_catalog_fallback.py"
       ],
       "requiredness": "g0-required",
-      "status": "planned"
+      "status": "available",
+      "deliveredVia": "tools/verification.ps1 Test-Bd2Python 注入 BD2_TEST_CATALOG / BD2_TEST_CATALOG_SHA256；测试模块顶层读取（类装饰器在导入期求值，事后 monkeypatch 无效）"
     }
   ],
   "gaps": [
@@ -535,8 +543,9 @@
     }
   ],
   "coverageNotes": [
-    "T02 的 4 个 RealCatalogCompatTest 与 2 个 DatingPrefabBridgeTest skip 在 T04 通过 configuration key 实际运行前不算覆盖。",
-    "mod_list_snapshot.json 的 a/b/c 只作为 0.2.16 release 兼容输入；不能把 R8 改名后的字段名当作跨版本稳定协议。",
+    "T02 的 4 个 RealCatalogCompatTest 与 2 个 DatingPrefabBridgeTest skip 已在 T04 通过 config.catalog-alpha 实际运行并转绿：同一命令实测 46 tests / 0 skipped（见 docs/refactor/evidence/T04.md）。",
+    "夹具定位仍然是「可失败」的：BD2_TEST_CATALOG 指向的文件缺失、哈希不符或未配置时 tools/run_python_tests.py 一律非零（fixture-missing / fixture-hash-mismatch / fixture-not-configured），且必需用例被 skip 也算失败——skip 不抵扣必需覆盖。",
+    "mod_list_snapshot.json 的 a/b/c 只作为 0.2.16 release 兼容输入；不能把 R8 改名后的字段名当作跨版本稳定协议。该快照的可读性**取决于构建变体**（release 可读、未混淆构建丢弃），断言必须钉住变体，见该 fixture 的 readBehavior。",
     "快照损坏只能使快照失效；不得清空 installed_mods.json、兑换历史、隐藏列表或用户设置。",
     "安装占用已测但仅为 x86_64 模拟器口径（33292 KiB APK + 173784 KiB 应用数据，相加 207076 KiB 才是总占用，见 baseline.json.sizeSemantics.installedBytes）；运行内存 NOT_MEASURED。真机口径属 T51/T52/T61。"
   ]
