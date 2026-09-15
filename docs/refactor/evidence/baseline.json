@@ -1,0 +1,696 @@
+{
+  "schemaVersion": 1,
+  "baselineId": "T03-2026-09-15",
+  "createdAt": "2026-09-15",
+  "createdByTask": "T03",
+  "branch": "refactor/android-architecture",
+  "sourceCommit": "03805d1be561112d3c0bf0914d6be1280dfffeab",
+  "scope": [
+    "冻结历史 0.2.16 release 包与同源重建包的文件级、条目级、签名和 mapping 基线",
+    "冻结已保全旧配置、显示快照和可重建缓存的结构、哈希与迁移边界",
+    "列出九类核心行为的输入、预期、覆盖状态和已知缺口"
+  ],
+  "artifacts": {
+    "historical": {
+      "versionName": "0.2.16",
+      "versionCode": 17,
+      "applicationId": "com.bd2toolsbox",
+      "signatureSchemeVerified": "APK Signature Scheme v2",
+      "certificateSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+      "mapping": {
+        "bytes": 35649626,
+        "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+        "compiler": "R8",
+        "compilerVersion": "8.4.26",
+        "mapSchemaVersion": "2.2",
+        "minApi": 29
+      },
+      "packages": [
+        {
+          "abi": "arm64-v8a",
+          "bytes": 34095289,
+          "sha256": "a52fa13909e7d4b8d79dd3b4d2ba4054693fdd9324c68fc850a0785bd713bee8",
+          "zipEntries": 189,
+          "zipPayloadCompressedBytes": 33840209,
+          "containerOverheadBytes": 255080
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 33947733,
+          "sha256": "6bfa355b40b5483feec1104d8a017b2bbdceeca6f1f1d2cc43ab30a718bb2321",
+          "zipEntries": 188,
+          "zipPayloadCompressedBytes": 33707681,
+          "containerOverheadBytes": 240052
+        }
+      ]
+    },
+    "rebuiltOriginal": {
+      "buildEnvironment": {
+        "gradle": "8.9",
+        "agp": "8.4.1",
+        "kotlin": "1.9.0",
+        "chaquopy": "15.0.1",
+        "jdk": "17.0.12",
+        "buildPython": "3.11.9",
+        "targetPython": "3.8"
+      },
+      "packages": [
+        {
+          "abi": "arm64-v8a",
+          "bytes": 34095289,
+          "sha256": "a2ce953b7379e72a4707a7b2d649f27f883dd027af9a89c63a6ed4eb0066cd7d",
+          "zipEntries": 189,
+          "zipPayloadCompressedBytes": 33838637,
+          "containerOverheadBytes": 256652
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 33947733,
+          "sha256": "6e5e8c3b35bf55fe786ea0d3f4c124d9532d1f7cc5aba9d2cec534e80a5adbfc",
+          "zipEntries": 188,
+          "zipPayloadCompressedBytes": 33706109,
+          "containerOverheadBytes": 241624
+        },
+        {
+          "abi": "universal-diagnostic-only",
+          "bytes": 43565691,
+          "sha256": "c88873b27705780b6170db30ca1e958357e83086dd7a3a5433f398afc4f2c516",
+          "zipEntries": 195,
+          "zipPayloadCompressedBytes": 43263205,
+          "containerOverheadBytes": 302486
+        }
+      ],
+      "mapping": {
+        "bytes": 35649626,
+        "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+        "byteEquivalentToHistorical": true
+      },
+      "certificateSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1"
+    }
+  },
+  "apkClassification": {
+    "method": {
+      "unit": "ZIP central-directory compressed payload bytes",
+      "containerOverhead": "APK bytes minus the sum of compressed payload bytes; includes local headers, names, alignment extras, Signing Block, central directory and EOCD",
+      "dex": "classes*.dex",
+      "androidResources": "resources.arsc plus res/**",
+      "chaquopy": "assets/chaquopy/**",
+      "nativeLibs": "lib/**",
+      "webViewAssets": "assets/spine-viewer/**",
+      "otherAssets": "remaining assets/**",
+      "other": "AndroidManifest.xml, META-INF/** and remaining metadata"
+    },
+    "packages": [
+      {
+        "packageId": "historical-arm64-v8a",
+        "groups": {
+          "DEX": {
+            "entries": 1,
+            "compressed": 2877404,
+            "raw": 2877404
+          },
+          "Android resources": {
+            "entries": 79,
+            "compressed": 437346,
+            "raw": 448947
+          },
+          "Chaquopy": {
+            "entries": 34,
+            "compressed": 20798045,
+            "raw": 20932410
+          },
+          "native": {
+            "entries": 7,
+            "compressed": 9557096,
+            "raw": 9557096
+          },
+          "WebView assets": {
+            "entries": 5,
+            "compressed": 132192,
+            "raw": 482187
+          },
+          "Other assets": {
+            "entries": 4,
+            "compressed": 23582,
+            "raw": 156040
+          },
+          "Manifest/metadata/other": {
+            "entries": 59,
+            "compressed": 14544,
+            "raw": 41557
+          }
+        }
+      },
+      {
+        "packageId": "historical-x86_64",
+        "groups": {
+          "DEX": {
+            "entries": 1,
+            "compressed": 2877404,
+            "raw": 2877404
+          },
+          "Android resources": {
+            "entries": 79,
+            "compressed": 437346,
+            "raw": 448947
+          },
+          "Chaquopy": {
+            "entries": 34,
+            "compressed": 20798045,
+            "raw": 20932410
+          },
+          "native": {
+            "entries": 6,
+            "compressed": 9424568,
+            "raw": 9424568
+          },
+          "WebView assets": {
+            "entries": 5,
+            "compressed": 132192,
+            "raw": 482187
+          },
+          "Other assets": {
+            "entries": 4,
+            "compressed": 23582,
+            "raw": 156040
+          },
+          "Manifest/metadata/other": {
+            "entries": 59,
+            "compressed": 14544,
+            "raw": 41557
+          }
+        }
+      },
+      {
+        "packageId": "rebuilt-arm64-v8a",
+        "groups": {
+          "DEX": {
+            "entries": 1,
+            "compressed": 2877404,
+            "raw": 2877404
+          },
+          "Android resources": {
+            "entries": 79,
+            "compressed": 437346,
+            "raw": 448947
+          },
+          "Chaquopy": {
+            "entries": 34,
+            "compressed": 20796546,
+            "raw": 20930912
+          },
+          "native": {
+            "entries": 7,
+            "compressed": 9557096,
+            "raw": 9557096
+          },
+          "WebView assets": {
+            "entries": 5,
+            "compressed": 132192,
+            "raw": 482187
+          },
+          "Other assets": {
+            "entries": 4,
+            "compressed": 23582,
+            "raw": 156040
+          },
+          "Manifest/metadata/other": {
+            "entries": 59,
+            "compressed": 14471,
+            "raw": 41479
+          }
+        }
+      },
+      {
+        "packageId": "rebuilt-x86_64",
+        "groups": {
+          "DEX": {
+            "entries": 1,
+            "compressed": 2877404,
+            "raw": 2877404
+          },
+          "Android resources": {
+            "entries": 79,
+            "compressed": 437346,
+            "raw": 448947
+          },
+          "Chaquopy": {
+            "entries": 34,
+            "compressed": 20796546,
+            "raw": 20930912
+          },
+          "native": {
+            "entries": 6,
+            "compressed": 9424568,
+            "raw": 9424568
+          },
+          "WebView assets": {
+            "entries": 5,
+            "compressed": 132192,
+            "raw": 482187
+          },
+          "Other assets": {
+            "entries": 4,
+            "compressed": 23582,
+            "raw": 156040
+          },
+          "Manifest/metadata/other": {
+            "entries": 59,
+            "compressed": 14471,
+            "raw": 41479
+          }
+        }
+      },
+      {
+        "packageId": "rebuilt-universal",
+        "groups": {
+          "DEX": {
+            "entries": 1,
+            "compressed": 2877404,
+            "raw": 2877404
+          },
+          "Android resources": {
+            "entries": 79,
+            "compressed": 437346,
+            "raw": 448947
+          },
+          "Chaquopy": {
+            "entries": 34,
+            "compressed": 20796546,
+            "raw": 20930912
+          },
+          "native": {
+            "entries": 13,
+            "compressed": 18981664,
+            "raw": 18981664
+          },
+          "WebView assets": {
+            "entries": 5,
+            "compressed": 132192,
+            "raw": 482187
+          },
+          "Other assets": {
+            "entries": 4,
+            "compressed": 23582,
+            "raw": 156040
+          },
+          "Manifest/metadata/other": {
+            "entries": 59,
+            "compressed": 14471,
+            "raw": 41479
+          }
+        }
+      }
+    ]
+  },
+  "apkEntryComparison": {
+    "arm64-v8a": {
+      "entryNameSetsEqual": true,
+      "commonEntries": 189,
+      "metadataDifferenceCount": 10,
+      "payloadDifferenceCount": 3,
+      "payloadDifferencePaths": [
+        "META-INF/version-control-info.textproto",
+        "assets/chaquopy/app.imy",
+        "assets/chaquopy/build.json"
+      ],
+      "compressedPayloadDelta": -1572,
+      "zeroAlignmentPaddingDelta": 1572,
+      "eocdByteEquivalent": true
+    },
+    "x86_64": {
+      "entryNameSetsEqual": true,
+      "commonEntries": 188,
+      "metadataDifferenceCount": 10,
+      "payloadDifferenceCount": 3,
+      "payloadDifferencePaths": [
+        "META-INF/version-control-info.textproto",
+        "assets/chaquopy/app.imy",
+        "assets/chaquopy/build.json"
+      ],
+      "compressedPayloadDelta": -1572,
+      "zeroAlignmentPaddingDelta": 1572,
+      "eocdByteEquivalent": true
+    },
+    "rootCause": {
+      "summary": "三条外部 ZIP payload 共缩小 1572 bytes，而 Android zipalign 的全零 local-extra 填充恰好增加 1572 bytes；因此 local region、Signing Block、central directory 与 EOCD 的 offset/size 全部不变，但 internal hashes 改变且整包 SHA-256 不同。",
+      "appImy": {
+        "historicalBytes": 6326542,
+        "historicalSha256": "29aa5af92972e3d06b46b88e3a30dca4a3257e0e3372b4eba12b23134df82096",
+        "rebuiltBytes": 6325044,
+        "rebuiltSha256": "3495672d06bb7bcef372ffa81a69c0aa7b1932159ed19fd05c0591ca654b8ca6",
+        "removedHistoricalOnlyEntries": 12,
+        "removedEntriesDescription": "空 __pycache__/ 目录条目",
+        "contentChangedEntries": 16,
+        "contentChangedDescription": "15 个 Python 文件和 vendor/UnityPy/LICENSE 仅发生 LF 到 CRLF 差异；CRLF 归一化后逐字节相同"
+      },
+      "versionControlInfo": {
+        "historical": {
+          "bytes": 120,
+          "sha256": "4afb6cc42bda673c95415ce06fc60caf3704b0fd9ca4892573cf0d32f91f8ed3",
+          "gitRevision": "0edab00c48e18bf4af6b6e8904c4468ee3fc889d"
+        },
+        "rebuilt": {
+          "bytes": 42,
+          "sha256": "577a29846b9d2ab88f013ed5ce0cc75355d4cfbef540ef637c49c95d233c236f",
+          "generateErrorReason": "NO_VALID_GIT_FOUND"
+        }
+      },
+      "buildJson": {
+        "historicalSha256": "e8312940a16dc11bdf9fe66f47a60c00078dc8bd5c0f6dd8ef6371ec04307c1b",
+        "rebuiltSha256": "35db8fcfb6a321e6a9ff4e4e55f8fff7b62c482b811807bf55f32e9416574f1d",
+        "onlyChangedJsonPointer": "$.assets.app.imy"
+      },
+      "signingBlock": {
+        "bytes": 8192,
+        "sizeField": 8184,
+        "pairs": [
+          {
+            "name": "APK Signature Scheme v2",
+            "id": "0x7109871a",
+            "recordBytes": 1402
+          },
+          {
+            "name": "Dependency info",
+            "id": "0x504b4453",
+            "recordBytes": 4904
+          },
+          {
+            "name": "APK Signing Block Padding",
+            "id": "0x42726577",
+            "recordBytes": 1854
+          }
+        ],
+        "layoutEquation": "8 + 1402 + 4904 + 1854 + 8 + 16 = 8192",
+        "paddingSha256AcrossPackages": "b78dd55d8821fc1609fd3c28b264bf24cae1bce00a704f42a721fde7b471d224"
+      },
+      "dex": {
+        "path": "classes.dex",
+        "bytes": 2877404,
+        "sha256": "5e6403de77cc3eb9e76af29a6e49aae981f6a9baba2cdc7174e028132a4013b6",
+        "byteEquivalentAcrossMatchedPackages": true
+      }
+    }
+  },
+  "sizeSemantics": {
+    "downloadBytes": {
+      "definition": "本地 APK 文件字节数；不代表商店传输压缩或下载协议开销",
+      "historicalArm64": 34095289,
+      "historicalX8664": 33947733,
+      "rebuiltArm64": 34095289,
+      "rebuiltX8664": 33947733,
+      "rebuiltUniversalDiagnosticOnly": 43565691
+    },
+    "installedBytes": {
+      "definition": "设备实际占用，受 ABI split、native 提取策略、文件系统块、VDEX/odex/profile、应用数据和缓存影响",
+      "status": "NOT_MEASURED"
+    },
+    "runtimeMemory": {
+      "definition": "冷启动、扫描、解析、Python 与 WebView 场景的 PSS/RSS/heap 峰值",
+      "status": "NOT_MEASURED"
+    }
+  },
+  "legacyData": {
+    "source": {
+      "device": "MuMu x86_64 API 32",
+      "serialClass": "explicit whitelisted serial; raw serial only in ignored environment.local.json",
+      "appVersion": "0.2.16/versionCode17",
+      "capturedAt": "2026-09-14",
+      "reverifiedAt": "2026-09-15",
+      "allTenPreservedFilesStillMatchDevice": true
+    },
+    "availableSamples": [
+      {
+        "id": "legacy.cache.bundle-hints-hd",
+        "classification": "rebuildable-cache",
+        "summary": "schemaVersion 1; 168 bundleHints"
+      },
+      {
+        "id": "legacy.cache.bundle-meta-hd",
+        "classification": "rebuildable-cache",
+        "summary": "schemaVersion 1; 2023 entries"
+      },
+      {
+        "id": "legacy.cache.bundle-meta-sd",
+        "classification": "rebuildable-cache",
+        "summary": "schemaVersion 1; 2024 entries"
+      },
+      {
+        "id": "legacy.cache.characters",
+        "classification": "derived-cache",
+        "summary": "version 20260904214954; 424 character records"
+      },
+      {
+        "id": "legacy.cache.local-bundle-index",
+        "classification": "rebuildable-scan-cache-and-checkpoint",
+        "summary": "schemaVersion 3; 15 bundles; 996 assets"
+      },
+      {
+        "id": "legacy.cache.mod-cache",
+        "classification": "rebuildable-cache",
+        "summary": "schemaVersion 2; one full SAF document URI key"
+      },
+      {
+        "id": "legacy.cache.mod-list-snapshot-obfuscated",
+        "classification": "rebuildable-display-cache",
+        "summary": "release R8 top-level keys a/b/c; 5 mods; 2 source dirs; no version field"
+      },
+      {
+        "id": "legacy.prefs.app-settings",
+        "classification": "user-configuration",
+        "summary": "mod_source_dirs plus onboarding_done"
+      },
+      {
+        "id": "legacy.prefs.redeem",
+        "classification": "migration-preference",
+        "summary": "user_migrated=true only; no account values"
+      },
+      {
+        "id": "legacy.prefs.update-download",
+        "classification": "system-download-pointer",
+        "summary": "download_id=6; DownloadManager status 200 on 2026-09-15; no APK retained"
+      }
+    ],
+    "snapshotMapping": {
+      "a": "MainViewModel.ModListSnapshot.savedAt",
+      "b": "MainViewModel.ModListSnapshot.mods",
+      "c": "MainViewModel.ModListSnapshot.sourceDirs",
+      "version": "absent in historical release"
+    },
+    "snapshotInvalidation": {
+      "isDisplayCache": true,
+      "scanCanRebuild": true,
+      "mustNotClearInstalledLedger": true,
+      "evidence": [
+        "MainViewModel.kt:2944-2953",
+        "MainViewModel.kt:3068-3088",
+        "MainViewModel.kt:3120-3136",
+        "InstalledModRepository.kt:23-83"
+      ]
+    },
+    "checkpoint": {
+      "separateCheckpointFile": false,
+      "storageFile": "local_bundle_index.json",
+      "evidence": [
+        "local_bundle_indexer.py:338-392",
+        "ShizukuManager.kt:393-419",
+        "main_script.py:313-324"
+      ]
+    }
+  },
+  "behaviorMatrix": [
+    {
+      "id": "install-uninstall",
+      "input": "SAF PC source and converted bundle fixtures; pristine, modified and truncated game bundle variants; Shizuku unavailable/unauthorized/authorized states",
+      "expected": "Only known and compatible mods install; conversion output survives if Shizuku is unavailable; the ledger is written only after a successful game-directory move; last-mod removal restores the original bundle",
+      "facts": [
+        "installed_mods.json",
+        "origin_backup",
+        "final game __data"
+      ],
+      "rebuildable": [
+        "Download staging",
+        "cacheDir temp",
+        "converted staging"
+      ],
+      "coverage": "no-effective-coverage",
+      "knownRisk": "ShizukuFileService copy is direct overwrite; InstalledModRepository.save is direct writeText; neither provides commit-and-rollback"
+    },
+    {
+      "id": "same-bundle-merge",
+      "input": "Two ledger records A/B for one target hash; source files present or missing; pristine backup and game base variants",
+      "expected": "Installing B merges A+B when A source remains; ledger keys are modUri; uninstalling A repacks B; uninstalling the last mod restores the original",
+      "facts": [
+        "ledger records",
+        "official backup",
+        "current target bundle"
+      ],
+      "rebuildable": [
+        "catalog",
+        "repack cache",
+        "scan index"
+      ],
+      "coverage": "no-effective-coverage",
+      "knownRisk": "Missing source or converted-overwrite confirmation can leave stale ledger records"
+    },
+    {
+      "id": "sd-hd-slots",
+      "input": "HD and SD catalogs with same version string but different bundle hashes; matching HD/SD meta and hints; stale and rotated game directories",
+      "expected": "HD and SD never share slots; cross-quality entries are rejected; a stale current-quality hash may self-heal only when the game directory already matches the catalog",
+      "facts": [
+        "selected quality",
+        "current game hash/size",
+        "official per-quality catalog mapping"
+      ],
+      "rebuildable": [
+        "catalog JSON",
+        "bundle_meta",
+        "bundle_hints"
+      ],
+      "coverage": "partial",
+      "knownGap": "No direct test for same-version cross-quality isolation, FHD migration, QUALITY_MISMATCH or cleanup"
+    },
+    {
+      "id": "preview-slots",
+      "input": "Same bundle/hash with size 100 and 200; valid skel+atlas, png-only, generation mismatch, missing srcsize and negative-cache variants",
+      "expected": "hash_size slots are independent; invalid and negative caches do not count as valid previews; deleting preview activity temp output does not delete persistent cache",
+      "facts": [
+        "source __data and size"
+      ],
+      "rebuildable": [
+        "preview_cache/**"
+      ],
+      "coverage": "tests-exist-not-run",
+      "evidence": [
+        "PreviewCacheSizeSlotTest.kt",
+        "PreviewCacheNegativeTest.kt"
+      ]
+    },
+    {
+      "id": "cross-bundle",
+      "input": "Skeleton in bundle A with texture pages in B/C; true skeleton split; partial local index; real catalog",
+      "expected": "Texture-page drift does not invalidate the mod; target is determined by skeleton family bundle; true skeleton split is INVALID; catalog failure never clears a local KNOWN result",
+      "facts": [
+        "mod file names",
+        "real catalog asset mapping"
+      ],
+      "rebuildable": [
+        "mod_cache",
+        "local asset index",
+        "catalog fallback table"
+      ],
+      "coverage": "partial",
+      "knownGap": "Four real catalog cases were skipped in T02"
+    },
+    {
+      "id": "dating-story",
+      "input": "illust_datingNN atlas/json/png/paging files; real catalog prefab bridge; costume marked DATING SIM",
+      "expected": "Prefab bridge resolves without a local index; paging may remain unresolved without invalidating the mod; UI category is DATING before idle/cutscene fallback",
+      "facts": [
+        "real catalog",
+        "dating prefab mapping",
+        "character metadata"
+      ],
+      "rebuildable": [
+        "resolution output",
+        "mod_cache",
+        "UI grouping cache"
+      ],
+      "coverage": "partial",
+      "knownGap": "Two real-catalog dating cases were skipped; no UI category test"
+    },
+    {
+      "id": "wiki-v2-v3",
+      "input": "v2 detail 2238; v2/v3 article wrappers with same numeric battle id; valid, stale, missing-stamp and battle-unavailable body caches",
+      "expected": "v2 and v3 use distinct request methods and cache keys; temporary battle failure is not permanent; offline can read valid old content",
+      "facts": [
+        "remote content version",
+        "v2/v3 battle data"
+      ],
+      "rebuildable": [
+        "article HTML cache",
+        "battle HTML cache",
+        "in-memory render cache"
+      ],
+      "coverage": "v2-partial-v3-none",
+      "knownGap": "v2 fixture is outside the repository; v3 has no fixture or test"
+    },
+    {
+      "id": "redemption",
+      "input": "legacy single account, migrated multi-account, corrupt prefs; history and auto-done variants; success, terminal failure, retryable failure, unknown and HTTP 429 fake responses",
+      "expected": "Migration is idempotent; success history is durable; only success/terminal outcomes enter auto-done; network uncertainty remains retryable; settled is distinct from all redeemed",
+      "facts": [
+        "account list",
+        "success history",
+        "terminal auto-done set"
+      ],
+      "rebuildable": [
+        "code list",
+        "pending UI projection"
+      ],
+      "coverage": "none",
+      "knownGap": "No account value, history or auto-done sample is available"
+    },
+    {
+      "id": "update",
+      "input": "Frozen GitHub release JSON; ABI assets; DownloadManager pending/success/failure states; installed, empty, old and matching APK variants; installer permission states",
+      "expected": "Correct ABI asset is chosen; only the current download id controls UI completion; install uses the correct FileProvider flow; failures remain explicit",
+      "facts": [
+        "ignored version preference",
+        "current download id",
+        "final APK identity"
+      ],
+      "rebuildable": [
+        "GitHub metadata",
+        "downloaded APK",
+        "notification state"
+      ],
+      "coverage": "none",
+      "knownGap": "DownloadManager id 6 is successful but no APK remains; no controlled update fixture"
+    }
+  ],
+  "testBaselineFromT02": {
+    "jvm": {
+      "discovered": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "caveat": "Wiki v2 test found an external file through an ancestor directory and is not yet portable"
+    },
+    "python": {
+      "discovered": 71,
+      "executed": 71,
+      "passed": 65,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 6,
+      "skippedBreakdown": {
+        "RealCatalogCompatTest": 4,
+        "DatingPrefabBridgeTest": 2
+      },
+      "caveat": "Skipped tests do not count as coverage and must run in T04"
+    },
+    "instrumentation": {
+      "status": "not-run"
+    },
+    "deviceSmoke": {
+      "x86_64": "not-run",
+      "arm64-v8a": "not-available"
+    },
+    "releaseSigning": {
+      "verifiedCertificate": true,
+      "formalReleaseSigning": "not-verified"
+    }
+  },
+  "knownGaps": [
+    "No installed_mods.json fixture",
+    "No redeem_history.json or auto_redeem_done.json fixture",
+    "No hidden_mods.json fixture",
+    "No mid-scan checkpoint fixture; checkpoint shares local_bundle_index.json",
+    "No origin_backup or preview_cache fixture",
+    "No Wiki v3 fixture",
+    "No update APK fixture",
+    "No real arm64 device smoke",
+    "Installed size and runtime memory were not measured"
+  ]
+}

@@ -1,0 +1,525 @@
+{
+  "manifestVersion": 1,
+  "createdAt": "2026-09-15",
+  "createdByTask": "T03",
+  "sourceCommit": "03805d1be561112d3c0bf0914d6be1280dfffeab",
+  "note": "统一记录 G0/T03 基线的可复现输入。仓库只提交本清单，不提交 APK、真实 catalog、设备样本或其他受限数据；所有 local-only 路径均在 /local/ 忽略。",
+  "storageClasses": {
+    "local-artifact": "已保全的本地构建产物，仅用于只读基线比对，不进入 Git",
+    "local-input": "仓库外真实输入或设备状态切片，仅保存在本地忽略目录",
+    "repo-resource": "可提交给 JVM/Android 测试使用的派生夹具",
+    "local-config": "本机环境配置，保存绝对路径或设备选择，不进入 Git",
+    "external-config": "由测试进程通过环境变量提供的受限输入，不复制正文进仓库"
+  },
+  "requiredness": {
+    "g0-required": "G0 验收必需；缺失、哈希不符或未实际执行时不得把相关门槛标为通过",
+    "phase-required": "对应任务完成所必需；可在依赖任务中建立",
+    "optional": "只用于诊断或扩展覆盖，不抵扣必需用例"
+  },
+  "fixtures": [
+    {
+      "id": "artifact.historical-0.2.16.arm64",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/historical-0.2.16/app-arm64-v8a-release.apk",
+      "bytes": 34095289,
+      "sha256": "a52fa13909e7d4b8d79dd3b4d2ba4054693fdd9324c68fc850a0785bd713bee8",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T01 从历史构建输出只读保全；不是 T02 重建包",
+      "redaction": "无个人信息；不提交 APK 本体",
+      "usedBy": [
+        "T03 APK 文件级/条目级/证书/mapping 基线",
+        "T04 baseline-startup 及后续 release 回归"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "artifact.historical-0.2.16.x86_64",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/historical-0.2.16/app-x86_64-release.apk",
+      "bytes": 33947733,
+      "sha256": "6bfa355b40b5483feec1104d8a017b2bbdceeca6f1f1d2cc43ab30a718bb2321",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T01 从历史构建输出只读保全；不是 T02 重建包",
+      "redaction": "无个人信息；不提交 APK 本体",
+      "usedBy": [
+        "T03 APK 文件级/条目级/证书/mapping 基线",
+        "T04 baseline-startup 及后续 x86_64 回归"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "artifact.historical-0.2.16.mapping",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/historical-0.2.16/mapping.txt",
+      "bytes": 35649626,
+      "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T01 与历史 APK 一同保全的 R8 mapping",
+      "redaction": "无个人信息；不提交 mapping 本体",
+      "usedBy": [
+        "T03 release 混淆契约冻结",
+        "T04 release smoke 与崩溃反混淆基线"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "artifact.rebuilt-original.arm64",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/rebuilt-original/app-arm64-v8a-release.apk",
+      "bytes": 34095289,
+      "sha256": "a2ce953b7379e72a4707a7b2d649f27f883dd027af9a89c63a6ed4eb0066cd7d",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T02 在源码提交 b83c1c0 与冻结工具链下重建",
+      "redaction": "无个人信息；不提交 APK 本体",
+      "usedBy": [
+        "T03 与历史原件做条目级 A/B",
+        "T04 baseline-startup 重建侧对照"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "artifact.rebuilt-original.x86_64",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/rebuilt-original/app-x86_64-release.apk",
+      "bytes": 33947733,
+      "sha256": "6e5e8c3b35bf55fe786ea0d3f4c124d9532d1f7cc5aba9d2cec534e80a5adbfc",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T02 在源码提交 b83c1c0 与冻结工具链下重建",
+      "redaction": "无个人信息；不提交 APK 本体",
+      "usedBy": [
+        "T03 与历史原件做条目级 A/B",
+        "T04 baseline-startup 重建侧对照"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "artifact.rebuilt-original.mapping",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/rebuilt-original/mapping.txt",
+      "bytes": 35649626,
+      "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T02 重建 mapping；与历史 mapping 逐字节相同",
+      "redaction": "无个人信息；不提交 mapping 本体",
+      "usedBy": [
+        "T03 验证 Java/Kotlin/R8 产物一致性",
+        "T04 release smoke 与崩溃反混淆基线"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "artifact.rebuilt-original.output-metadata",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/rebuilt-original/output-metadata.json",
+      "bytes": 1508,
+      "sha256": "12c18d660a9095ad7de2d57e21095f9ecb68db54b55837359a82eb8fae8bf157",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T02 release output metadata",
+      "redaction": "无个人信息；不提交本体",
+      "usedBy": [
+        "T03 核对 release variant、版本、ABI split"
+      ],
+      "requiredness": "phase-required",
+      "status": "available"
+    },
+    {
+      "id": "artifact.rebuilt-original.universal",
+      "storageClass": "local-artifact",
+      "relativePath": "local/refactor-artifacts/rebuilt-original/app-universal-release.apk",
+      "bytes": 43565691,
+      "sha256": "c88873b27705780b6170db30ca1e958357e83086dd7a3a5433f398afc4f2c516",
+      "sourceVersion": "0.2.16/versionCode17",
+      "source": "T02 诊断包；不用于直接分发",
+      "redaction": "无个人信息；不提交 APK 本体",
+      "usedBy": [
+        "T03 universal 包身份、签名与分类对照"
+      ],
+      "requiredness": "optional",
+      "status": "available"
+    },
+    {
+      "id": "external.catalog-alpha",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/catalog-alpha.json",
+      "bytes": 63045832,
+      "sha256": "98fc0a1e47552116c6398bd7656b87b451adfcd97f5b3de7ebe5428314f10f3f",
+      "sourceVersion": "T01 时点保全的真实游戏 catalog",
+      "source": "仓库外真实输入；来源路径仅保存在本地 environment.local.json",
+      "redaction": "不提交原文；测试日志不得输出内容正文",
+      "usedBy": [
+        "tests/test_resolution_catalog_fallback.py RealCatalogCompatTest",
+        "DatingPrefabBridgeTest"
+      ],
+      "requiredness": "g0-required",
+      "status": "available",
+      "configurationKey": "externalFixtures.catalogAlpha"
+    },
+    {
+      "id": "external.wiki-v2-detail-2238-source",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/wiki-v2-detail-2238.source.json",
+      "bytes": 76902,
+      "sha256": "d8de5897bb5a4bfbb78d0bef111dba4c94fa8c1cf1d645869110a60fe4f4a9e6",
+      "sourceVersion": "Gamekee Wiki v2 detail id 2238",
+      "source": "仓库外真实接口样本；来源路径仅保存在本地 manifest 记录，不提交正文",
+      "redaction": "T04 派生 classpath 夹具时去除 URL/账号类元数据，保留回合、站位和行动断言所需字段",
+      "usedBy": [
+        "app/src/test/java/com/bd2toolsbox/data/repository/GamekeeBattleV2RendererTest.kt"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.prefs.app-settings",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/shared_prefs/app_settings.xml",
+      "bytes": 331,
+      "sha256": "ac898b7300bf6d203ea1775a967562240e07876e80a3484cbf1c0017d10a5124",
+      "sourceVersion": "0.2.16/versionCode17 device state",
+      "source": "2026-09-14 MuMu 0.2.16 状态保全；只含测试目录 dhz_test 与 scan0211-lifecycle-a7f3c9",
+      "redaction": "已脱敏；没有账号、令牌或真实游戏路径",
+      "usedBy": [
+        "T03 旧设置/SAF 源目录冻结",
+        "T25 设置迁移",
+        "T27/T39 主题默认值",
+        "T56 旧数据回归"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.prefs.redeem",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/shared_prefs/bd2_redeem.xml",
+      "bytes": 120,
+      "sha256": "47a7dbb71e2d327c48db04800748a0ae5ace389cd32f13bf7794311b345c4395",
+      "sourceVersion": "0.2.16/versionCode17 device state",
+      "source": "2026-09-14 设备 prefs；只有 user_migrated=true，没有账号值",
+      "redaction": "已脱敏；不可据此推断用户从未兑换",
+      "usedBy": [
+        "T03 旧兑换迁移标记冻结",
+        "T31 兑换状态与历史迁移",
+        "T45 兑换 UI 语义"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.prefs.update-download",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/shared_prefs/update_download.xml",
+      "bytes": 112,
+      "sha256": "b35b2a281064ea82c3ba7f0cb6ae0a3a109eaf65a2c784f6de5860e767e12b94",
+      "sourceVersion": "0.2.16/versionCode17 device state",
+      "source": "2026-09-14 设备 prefs；只有 DownloadManager id 6",
+      "redaction": "已脱敏；下载 ID 已于 2026-09-15 核为成功且没有留存 APK",
+      "usedBy": [
+        "T03 更新下载状态冻结",
+        "T28/T57 更新迁移与安装回归"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.cache.bundle-hints-hd",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/files/bundle_hints_HD_20260904214954.json",
+      "bytes": 10283,
+      "sha256": "b2bb00b9b3d444c566029dfb4fc1f5e3e8cf3f299c4173a923c3e718391ab0fd",
+      "sourceVersion": "0.2.16/versionCode17；HD 20260904214954",
+      "source": "2026-09-14 MuMu 设备 filesDir 切片；168 条 bundleHints",
+      "redaction": "已脱敏；不含账号或真实游戏路径",
+      "usedBy": [
+        "T03 HD 派生缓存基线",
+        "T19/T23 目录解析与命名",
+        "T56 旧缓存失效验证"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.cache.bundle-meta-hd",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/files/bundle_meta_HD_20260904214954.json",
+      "bytes": 160976,
+      "sha256": "844a379b31d869e4993167c804055643605c02d3a6bfc02724922a2879492391",
+      "sourceVersion": "0.2.16/versionCode17；HD 20260904214954",
+      "source": "2026-09-14 MuMu 设备 filesDir 切片；2023 条 bundleMeta",
+      "redaction": "已脱敏；不含账号或真实游戏路径",
+      "usedBy": [
+        "T03 HD 原版/干净检测基线",
+        "T09/T22 原版可信度",
+        "T56 旧缓存失效验证"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.cache.bundle-meta-sd",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/files/bundle_meta_SD_20260909203034.json",
+      "bytes": 160855,
+      "sha256": "378c85207254b8c30dbcf5f7a188d5f8461efd5230391ab1731ae4542982a793",
+      "sourceVersion": "0.2.16/versionCode17；SD 20260909203034",
+      "source": "2026-09-14 MuMu 设备 filesDir 切片；2024 条 bundleMeta",
+      "redaction": "已脱敏；不含账号或真实游戏路径",
+      "usedBy": [
+        "T03 SD/HD 槽位隔离基线",
+        "T23 SD/HD 判定",
+        "T56 旧缓存失效验证"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.cache.characters",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/files/characters.json",
+      "bytes": 99596,
+      "sha256": "62ce19364627256b84fe607f1f49bea367cbcb77770ed3e4994660f4dbd2e28a",
+      "sourceVersion": "20260904214954",
+      "source": "2026-09-14 MuMu 设备 filesDir 切片；424 条角色记录",
+      "redaction": "角色名与服装名属于游戏元数据；不含用户信息",
+      "usedBy": [
+        "T03 角色解析/日期剧情基线",
+        "T19/T23 目录解析",
+        "T30 攻略和 Wiki",
+        "T56 旧数据兼容"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.cache.local-bundle-index",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/files/local_bundle_index.json",
+      "bytes": 90952,
+      "sha256": "086c947a741ca36149c6bd6581b4101b18b9ca696e1a2d4b69875ba418c13d60",
+      "sourceVersion": "schemaVersion 3；0.2.16/versionCode17",
+      "source": "2026-09-14 MuMu 设备 filesDir 切片；15 bundles、996 assets；checkpoint 与最终索引同文件",
+      "redaction": "已脱敏；不含账号或真实游戏路径",
+      "usedBy": [
+        "T03 扫描 checkpoint 形态冻结",
+        "T23 扫描索引",
+        "T25 原子写入/恢复",
+        "T56 旧数据回归"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.cache.mod-cache",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/files/mod_cache.json",
+      "bytes": 1173,
+      "sha256": "92e489457246234560ad27cd298522d3007974f6eb65de936d487f0e520780ca",
+      "sourceVersion": "schemaVersion 2；0.2.16/versionCode17",
+      "source": "2026-09-14 MuMu 设备 filesDir 切片；1 个完整 SAF URI 键",
+      "redaction": "已脱敏；URI 指向 dhz_test 测试目录",
+      "usedBy": [
+        "T03 MOD 缓存稳定键冻结",
+        "T10/T35/T36 JSON 迁移",
+        "T56 旧数据回归"
+      ],
+      "requiredness": "g0-required",
+      "status": "available"
+    },
+    {
+      "id": "legacy.cache.mod-list-snapshot-obfuscated",
+      "storageClass": "local-input",
+      "relativePath": "local/refactor-inputs/legacy-device-0.2.16/files/mod_list_snapshot.json",
+      "bytes": 3058,
+      "sha256": "9e32ffbedb3a5d68760515aceb9a4124d21a4baa4ae95528688f62cac4667152",
+      "sourceVersion": "0.2.16 release R8 form；无 version 字段",
+      "source": "2026-09-14 MuMu 设备 filesDir 切片；顶层键 a/b/c，5 条 ModInfo 与 2 个源目录",
+      "redaction": "已脱敏；URI 指向 dhz_test 与 scan0211 测试目录",
+      "usedBy": [
+        "T03 真实 release 混淆快照冻结",
+        "T10/T35/T36 快照兼容",
+        "T56 旧数据回归"
+      ],
+      "requiredness": "g0-required",
+      "status": "available",
+      "knownObfuscatedMapping": {
+        "a": "MainViewModel.ModListSnapshot.savedAt",
+        "b": "MainViewModel.ModListSnapshot.mods",
+        "c": "MainViewModel.ModListSnapshot.sourceDirs",
+        "version": "历史 release 中不存在"
+      }
+    }
+  ],
+  "derivedTargets": [
+    {
+      "id": "repo.wiki-v2-detail-2238",
+      "storageClass": "repo-resource",
+      "targetPath": "app/src/test/resources/fixtures/wiki/wiki-v2-detail-2238.json",
+      "sourceFixtureIds": [
+        "external.wiki-v2-detail-2238-source"
+      ],
+      "producerTask": "T04",
+      "redaction": "保留真实回合、站位、行动与必要内容字段；去除来源 URL、作者或账号元数据",
+      "usedBy": [
+        "GamekeeBattleV2RendererTest"
+      ],
+      "requiredness": "g0-required",
+      "status": "planned"
+    },
+    {
+      "id": "config.catalog-alpha",
+      "storageClass": "external-config",
+      "configurationKey": "externalFixtures.catalogAlpha.path/sha256",
+      "sourceFixtureIds": [
+        "external.catalog-alpha"
+      ],
+      "producerTask": "T04",
+      "redaction": "只传路径与哈希，不提交大文件",
+      "usedBy": [
+        "tests/test_resolution_catalog_fallback.py"
+      ],
+      "requiredness": "g0-required",
+      "status": "planned"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "missing.installed-mods-ledger",
+      "expectedRelativePath": "legacy-device-0.2.16/files/installed_mods.json",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "missing",
+      "reason": "保全时与 2026-09-15 复核时设备均没有该文件",
+      "impact": "当前只能冻结“文件不存在按空账本处理”的基线，不能证明安装账本往返、同 bundle 合并或卸载回滚语义",
+      "successorTasks": [
+        "T04",
+        "T08",
+        "T25",
+        "T35",
+        "T56"
+      ],
+      "status": "known-gap"
+    },
+    {
+      "id": "missing.redeem-history",
+      "expectedRelativePath": "legacy-device-0.2.16/files/redeem_history.json",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "missing",
+      "reason": "设备当前没有成功兑换历史文件",
+      "impact": "不能断言用户从未兑换；T31/T45 必须新建脱敏合成历史与迁移夹具",
+      "successorTasks": [
+        "T31",
+        "T45",
+        "T56"
+      ],
+      "status": "known-gap"
+    },
+    {
+      "id": "missing.auto-redeem-done",
+      "expectedRelativePath": "legacy-device-0.2.16/files/auto_redeem_done.json",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "missing",
+      "reason": "设备当前没有终局兑换清单",
+      "impact": "不能证明重试/终局分类；T31 必须使用 fake HTTP 与合成清单覆盖成功、终局失败、未知和限流",
+      "successorTasks": [
+        "T31",
+        "T45",
+        "T56"
+      ],
+      "status": "known-gap"
+    },
+    {
+      "id": "missing.hidden-mods",
+      "expectedRelativePath": "legacy-device-0.2.16/files/hidden_mods.json",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "missing",
+      "reason": "设备当前没有隐藏列表",
+      "impact": "隐藏状态迁移和空列表行为只能由合成夹具覆盖",
+      "successorTasks": [
+        "T10",
+        "T35",
+        "T56"
+      ],
+      "status": "known-gap"
+    },
+    {
+      "id": "missing.mid-scan-checkpoint",
+      "expectedRelativePath": "legacy-device-0.2.16/files/local_bundle_index.json",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "final-or-checkpoint-same-file",
+      "reason": "checkpoint 与最终索引共用 local_bundle_index.json；保全的是最终态，不是扫描中断态",
+      "impact": "可验证 schema 和恢复输入，但不能证明进程死亡时半写隔离；由 T25/T56 注入中断覆盖",
+      "successorTasks": [
+        "T25",
+        "T56"
+      ],
+      "status": "partial-gap"
+    },
+    {
+      "id": "missing.origin-backup",
+      "expectedRelativePath": "origin_backup/**/__data.game",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "not-captured",
+      "reason": "保全清单未包含原始备份目录，且不能把游戏真实文件当作用户数据样本提交",
+      "impact": "T04/T07/T08 必须使用合成 UnityFS 原版与备份，不得写成真实设备已通过",
+      "successorTasks": [
+        "T04",
+        "T07",
+        "T08",
+        "T22",
+        "T56"
+      ],
+      "status": "known-gap"
+    },
+    {
+      "id": "missing.preview-cache",
+      "expectedRelativePath": "preview_cache/**",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "not-captured",
+      "reason": "预览缓存是可重建数据，未写入唯一事实保全清单",
+      "impact": "T34/T47/T56 需要合成分槽、负缓存和真实解包输入，不能从当前样本推导",
+      "successorTasks": [
+        "T34",
+        "T47",
+        "T56"
+      ],
+      "status": "known-gap"
+    },
+    {
+      "id": "missing.wiki-v3-battle",
+      "expectedRelativePath": "test fixture for Wiki v3 battle detail",
+      "sourceVersion": "Wiki v3",
+      "deviceStatusAtAudit": "not-captured",
+      "reason": "T01 白名单只携带了 v2 detail 原样本",
+      "impact": "Wiki v3 请求分派、缓存 key 和渲染不能标为已覆盖；T30/T56 必须补脱敏 v3 fixture 与同数字 v2 隔离用例",
+      "successorTasks": [
+        "T30",
+        "T56"
+      ],
+      "status": "known-gap"
+    },
+    {
+      "id": "missing.update-apk",
+      "expectedRelativePath": "updates/<release-asset>.apk",
+      "sourceVersion": "0.2.16/versionCode17",
+      "deviceStatusAtAudit": "missing; DownloadManager id 6 status=200",
+      "reason": "下载 ID 成功但 updates 目录没有留存 APK",
+      "impact": "T28/T57 必须使用受控 GitHub JSON、fake DownloadManager 和匹配签名 APK；不得调用真实发布或未知来源安装",
+      "successorTasks": [
+        "T28",
+        "T57",
+        "T60"
+      ],
+      "status": "known-gap"
+    }
+  ],
+  "coverageNotes": [
+    "T02 的 4 个 RealCatalogCompatTest 与 2 个 DatingPrefabBridgeTest skip 在 T04 通过 configuration key 实际运行前不算覆盖。",
+    "mod_list_snapshot.json 的 a/b/c 只作为 0.2.16 release 兼容输入；不能把 R8 改名后的字段名当作跨版本稳定协议。",
+    "快照损坏只能使快照失效；不得清空 installed_mods.json、兑换历史、隐藏列表或用户设置。",
+    "安装占用与运行内存没有由 T03 测量；baseline.json 与 T03.md 只记录下载体积口径。"
+  ]
+}

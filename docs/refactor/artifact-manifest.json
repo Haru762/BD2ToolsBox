@@ -3,7 +3,9 @@
   "createdAt": "2026-09-15",
   "createdByTask": "T01",
   "sourceCommit": "b83c1c076e95942b317649273fba559d9d3af5ca",
-  "note": "记录本地保全产物的类别、相对位置、字节、SHA-256、来源与归属。APK/mapping/符号/真实数据本身不提交（/local/ 已忽略）。未核对的字段如实标注，不猜测。",
+  "frozenByTask": "T03",
+  "frozenAt": "2026-09-15",
+  "note": "记录本地保全产物的类别、相对位置、字节、SHA-256、来源与归属。APK/mapping/符号/真实数据本身不提交（/local/ 已忽略）。未核对的字段如实标注，不猜测。T03 在 categories 之外追加 t03Freeze 块，冻结包身份、签名、条目级差异与体积口径；该块只记录实测值。",
   "categories": [
     {
       "id": "historical-0.2.16",
@@ -134,6 +136,253 @@
       "items": []
     }
   ],
+  "t03Freeze": {
+    "task": "T03",
+    "date": "2026-09-15",
+    "sourceCommit": "03805d1be561112d3c0bf0914d6be1280dfffeab",
+    "evidence": "docs/refactor/evidence/T03.md",
+    "baselineData": "docs/refactor/evidence/baseline.json",
+    "fixtureManifest": "docs/refactor/fixture-manifest.json",
+    "tool": "tools/apk-baseline/run-t03-analysis.ps1",
+    "toolRun": "18 步全部 exit 0；classify_content.py 分组自检以退出码判定，非零即失败",
+    "rawOutputs": "local/refactor-artifacts/t03-apk-analysis/（忽略；24 个产物 + SHA256SUMS.txt + RUN.md）",
+    "packageIdentity": {
+      "versionName": "0.2.16",
+      "versionCode": 17,
+      "applicationId": "com.bd2toolsbox",
+      "minSdk": 29,
+      "targetSdk": 34,
+      "verifiedVia": [
+        "aapt2",
+        "dumpsys"
+      ]
+    },
+    "signature": {
+      "schemes": {
+        "v1": false,
+        "v2": true,
+        "v3": false,
+        "v3.1": false,
+        "v4": false
+      },
+      "signerCount": 1,
+      "certDn": "C=US, O=Android, CN=Android Debug",
+      "certSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+      "identicalAcross": [
+        "hist-arm64",
+        "hist-x64",
+        "reb-arm64",
+        "reb-x64",
+        "reb-universal"
+      ],
+      "verifiedVia": "apksigner verify --verbose --print-certs，五包各一次，退出码均 0",
+      "isReleaseSigning": false,
+      "note": "受控基线签名（本机标准调试 keystore），不是正式发布签名；正式发布签名仍未核验"
+    },
+    "entryLevel": {
+      "arm64-v8a": {
+        "entries": {
+          "historical": 189,
+          "rebuilt": 189
+        },
+        "identicalPayloads": 186,
+        "differingPayloads": 3,
+        "payloadBytes": {
+          "historical": 33840209,
+          "rebuilt": 33838637,
+          "delta": -1572
+        },
+        "localHeaderBytes": {
+          "historical": 232459,
+          "rebuilt": 234031,
+          "delta": 1572
+        },
+        "centralDirectoryBytes": 14407,
+        "signingBlockBytes": 8192,
+        "eocdBytes": 22,
+        "eocdByteIdentical": true,
+        "centralDirectoryDifferingRuns": 12,
+        "centralDirectoryDifferingBytes": 30,
+        "containerOverheadBytes": {
+          "historical": 255080,
+          "rebuilt": 256652
+        },
+        "structuralAccountingMatchesFileSize": true
+      },
+      "x86_64": {
+        "entries": {
+          "historical": 188,
+          "rebuilt": 188
+        },
+        "identicalPayloads": 185,
+        "differingPayloads": 3,
+        "payloadBytes": {
+          "historical": 33707681,
+          "rebuilt": 33706109,
+          "delta": -1572
+        },
+        "localHeaderBytes": {
+          "historical": 217531,
+          "rebuilt": 219103,
+          "delta": 1572
+        },
+        "centralDirectoryBytes": 14307,
+        "signingBlockBytes": 8192,
+        "eocdBytes": 22,
+        "eocdByteIdentical": true,
+        "centralDirectoryDifferingRuns": 12,
+        "centralDirectoryDifferingBytes": 30,
+        "containerOverheadBytes": {
+          "historical": 240052,
+          "rebuilt": 241624
+        },
+        "structuralAccountingMatchesFileSize": true
+      },
+      "universal": {
+        "entries": 195,
+        "role": "诊断用 universal 包，无历史对应件，仅记录分类与总量",
+        "payloadBytes": 43263205,
+        "containerOverheadBytes": 302486
+      }
+    },
+    "differingEntries": [
+      {
+        "entry": "META-INF/version-control-info.textproto",
+        "kind": "构建机 git 元数据",
+        "historical": {
+          "bytes": 120,
+          "sha256": "4afb6cc42bda673c95415ce06fc60caf3704b0fd9ca4892573cf0d32f91f8ed3"
+        },
+        "rebuilt": {
+          "bytes": 42,
+          "sha256": "577a29846b9d2ab88f013ed5ce0cc75355d4cfbef540ef637c49c95d233c236f"
+        }
+      },
+      {
+        "entry": "assets/chaquopy/app.imy",
+        "kind": "Chaquopy 导入归档",
+        "historical": {
+          "bytes": 6326542,
+          "sha256": "29aa5af92972e3d06b46b88e3a30dca4a3257e0e3372b4eba12b23134df82096",
+          "innerEntries": 164
+        },
+        "rebuilt": {
+          "bytes": 6325044,
+          "sha256": "3495672d06bb7bcef372ffa81a69c0aa7b1932159ed19fd05c0591ca654b8ca6",
+          "innerEntries": 152
+        }
+      },
+      {
+        "entry": "assets/chaquopy/build.json",
+        "kind": "Chaquopy 构建清单",
+        "historical": {
+          "bytes": 2927,
+          "sha256": "e8312940a16dc11bdf9fe66f47a60c00078dc8bd5c0f6dd8ef6371ec04307c1b"
+        },
+        "rebuilt": {
+          "bytes": 2927,
+          "sha256": "35db8fcfb6a321e6a9ff4e4e55f8fff7b62c482b811807bf55f32e9416574f1d"
+        }
+      }
+    ],
+    "appImyInternals": {
+      "tool": "tools/apk-baseline/imy_diff.py",
+      "historicalOnlyEntries": 12,
+      "historicalOnlyEntryKind": "空 __pycache__/ 目录条目",
+      "sharedEntries": 152,
+      "differingCrc": 16,
+      "differingAfterCrlfNormalization": 0,
+      "normalization": "\\r\\n -> \\n",
+      "conclusion": "app.imy 内部差异全部是构建环境差异（LF/CRLF 与 __pycache__ 是否存在），无一处 Python 源码改动"
+    },
+    "signingBlockPairs": {
+      "blockTotalBytes": 8192,
+      "sizeField": 8184,
+      "pairs": [
+        {
+          "id": "0x7109871A",
+          "name": "v2 signature scheme block",
+          "valueLen": 1390,
+          "consumedBytes": 1402,
+          "identicalAcrossPackages": false
+        },
+        {
+          "id": "0x504B4453",
+          "name": "dependency block (PKDS)",
+          "valueLen": 4892,
+          "consumedBytes": 4904,
+          "identicalAcrossPackages": false
+        },
+        {
+          "id": "0x42726577",
+          "name": "verity padding block (Brew)",
+          "valueLen": 1842,
+          "consumedBytes": 1854,
+          "identicalAcrossPackages": true,
+          "sha256": "b78dd55d8821fc1609fd3c28b264bf24cae1bce00a704f42a721fde7b471d224"
+        }
+      ],
+      "blockPaddingBytes": 24
+    },
+    "byteEquivalence": {
+      "classesDex": {
+        "bytes": 2877404,
+        "sha256": "5e6403de77cc3eb9e76af29a6e49aae981f6a9baba2cdc7174e028132a4013b6",
+        "historicalEqualsRebuilt": true
+      },
+      "mappingTxt": {
+        "bytes": 35649626,
+        "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+        "historicalEqualsRebuilt": true
+      },
+      "note": "R8 产物（classes.dex）与 mapping 在历史包与重建包中逐字节相同"
+    },
+    "attribution": {
+      "conclusion": "整包 SHA-256 不同的原因是构建环境差异，不是源码或 R8 输出差异",
+      "mechanism": "三条条目共使内含载荷缩小 1572 字节（app.imy -1498、version-control-info -73、build.json -1）；zipalign 的全零 local-extra 对齐填充恰好增加 1572 字节，精确补偿，因此 local region / Signing Block / Central Directory / EOCD 的 offset 与 size 全部不变、EOCD 逐字节相同、文件长度相同，仅内部哈希与整包 SHA-256 改变",
+      "constraint": "不得把历史/重建的差异归因于 R8",
+      "stillUnresolved": "同源码同工具链得到不同字节本身是事实；是否需要在 G2 收敛留给工具链任务评估"
+    },
+    "classification": {
+      "tool": "tools/apk-baseline/classify_content.py",
+      "method": "独立于 dump_entries.py 手工解析器，改用标准库 zipfile；压缩字节口径为「中央目录记录的压缩后载荷字节」",
+      "selfCheck": "五个包的分组自检（条目数、压缩字节、原始字节三项之和 = 实测总量）全部通过，退出码 0",
+      "groups": [
+        "DEX",
+        "Android resources",
+        "Chaquopy",
+        "native",
+        "WebView assets",
+        "Other assets",
+        "Manifest/metadata/other"
+      ]
+    },
+    "deviceMeasurement": {
+      "device": "127.0.0.1:16384（MuMu，x86_64 / API 32 / Android 12）",
+      "mode": "只读",
+      "installedAppBytesKiB": 33292,
+      "appDataBytesKiB": 173784,
+      "appDataBreakdownKiB": {
+        "files/": 154228,
+        "cache/": 15156,
+        "app_webview/": 4356,
+        "shared_prefs/": 24,
+        "app_dxmaker_cache/": 4,
+        "app_textures/": 4,
+        "code_cache/": 4
+      },
+      "runtimeMemory": "NOT_MEASURED",
+      "runtimeMemoryReason": "测量当时 App 进程未运行（pidof 无输出），且本项不做安装/启动/清理等设备状态改动",
+      "comparability": "全部为 x86_64 模拟器口径，与真实 arm64 真机不可比"
+    },
+    "notCovered": [
+      "arm64-v8a 真机验收（MuMu 的 abilist 含 arm64-v8a 但为转译）",
+      "正式发布签名",
+      "历史包 → 重建包的覆盖安装与数据保留",
+      "真实设备的安装占用与运行内存",
+      "同源重建的字节可复现性"
+    ]
+  },
   "localTestInputs": [
     {
       "file": "local/refactor-inputs/catalog-alpha.json",
