@@ -18,7 +18,7 @@
           "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
           "version": "0.2.16",
           "abi": "arm64-v8a",
-          "certFingerprint": "未核对（T02 负责）",
+          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
           "sourceVerifiedAt": "2026-09-15"
         },
         {
@@ -28,7 +28,7 @@
           "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-x86_64-release.apk",
           "version": "0.2.16",
           "abi": "x86_64",
-          "certFingerprint": "未核对（T02 负责）",
+          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
           "sourceVerifiedAt": "2026-09-15"
         },
         {
@@ -48,7 +48,76 @@
       "role": "原工具链重建包（T02 生成后登记；不替代历史原件）",
       "localDir": "local/refactor-artifacts/rebuilt-original",
       "gitTracked": false,
-      "items": []
+      "sourceCommit": "b83c1c076e95942b317649273fba559d9d3af5ca",
+      "buildEnvironment": {
+        "gradle": "8.9",
+        "agp": "8.4.1",
+        "kotlin": "1.9.0",
+        "chaquopy": "15.0.1",
+        "jdk": "17.0.12",
+        "buildPython": "3.11.9",
+        "targetPython": "3.8"
+      },
+      "items": [
+        {
+          "file": "app-arm64-v8a-release.apk",
+          "bytes": 34095289,
+          "sha256": "a2ce953b7379e72a4707a7b2d649f27f883dd027af9a89c63a6ed4eb0066cd7d",
+          "sourcePath": "app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+          "version": "0.2.16",
+          "versionCode": 17,
+          "applicationId": "com.bd2toolsbox",
+          "abi": "arm64-v8a",
+          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+          "sourceVerifiedAt": "2026-09-15"
+        },
+        {
+          "file": "app-x86_64-release.apk",
+          "bytes": 33947733,
+          "sha256": "6e5e8c3b35bf55fe786ea0d3f4c124d9532d1f7cc5aba9d2cec534e80a5adbfc",
+          "sourcePath": "app/build/outputs/apk/release/app-x86_64-release.apk",
+          "version": "0.2.16",
+          "versionCode": 17,
+          "applicationId": "com.bd2toolsbox",
+          "abi": "x86_64",
+          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+          "sourceVerifiedAt": "2026-09-15"
+        },
+        {
+          "file": "app-universal-release.apk",
+          "bytes": 43565691,
+          "sha256": "c88873b27705780b6170db30ca1e958357e83086dd7a3a5433f398afc4f2c516",
+          "sourcePath": "app/build/outputs/apk/release/app-universal-release.apk",
+          "version": "0.2.16",
+          "versionCode": 17,
+          "applicationId": "com.bd2toolsbox",
+          "abi": "universal-diagnostic-only",
+          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+          "sourceVerifiedAt": "2026-09-15"
+        },
+        {
+          "file": "mapping.txt",
+          "bytes": 35649626,
+          "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+          "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
+          "version": "0.2.16",
+          "versionCode": 17,
+          "abi": "universal (R8 mapping)",
+          "certFingerprint": "not-applicable",
+          "sourceVerifiedAt": "2026-09-15"
+        },
+        {
+          "file": "output-metadata.json",
+          "bytes": 1508,
+          "sha256": "12c18d660a9095ad7de2d57e21095f9ecb68db54b55837359a82eb8fae8bf157",
+          "sourcePath": "app/build/outputs/apk/release/output-metadata.json",
+          "version": "0.2.16",
+          "versionCode": 17,
+          "abi": "all-output-metadata",
+          "certFingerprint": "not-applicable",
+          "sourceVerifiedAt": "2026-09-15"
+        }
+      ]
     },
     {
       "id": "pre-shrink",
