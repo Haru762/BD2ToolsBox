@@ -243,6 +243,51 @@ function Read-Bd2UnitXml {
     return $agg
 }
 
+function Get-Bd2UnitFixtures {
+    <#
+      .SYNOPSIS
+        取出 fixture-manifest 里声明给某个 JVM 测试类用的夹具条目。
+
+      .DESCRIPTION
+        manifest 的 usedBy 写的是**源码相对路径**（如
+        app/src/test/java/com/bd2toolsbox/data/repository/GamekeeBattleV2RendererTest.kt），
+        而调用方拿到的是类名。Kotlin/Java 测试类名与文件名一致，故按
+        「usedBy 任一项以 <简单类名>.kt / .java 结尾」匹配。
+        匹配不到 = 该类没有声明夹具，返回空数组，不是错误。
+    #>
+    param([Parameter(Mandatory=$true)][string]$TestClass)
+    if (-not (Test-Path -LiteralPath $Bd2FixtureManifest -PathType Leaf)) {
+        throw "fixture manifest is missing: $Bd2FixtureManifest"
+    }
+    $simple = ($TestClass -split '\.')[-1]
+    $pattern = '(^|/)' + [regex]::Escape($simple) + '\.(kt|java)$'
+    $manifest = Get-Content -LiteralPath $Bd2FixtureManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+    $entries = @()
+    foreach ($fixture in @($manifest.fixtures)) {
+        if (@($fixture.usedBy | Where-Object { $_ -match $pattern }).Count -eq 0) { continue }
+        $entries += [ordered]@{
+            id = [string]$fixture.id
+            kind = 'fixture'
+            storageClass = [string]$fixture.storageClass
+            relative = [string]$fixture.relativePath
+            expectedSha256 = [string]$fixture.sha256
+            requiredness = [string]$fixture.requiredness
+        }
+    }
+    foreach ($target in @($manifest.derivedTargets)) {
+        if (@($target.usedBy | Where-Object { $_ -match $pattern }).Count -eq 0) { continue }
+        $entries += [ordered]@{
+            id = [string]$target.id
+            kind = 'derivedTarget'
+            storageClass = [string]$target.storageClass
+            relative = [string]$target.targetPath
+            expectedSha256 = [string]$target.sha256
+            requiredness = [string]$target.requiredness
+        }
+    }
+    return $entries
+}
+
 # ---------------------------------------------------------------------------
 # JVM 单测入口
 # ---------------------------------------------------------------------------
@@ -277,6 +322,7 @@ function Test-Bd2Unit {
         allowSkip = [bool]$AllowSkip
         counts = [ordered]@{ tests = 0; failures = 0; errors = 0; skipped = 0 }
         taskResults = @()
+        fixtures = @()
         reasons = @()
         result = 'FAIL'
     }
@@ -333,6 +379,38 @@ function Test-Bd2Unit {
         $plan.counts.errors += $summary.errors
         $plan.counts.skipped += $summary.skipped
         $plan.taskResults += $entry
+    }
+
+    # 夹具判定：规则说「夹具缺失或哈希不符非零」，但此前只有 Test-Bd2Python 实施
+    # （经 run_python_tests.py）。JVM 侧的 classpath 夹具因此只是**声明性**的——
+    # 把 repo.wiki-v2-detail-2238 换掉，GamekeeBattleV2RendererTest 的 9 条照样 PASS。
+    # 这里按 manifest 的 usedBy 找出本类声明的夹具，逐个核对存在性与哈希。
+    foreach ($declared in (Get-Bd2UnitFixtures -TestClass $TestClass)) {
+        $path = Join-Path $Root $declared.relative
+        $record = [ordered]@{
+            id = $declared.id
+            kind = $declared.kind
+            storageClass = $declared.storageClass
+            relative = $declared.relative
+            requiredness = $declared.requiredness
+            expectedSha256 = $declared.expectedSha256
+            actualSha256 = $null
+            ok = $false
+            reason = $null
+        }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            $record.reason = 'fixture-missing'
+            [void]$reasonList.Add("fixture $($declared.id): fixture-missing -> $($declared.relative)")
+        } else {
+            $record.actualSha256 = Get-Bd2Sha256 -Path $path
+            if ($declared.requiredness -ne 'optional' -and $record.actualSha256 -ne $declared.expectedSha256) {
+                $record.reason = 'fixture-hash-mismatch'
+                [void]$reasonList.Add("fixture $($declared.id): fixture-hash-mismatch -> 期望 $($declared.expectedSha256)，实际 $($record.actualSha256)")
+            } else {
+                $record.ok = $true
+            }
+        }
+        $plan.fixtures += $record
     }
 
     if ($plan.counts.tests -le 0) { [void]$reasonList.Add('所有变体合计 0 个用例') }
@@ -657,10 +735,29 @@ function Test-Bd2Device {
 
     $before = Get-Bd2SystemSettings -Serial $serial
     $runDir = New-Bd2RunDirectory ('device-' + $Abi + '-' + $TestClass)
+    # summary 在**动手之前**就建好：构建、安装、取结果任何一步抛错都要留下带 reason 的现场。
+    # 此前只在断言失败的路径上落盘，构建/安装阶段挂掉就只剩一个 0 文件目录（见 T04.md §5.3）。
+    $summary = [ordered]@{
+        runId = Split-Path -Leaf $runDir
+        git = Get-Bd2GitState
+        serial = $serial
+        abi = $identity.abi
+        testClass = $TestClass
+        appApk = $null
+        appApkSha256 = $null
+        testApk = $null
+        testApkSha256 = $null
+        tests = 0
+        result = 'FAIL'
+    }
     try {
         Invoke-Bd2Gradle :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
         $appApk = Get-Bd2ApkForAbi -BuildType 'debug' -Abi $Abi
         $testApk = Get-Bd2InstrumentationApk
+        $summary.appApk = $appApk
+        $summary.appApkSha256 = Get-Bd2Sha256 -Path $appApk
+        $summary.testApk = $testApk
+        $summary.testApkSha256 = Get-Bd2Sha256 -Path $testApk
 
         foreach ($apk in @($appApk, $testApk)) {
             $install = (& $Bd2Adb -s $serial install -r -t $apk) -join ' '
@@ -671,34 +768,22 @@ function Test-Bd2Device {
         $result = Invoke-Bd2Instrumentation -Serial $serial -TestClass $TestClass
         # 先落盘再断言：断言失败时归档里必须留下现场，不能只剩一个空目录（见 T04.md §5.3）
         [IO.File]::WriteAllText((Join-Path $runDir 'instrumentation.txt'), $result.output, (New-Object Text.UTF8Encoding($false)))
-        $summary = [ordered]@{
-            runId = Split-Path -Leaf $runDir
-            git = Get-Bd2GitState
-            serial = $serial
-            abi = $identity.abi
-            testClass = $TestClass
-            appApk = $appApk
-            appApkSha256 = Get-Bd2Sha256 -Path $appApk
-            testApk = $testApk
-            testApkSha256 = Get-Bd2Sha256 -Path $testApk
-            tests = 0
-            result = 'FAIL'
-        }
-        try {
-            $count = Assert-Bd2InstrumentationResult -Result $result -Label $TestClass
-        } catch {
-            $summary.reason = $_.Exception.Message
-            Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
-            throw
-        }
+        $count = Assert-Bd2InstrumentationResult -Result $result -Label $TestClass
         $summary.tests = $count
         $summary.result = 'PASS'
-        Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
         Write-Host ("Device {0} [{1}]: {2} tests -> PASS" -f $serial, $TestClass, $count)
+    } catch {
+        $summary.reason = $_.Exception.Message
+        throw
     } finally {
-        Restore-Bd2SystemSettings -Serial $serial -Before $before
-        # 只卸测试包；app 数据保留（不 pm clear，不卸载日用应用）
-        & $Bd2Adb -s $serial uninstall com.bd2toolsbox.test | Out-Null
+        # 恢复与卸载放进内层 finally，保证「恢复本身出错」也不会吞掉 summary
+        try {
+            Restore-Bd2SystemSettings -Serial $serial -Before $before
+            # 只卸测试包；app 数据保留（不 pm clear，不卸载日用应用）
+            & $Bd2Adb -s $serial uninstall com.bd2toolsbox.test | Out-Null
+        } finally {
+            Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
+        }
     }
 }
 
@@ -825,16 +910,19 @@ function Test-Bd2ReleaseSmoke {
 
         $summary.result = 'PASS'
     } catch {
-        # 失败也要留档：summary 里 result 默认就是 FAIL，只差一步落盘
+        # 失败也要留档：summary 里 result 默认就是 FAIL，落盘统一交给下面的 finally
         $summary.reason = $_.Exception.Message
-        Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
         throw
     } finally {
-        Restore-Bd2SystemSettings -Serial $serial -Before $before
-        # 只卸探针包；被测的 release 包保留（不 pm clear、不卸载日用应用、不动 app 数据）
-        & $Bd2Adb -s $serial uninstall com.bd2toolsbox.releaseprobe | Out-Null
+        # 恢复与卸载放进内层 finally，保证「恢复本身出错」也不会吞掉 summary
+        try {
+            Restore-Bd2SystemSettings -Serial $serial -Before $before
+            # 只卸探针包；被测的 release 包保留（不 pm clear、不卸载日用应用、不动 app 数据）
+            & $Bd2Adb -s $serial uninstall com.bd2toolsbox.releaseprobe | Out-Null
+        } finally {
+            Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
+        }
     }
-    Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
     Write-Host ("ReleaseSmoke [{0}/{1}] {2} -> PASS" -f $Case, $Abi, $serial)
     Write-Host ("  report: {0}" -f (Join-Path $runDir 'summary.json'))
 }

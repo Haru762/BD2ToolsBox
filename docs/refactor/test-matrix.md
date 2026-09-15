@@ -11,16 +11,29 @@
 
 ---
 
-## 1. 判定规则（三个入口共用）
+## 1. 判定规则
+
+### 1.1 四个入口共用的规则
 
 | 规则 | 说明 |
 |---|---|
 | **skip 不是通过** | 必需用例被 skip 一律判失败（`required-test-skipped`）。可选覆盖只能标 NOT_RUN，不抵扣必需项。**设备侧同理**：AndroidJUnitRunner 的 `OK (n tests)` 把 `@Ignore`（code `-3`）与 `Assume` 不成立（code `-4`）也算进 `n`，必须按逐条状态码判定，不能只看尾部。 |
 | **退出码 0 不是验收** | 只看进程退出码会得到假绿色：本仓实测过 `python -m unittest` 在 6 条真实用例全被 skip 时照样 `exit 0` 并报 `OK (skipped=6)`。判定一律看**逐用例结果 + 必需集合 + 夹具哈希**。 |
 | **零用例 / 无报告非零** | 发现到 0 个用例、报告缺失或不可解析、必需测试 ID 未被发现，都是失败。 |
-| **夹具缺失或哈希不符非零** | `fixture-missing` / `fixture-hash-mismatch` / `fixture-not-configured`。派生夹具记录**自己的**哈希，不沿用原文件哈希。 |
-| **只要求当前选择范围的夹具** | runner 按 `usedBy` 里出现的 `.py` 文件名与 `--pattern` 匹配来选夹具；没被选中的范围不会因为无关输入缺失而失败。 |
 | **失败要能复现** | 人为破坏实现必须让对应测试真的失败，见 `docs/refactor/evidence/T04.md` 的变异实验记录。 |
+| **失败也要落档** | 任一入口失败都必须留下 `summary.json`（含 `result` 与 `reason`），不能只剩一个空目录。**含「断言之前」的失败**（构建、安装、runner 起不来），不只是判定失败那一步。 |
+
+### 1.2 夹具规则（各入口的实施范围不同，别按表头想当然）
+
+| 规则 | 说明 | 谁实施 |
+|---|---|---|
+| 夹具缺失或哈希不符非零 | `fixture-missing` / `fixture-hash-mismatch` / `fixture-not-configured`。派生夹具记录**自己的**哈希，不沿用原文件哈希。 | `Test-Bd2Python`（全量，经 `run_python_tests.py`）；`Test-Bd2Unit`（按 manifest `usedBy` 匹配到本类的条目，见 T04.md §5.4.2）|
+| 只要求当前选择范围的夹具 | runner 按 `usedBy` 里出现的 `.py` 文件名与 `--pattern` 匹配来选夹具；没被选中的范围不会因为无关输入缺失而失败。 | 仅 `Test-Bd2Python` |
+| 夹具路径可来自本机配置 | `externalFixtures.catalogAlpha` 取自被忽略的 `environment.local.json`；**新机器没有这份文件时依赖它的用例会一律失败**，这是设计而非缺陷（拒绝默默跳过）。 | 仅 `Test-Bd2Python` |
+
+`Test-Bd2Device` / `Test-Bd2ReleaseSmoke` 目前**不做**夹具存在性/哈希判定：
+前者用的测试数据由用例自身在设备上构造，后者的基线 APK 哈希在入口内单独核对
+（见 T04.md §6 的 F1/F2/F3b）。
 
 必需集合：`fixture-manifest.json` 里 `requiredness` 为 `g0-required` / `phase-required` 的夹具是**输入**上的必需项；
 测试**用例**上的必需集合默认取本次发现到的全部用例（`--required` 显式收窄时才用给定清单，未发现的 ID 直接失败）。
@@ -31,10 +44,10 @@
 
 | 入口 | 范围 | 结果来源 | 原始报告落点 |
 |---|---|---|---|
-| `Test-Bd2Unit -TestClass <类名>` | JVM 单测（实际 variant） | `app/build/test-results/<task>/TEST-*.xml` 真解析 | `test-results/<运行ID>-unit-<类名>/summary.json` + 复制过来的 XML |
+| `Test-Bd2Unit -TestClass <类名>` | JVM 单测（实际 variant） | `app/build/test-results/<task>/TEST-*.xml` 真解析；外加按 manifest `usedBy` 匹配到本类的夹具存在性/哈希核对 | `test-results/<运行ID>-unit-<类名>/summary.json`（含 `fixtures` 段）+ 复制过来的 XML |
 | `Test-Bd2Python -Pattern <文件模式>` | Python unittest | `tools/run_python_tests.py` 的 JSON（逐用例 ID + 计数 + 夹具结论 + reasons） | `test-results/<运行ID>-python-<模式>/report.json` |
-| `Test-Bd2Device -TestClass <类名> -Abi <ABI>` | 设备 instrumentation | `am instrument -w -r` 的**逐条** `INSTRUMENTATION_STATUS_CODE`（1=开始 / 0=通过 / -3=`@Ignore` / -4=`Assume` 不成立）：要求 `passed == started` 且无 `-3`/`-4`。**只看尾部 `OK (n tests)` 会把跳过的用例算成通过**；`adb`/`am instrument` 的退出码不可信，**未运行不算通过** | `test-results/<运行ID>-device-<ABI>-<类名>/`（成功与失败都写 `instrumentation.txt` + `summary.json`） |
-| `Test-Bd2ReleaseSmoke -Case <case> -Abi <ABI>` | 真实 minified release | apksigner 证书 + 清单哈希 + 设备内 `ReleaseContractProbeTest` | `test-results/<运行ID>-smoke-<case>-<ABI>/` |
+| `Test-Bd2Device -TestClass <类名> -Abi <ABI>` | 设备 instrumentation | `am instrument -w -r` 的**逐条** `INSTRUMENTATION_STATUS_CODE`（1=开始 / 0=通过 / -3=`@Ignore` / -4=`Assume` 不成立）：要求 `passed == started` 且无 `-3`/`-4`。**只看尾部 `OK (n tests)` 会把跳过的用例算成通过**；`adb`/`am instrument` 的退出码不可信，**未运行不算通过** | `test-results/<运行ID>-device-<ABI>-<类名>/`（成功与失败都写 `instrumentation.txt` + `summary.json`；**构建/安装阶段的失败也写** `summary.json`，见 T04.md §5.4.1） |
+| `Test-Bd2ReleaseSmoke -Case <case> -Abi <ABI>` | 真实 minified release | apksigner 证书 + 清单哈希 + 设备内 `ReleaseContractProbeTest` | `test-results/<运行ID>-smoke-<case>-<ABI>/`（`summary.json` 同样在 `finally` 里落盘） |
 | `verification.ps1 -Mode LocalAll` | 本地全量调度 | 上述各步；**未实现步骤一律非零**，不返回空成功 | 各步各自的运行目录 |
 
 当前 variant 映射由**真实 Gradle 任务清单**决定，不写死：`testArm64DebugUnitTest` / `testX64DebugUnitTest`（T49 才有）
@@ -55,6 +68,11 @@
 
 JVM 侧约束：本仓**没有 Robolectric**，`android.*` 只有 stub，所以单测不得构造 `ContextWrapper`（Android 类，会撞 `Stub!`），
 文件访问边界一律用 mockk 桩 `Context`。
+
+`GamekeeBattleV2RendererTest` 的夹具从 2026-09-16 起**真的参与判定**：`Test-Bd2Unit` 会按
+manifest 的 `usedBy` 找到 `repo.wiki-v2-detail-2238`，核对存在性与哈希，不符即判失败。
+此前是空转的——该文件不查存在也不查哈希（见 `T04.md` §5.4.2）。`PrepackCacheIntegrationTest`
+不声明任何外部夹具，故它的 `fixtures` 段为空数组，属正常。
 
 ### 3.2 Python `tests/`（71 条，已实跑计数）
 
