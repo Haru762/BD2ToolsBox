@@ -351,6 +351,22 @@
         "b": "MainViewModel.ModListSnapshot.mods",
         "c": "MainViewModel.ModListSnapshot.sourceDirs",
         "version": "历史 release 中不存在"
+      },
+      "readStatus": "DISCARDED_BY_LOADER",
+      "knownReadFailure": {
+        "summary": "文件可得、哈希可核，但当前 loader 会丢弃它，因此**不得记作「可读」**。",
+        "conclusionSource": "从源码与 JSON 形状推断；T03 未执行 Kotlin loader 实跑（只读、不构建）",
+        "paths": [
+          "MainViewModel.kt:3077-3080 —— 要求 version == SNAPSHOT_VERSION(1，见 :106)；无 version 键、Int 落成 0，命中显式 Log.i 丢弃分支（主要路径，非异常兜底）",
+          "MainViewModel.kt:3081 —— sourceDirs 键缺失落成 null，判不等即 return emptyList()",
+          "MainViewModel.kt:3084-3087 —— mods 缺失时 Gson 给 null，mapNotNull 抛 NPE，由 catch 兜成 emptyList()"
+        ],
+        "mustNotBeCountedAsReadable": true,
+        "successorTasks": [
+          "T10",
+          "T35",
+          "T36"
+        ]
       }
     }
   ],
@@ -448,6 +464,8 @@
     {
       "id": "missing.mid-scan-checkpoint",
       "expectedRelativePath": "legacy-device-0.2.16/files/local_bundle_index.json",
+      "expectedRelativePathOccupied": true,
+      "expectedRelativePathNote": "该路径在 local-inputs 中**存在**（90952 B，即 legacy.cache.local-bundle-index）。本缺口是**状态缺口**（保全的是最终态而非扫描中断态），不是文件缺失——勿据 `missing.` 前缀推断该文件不存在。",
       "sourceVersion": "0.2.16/versionCode17",
       "deviceStatusAtAudit": "final-or-checkpoint-same-file",
       "reason": "checkpoint 与最终索引共用 local_bundle_index.json；保全的是最终态，不是扫描中断态",
@@ -520,6 +538,6 @@
     "T02 的 4 个 RealCatalogCompatTest 与 2 个 DatingPrefabBridgeTest skip 在 T04 通过 configuration key 实际运行前不算覆盖。",
     "mod_list_snapshot.json 的 a/b/c 只作为 0.2.16 release 兼容输入；不能把 R8 改名后的字段名当作跨版本稳定协议。",
     "快照损坏只能使快照失效；不得清空 installed_mods.json、兑换历史、隐藏列表或用户设置。",
-    "安装占用与运行内存没有由 T03 测量；baseline.json 与 T03.md 只记录下载体积口径。"
+    "安装占用已测但仅为 x86_64 模拟器口径（33292 KiB APK + 173784 KiB 应用数据，相加 207076 KiB 才是总占用，见 baseline.json.sizeSemantics.installedBytes）；运行内存 NOT_MEASURED。真机口径属 T51/T52/T61。"
   ]
 }

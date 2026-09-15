@@ -403,7 +403,20 @@
     },
     "installedBytes": {
       "definition": "设备实际占用，受 ABI split、native 提取策略、文件系统块、VDEX/odex/profile、应用数据和缓存影响",
-      "status": "NOT_MEASURED"
+      "status": "PARTIAL_EMULATOR_ONLY",
+      "measuredOn": "MuMu x86_64 API 32 / Android 12；du -sk；2026-09-15；只读测量",
+      "apkOnDeviceKiB": 33292,
+      "appDataKiB": 173784,
+      "appDataBreakdownKiB": {
+        "files": 154228,
+        "cache": 15156,
+        "app_webview": 4356,
+        "shared_prefs": 24,
+        "app_dxmaker_cache": 4,
+        "app_textures": 4,
+        "code_cache": 4
+      },
+      "note": "两个位置各有一份，33292 + 173784 = 207076 KiB 才是设备上总占用；其中 files/ 的 154228 KiB 主要是可重建的 catalog_HD/catalog_SD 缓存，不是发布包体积问题。全部为 x86_64 模拟器口径，与真实 arm64 真机不可比（native 库、VDEX、页大小与文件系统均不同）——真机口径属 T51/T52/T61。"
     },
     "runtimeMemory": {
       "definition": "冷启动、扫描、解析、Python 与 WebView 场景的 PSS/RSS/heap 峰值",
@@ -486,6 +499,35 @@
         "MainViewModel.kt:3068-3088",
         "MainViewModel.kt:3120-3136",
         "InstalledModRepository.kt:23-83"
+      ]
+    },
+    "snapshotReadFailure": {
+      "knownReadFailure": true,
+      "status": "DISCARDED_BY_LOADER",
+      "mustNotBeCountedAsReadable": true,
+      "conclusionSource": "从源码与 JSON 形状推断；T03 未执行 Kotlin loader 实跑（只读、不构建）",
+      "detail": "历史 release 快照顶层键为 a/b/c，而 ModListSnapshot 读 version/savedAt/mods/sourceDirs（Gson 以 Unsafe 造实例，不走 Kotlin 默认值），三条路径都通向 emptyList()。",
+      "paths": [
+        {
+          "step": "版本闸门（主要路径，显式判定而非异常兜底）",
+          "evidence": "MainViewModel.kt:3077-3080",
+          "detail": "要求 snapshot.version == SNAPSHOT_VERSION（常量 1，见 MainViewModel.kt:106）；JSON 无 version 键，Int 字段落成 0，0 != 1 命中 Log.i「丢弃」并显式 return emptyList()"
+        },
+        {
+          "step": "sourceDirs 闸门",
+          "evidence": "MainViewModel.kt:3081",
+          "detail": "要求 snapshot.sourceDirs == _modSourceDirs.value；键缺失落成 null，判不等即 return emptyList()"
+        },
+        {
+          "step": "mods 空值兜底（第二道防线）",
+          "evidence": "MainViewModel.kt:3084-3087",
+          "detail": "mods 在 JSON 里缺失时 Gson 给 null，非空 List 被违反，mapNotNull 解引用抛 NPE，由 :3085-3087 catch 兜成 emptyList()"
+        }
+      ],
+      "successorTasks": [
+        "T10",
+        "T35",
+        "T36"
       ]
     },
     "checkpoint": {
@@ -691,6 +733,6 @@
     "No Wiki v3 fixture",
     "No update APK fixture",
     "No real arm64 device smoke",
-    "Installed size and runtime memory were not measured"
+    "Installed size measured only on the x86_64 emulator (PARTIAL_EMULATOR_ONLY); runtime memory NOT_MEASURED"
   ]
 }

@@ -144,8 +144,8 @@
     "baselineData": "docs/refactor/evidence/baseline.json",
     "fixtureManifest": "docs/refactor/fixture-manifest.json",
     "tool": "tools/apk-baseline/run-t03-analysis.ps1",
-    "toolRun": "18 步全部 exit 0；classify_content.py 分组自检以退出码判定，非零即失败",
-    "rawOutputs": "local/refactor-artifacts/t03-apk-analysis/（忽略；24 个产物 + SHA256SUMS.txt + RUN.md）",
+    "toolRun": "18 步全部 exit 0；classify_content.py 的退出码由四项**独立于分组循环**的判据决定（eocdEntryCount / localRegionAccounted / groupEntrySum / regression），已用两次反证证明其可失败（改坏分组谓词、篡改 EOCD 计数 → exit 1）；原「三项之和 = 总量」检查降级为 internalConsistency，只打印、不判定",
+    "rawOutputs": "local/refactor-artifacts/t03-apk-analysis/（忽略；22 个驱动产物记入 SHA256SUMS.txt，另 3 份手工产物 RUN.md / apksigner-verify.txt / device-measure.txt 的哈希记在 RUN.md）",
     "packageIdentity": {
       "versionName": "0.2.16",
       "versionCode": 17,
