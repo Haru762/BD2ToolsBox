@@ -10,7 +10,7 @@
 
 **技术栈：** Kotlin 2.x、Compose/Material 3、Hilt/KSP、Gradle Version Catalog、kotlinx.serialization、AboutLibraries、Chaquopy/Python、Shizuku/AIDL；Coil 为图片层首选验证方案，不强上新导航/存储/网络全家桶。
 
-**状态：** 用户已确认需求边界；本清单共 **62 个主任务、10 个阶段**。截至 2026-09-15，T01–T02 已完成并留有证据，T03–T62 尚未执行；不把当前基线构建或测试结果等同于重构、设备验收或发布完成。
+**状态：** 用户已确认需求边界；本清单共 **62 个主任务、10 个阶段**。截至 2026-09-15，T01–T04 已完成并留有证据，T05–T62 尚未执行；不把当前基线构建或测试结果等同于重构、设备验收或发布完成。
 
 ---
 
@@ -25,7 +25,7 @@
 | 预定实施工作区 | [D:/bd2 mod/worktrees/bdroid-android-refactor](<D:/bd2 mod/worktrees/bdroid-android-refactor>)；只在 T01 获准后创建，不让其他窗口另建一个未记录的副本 |
 | 分支 | refactor/android-architecture；本版核对时尚未创建，续跑时必须重新检查 |
 | 核对时起点 | main / b83c1c076e95942b317649273fba559d9d3af5ca，App 0.2.16 / versionCode17；它是历史记录，不代替开工时核对 |
-| 当前进度 | T01–T03 已完成；实施 worktree 位于 D:/bd2 mod/worktrees/bdroid-android-refactor，下一任务 T04 |
+| 当前进度 | T01–T04 已完成并留有证据；实施 worktree 位于 D:/bd2 mod/worktrees/bdroid-android-refactor，下一任务 T05 |
 | 实施范围 | Android 及其必要 Python/JNI 接口；不重写 converter/winui，不清理 MOD 素材、游戏数据、发布归档或其他工作区 |
 
 先阅读第 1–3 节与 G0。新建流程和续跑流程分开：首次按 T01 检查并创建；若目标分支/目录已存在，创建命令应停止。只有核对 worktree 登记、真实仓库根、分支、HEAD、已有变更和任务证据均属于本轮后才能续跑，不能覆盖、删除或换一个目录绕过冲突。不要两个窗口同时修改同一个实施目录。
@@ -356,7 +356,7 @@ Show-Bd2Dependencies
 
 ### T04 — 建立真实回归入口并替换无效集成测试
 
-- [ ] **T04 完成**
+- [x] **T04 完成**
 
 **优先级：** P0　**前置：** T03
 
