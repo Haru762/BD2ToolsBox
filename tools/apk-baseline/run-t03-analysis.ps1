@@ -16,8 +16,13 @@
 # relied upon, so the driver may be invoked from anywhere.
 #
 # Exit code is non-zero if any step fails, if a tool reports a failed gating
-# check, or if a regenerated SHA256SUMS.txt disagrees with the committed
-# expectation.
+# check, or if a declared output file is missing.
+#
+# What that does NOT cover: SHA256SUMS.txt is regenerated from the same
+# in-memory list of outputs it is validated against, so the script cannot by
+# itself detect a discrepancy between the manifest and what exists. Verifying
+# the manifest means running `sha256sum -c SHA256SUMS.txt` separately, and the
+# manifest has no committed counterpart to diff against (/local/ is ignored).
 #
 # classify_content.py is invoked with --expect against the committed
 # docs/refactor/evidence/baseline.json, so a silent *misclassification* (a

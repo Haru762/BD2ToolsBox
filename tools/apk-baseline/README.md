@@ -45,7 +45,8 @@ APK 文件级、条目级、签名块与内容分类数据。全部脚本：
 # 4) 逐字节差异归类（要求两个文件等长）
 & $PY tools/apk-baseline/byte_diff.py <a.apk> <b.apk> <a.json> <b.json> <out.json>
 
-# 5) 内容分类（判定失败时返回非零退出码）
+# 5) 内容分类。**注意退出码在无 --expect 时只由结构判据决定**（EOCD 声明数、
+#    local 区记账等），**检不出分组谓词被改坏**——字节在组间挪动而总量不变时仍 exit 0。
 & $PY tools/apk-baseline/classify_content.py <apk> --package-id <id> --out <out.json>
 
 # 5b) 内容分类 + 回归判据：与已冻结的 baseline.json 逐组比对
@@ -66,8 +67,8 @@ APK 文件级、条目级、签名块与内容分类数据。全部脚本：
 |---|---|
 | `eocdEntryCount` | EOCD 记录里声明的条目数（裸字节解析）vs `zipfile.infolist()` 的长度 |
 | `localRegionAccounted` | Signing Block / 中央目录偏移给出的 local 区字节数 vs 在每个 local header 处**实读**的 `30 + nameLen + localExtraLen + compressSize` 之和 |
-| `groupEntrySum` | 分组条目数之和 vs 上述 EOCD 声明数，且任何条目都必须落进某个分组 |
-| `regression` | 各组 `entries`/`compressed`/`raw` vs `--expect` 指向的 `baseline.json` 冻结值 |
+| `groupEntrySum` | 分组条目数之和 vs 上述 EOCD 声明数。**注意**：该判据原来还带一个「任何条目都必须落进某个分组」的条件（`not unclassified`），但谓词表以 `lambda n: True` 结尾、`classify()` 另有兜底分支，该条件**恒真**、无鉴别力，故不计入 |
+| `regression` | 各组 `entries`/`compressed`/`raw` vs `--expect` 指向的 `baseline.json` 冻结值。**这是唯一能发现「分组谓词被改坏」的判据，因此只在带 `--expect` 时生效** |
 
 已做反证确认它**真的会失败**：把 Chaquopy 谓词改坏（20.8 MB 悄悄挪进 Other assets，
 任何总量都不变）→ `regression` FAIL、退出码 1；把 EOCD 声明的条目数改 +1 →
