@@ -1,6 +1,7 @@
 package com.bd2toolsbox.data.model
 
 import android.net.Uri
+import com.bd2toolsbox.core.model.RepackPlanJob
 
 enum class ResolutionState {
     KNOWN,
@@ -255,6 +256,20 @@ data class CharacterInfo(val character: String, val costume: String, val type: S
 data class ModDetails(val fileId: String?, val fileNames: List<String>)
 
 data class RepackJob(val hashedName: String, val modsToInstall: List<ModInfo>)
+
+/**
+ * 领域计划（`core.model.RepackPlanJob`）→ 装入流程使用的 [RepackJob]。
+ *
+ * 这是**迁移期的显式 adapter**，不是第二份事实模型：计划的唯一来源是
+ * `RepackPlanBuilder`，这里的转换只是因为装入流程仍以 [ModInfo]（其 `uri` 是
+ * `android.net.Uri`）为载体，而计划模型刻意不依赖 Android 对象。
+ *
+ * [byUri] 查不到的条目直接丢弃 —— 它本来也装不了了（用户删源文件 / 重扫）。
+ *
+ * 刻意不改 [ModInfo] 的字段名与类型：持久化字段名的冻结归 T10，本项不动。
+ */
+fun RepackPlanJob.toRepackJob(byUri: Map<String, ModInfo>): RepackJob =
+    RepackJob(targetHash, mods.mapNotNull { byUri[it.modUri] })
 
 sealed class JobStatus {
     object Pending : JobStatus()

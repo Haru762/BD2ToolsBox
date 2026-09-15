@@ -16,6 +16,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.chaquo.python.Python
 import com.bd2toolsbox.SpinePreviewActivity
+// 领域结果/计划模型已迁出本类（T05）。它们不依赖 android.* / UI 包，也不持有
+// ViewModel、Context、Composable 或 PyObject，因此可以在 JVM 单测里直接构造。
+import com.bd2toolsbox.core.model.ConvertedOverwritePlan
+import com.bd2toolsbox.core.model.HashRenameResult
+import com.bd2toolsbox.core.model.InstalledModRef
+import com.bd2toolsbox.core.model.ModScanProgress
+import com.bd2toolsbox.core.model.OperationError
+import com.bd2toolsbox.core.model.OperationErrorKind
+import com.bd2toolsbox.core.model.PlannedMod
+import com.bd2toolsbox.core.model.PrepackPlan
+import com.bd2toolsbox.core.model.PreviewAssets
+import com.bd2toolsbox.core.model.RepackPlanBuilder
+import com.bd2toolsbox.core.model.UninstallPlan
 import com.bd2toolsbox.data.model.*
 import com.bd2toolsbox.data.repository.AvatarRepository
 import com.bd2toolsbox.data.repository.BundleBackupRepository
@@ -144,19 +157,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    /**
-     * mod 目录重扫的进度。null = 不在扫。用户反馈「点了重新扫描根本不知道
-     * 有没有开始」—— [isLoading] 只是个布尔，冷启动/大库时好几秒毫无反馈。
-     * 这里的粒度是**目录**级（逐目录 SAF 遍历 + 解析是耗时大头）加上
-     * 后段的固定阶段（校验/装机状态），够回答「开始了没、到哪了」。
-     */
-    data class ModScanProgress(
-        val doneDirs: Int,
-        val totalDirs: Int,
-        /** 当前阶段的说明文案，如「扫描目录 2/3」「校验 mod 状态」。 */
-        val stage: String
-    )
 
     private val _modScanProgress = MutableStateFlow<ModScanProgress?>(null)
     val modScanProgress: StateFlow<ModScanProgress?> = _modScanProgress.asStateFlow()
@@ -676,19 +676,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     // ------------------------------------------------ 批量预解包
 
-    /** 批量预解包的评估结果，给确认框用。 */
-    data class PrepackPlan(
-        val total: Int,
-        val alreadyCached: Int,
-        val todo: Int,
-        val estimatedBytes: Long,
-        val freeBytes: Long,
-        val ratioFromSamples: Boolean
-    ) {
-        /** 预估占用超过可用空间的九成就拦下 —— 塞满存储比多等一会儿糟得多。 */
-        val enoughSpace: Boolean get() = estimatedBytes < freeBytes * 0.9
-    }
-
     private val _prepackPlan = MutableStateFlow<PrepackPlan?>(null)
     val prepackPlan: StateFlow<PrepackPlan?> = _prepackPlan.asStateFlow()
 
@@ -959,21 +946,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     // ------------------------------------------------ 一键卸载
 
-    /** 一键卸载的预估结果，用于确认对话框。 */
-    data class UninstallPlan(
-        val bundles: List<String>,
-        val fromBackup: Int,
-        val needDownload: Int,
-        val downloadBytes: Long,
-        /**
-         * 非空表示这次「压根没测出来」，而不是「没东西要卸」。
-         * 对话框据此改成报错，不能再说「所有资源都是官方原版」。
-         */
-        val error: String? = null,
-        /** [error] 的技术细节，对话框里收进「详细原因」折叠区。 */
-        val detail: String? = null
-    )
-
     private val _uninstallPlan = MutableStateFlow<UninstallPlan?>(null)
     val uninstallPlan: StateFlow<UninstallPlan?> = _uninstallPlan.asStateFlow()
 
@@ -993,8 +965,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 // 检测本身没跑成功就别给计划：0 个 bundle 的计划看起来跟「已经很干净」
                 // 一模一样，而这两件事的后果完全相反。
                 cleanScanError?.let { err ->
+                    // 分类与文案分开：文案给人看，类别给用例/UI 判「要不要让人重试」。
+                    // 这条路上的两种成因（Shizuku 拿不到游戏目录 / 取不到官方清单）
+                    // 都是「连接层面拿不到判定依据」，可重试；细分成具体信号要等
+                    // adapter 返回分类结果（见 T19/T23）。
                     _uninstallPlan.value = UninstallPlan(
-                        emptyList(), 0, 0, 0L, error = err, detail = cleanScanDetail
+                        emptyList(), 0, 0, 0L,
+                        failure = OperationError(
+                            kind = OperationErrorKind.NOT_CONNECTED,
+                            message = err,
+                            detail = cleanScanDetail
+                        )
                     )
                     return@launch
                 }
@@ -1312,48 +1293,74 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     /**
-     * 把「本次要装的 mod」与「该 bundle 上已装的 mod」合并成一份重打包清单。
+     * 把一批要装的 mod 变成装入 job：按目标 bundle 分组，并**并入该包上已装的 mod**。
      *
-     * 为什么必须合并：游戏把多个角色的资源打进同一个包（实测某个立绘包被 45 个角色共用，
-     * 心契之约的 19 个角色更是全在一个包里）。而 [processSingleJob] 取基底时，只要发现
-     * 包已被改过就会退回官方原版重打包 —— 那是有意的保守选择（避免在改过的包上反复叠加
-     * 导致 Spine 贴图页累积、atlas 错乱）。两者相加的后果是：分两次装同一个包里的两个
-     * mod，第二次会把第一次的改动抹掉。而按角色浏览的界面天然就是一次装一个。
-     *
-     * 所以基底仍然用干净原版，但把这个包上所有要保留的 mod 一起重新打包 ——
-     * 不叠加、不丢失，且同一组 mod 无论装几次都得到同样的包。这也与卸载侧一致
-     * （[removeSingleMod] 就是「摘掉一个，剩下的重新打包」）。
-     *
-     * 顺序：已装的排前、本次选中的排后。[processSingleJob] 是顺序把各 mod 的文件拷进同一
-     * 个目录，后者覆盖同名文件 —— 于是「换掉同一资源的另一个版本」和「新增另一个角色」
-     * 两种意图都自然正确。
-     *
-     * 只按 uri 去重，**不按 familyKey 去重**：familyKey 会剥掉 `_1` 后缀，拆成
-     * Part A / Part B 的 mod（`cutscene_char004091` 与 `cutscene_char004091_1`，实为两个
-     * 资源、需同时装）算出来是同一个 key，按它去重会弄坏这类 mod。
+     * 「同 bundle 的多个 MOD 要并成一个 job，并把已装入的一起带上」这条判定已经迁到
+     * [RepackPlanBuilder]（纯函数，可 JVM 直测）。这里只负责喂输入、记日志，并用
+     * [toRepackJob] 做一次显式 adapter —— 计划模型刻意不带 `android.net.Uri`。
      */
-    private fun mergeWithInstalled(targetHash: String, selected: List<ModInfo>): List<ModInfo> {
-        if (!::installedModRepository.isInitialized) return selected
-        val selectedUris = selected.map { it.uri.toString() }.toSet()
-        val alreadyInstalled = installedModRepository.listByTargetHash(targetHash)
-            .map { it.modUri }
-            .filterNot { it in selectedUris }
-        if (alreadyInstalled.isEmpty()) return selected
+    private fun buildRepackJobs(selected: List<ModInfo>): List<RepackJob> {
+        if (selected.isEmpty()) return emptyList()
 
         val byUri = _modsList.value.associateBy { it.uri.toString() }
-        val kept = alreadyInstalled.mapNotNull { uri ->
-            byUri[uri] ?: run {
-                // 源文件已不在（用户删了文件夹、或换了 mod 目录）。没法重打包，只能放弃它，
-                // 但要说出来 —— 静默丢弃的结果是用户发现某个 mod 莫名失效却无从追查。
-                Log.w("MainViewModel", "包 $targetHash 上已装的 $uri 源文件不在，本次重打包将不含它")
-                null
+        val installed = if (::installedModRepository.isInitialized) {
+            // 按**本次涉及的** bundle 取记账：计划不会去动本次没装的包。
+            selected.mapNotNull { it.targetHash }.distinct().flatMap { hash ->
+                installedModRepository.listByTargetHash(hash)
+                    .map { InstalledModRef(it.modUri, hash, it.modName) }
+            }
+        } else {
+            emptyList()
+        }
+
+        val availableByUri = byUri.values
+            .filter { !it.targetHash.isNullOrBlank() }
+            .associate { it.uri.toString() to it.toPlannedMod() }
+
+        val plan = RepackPlanBuilder.build(
+            selected = selected.map { it.toPlannedMod() },
+            installed = installed,
+            availableByUri = availableByUri
+        )
+
+        for (dropped in plan.droppedInstalled) {
+            // 被丢弃有两种原因，**必须分开说**：`availableByUri` 的口径是
+            // 「源文件仍在且解析得出 targetHash」，所以查不到不等于源文件没了。
+            // 旧写法一律归因「源文件不在」，重扫后 targetHash 变空的条目会被冤枉 ——
+            // 用户照着这条日志去外面找一个好端端躺着的文件。
+            val reason = if (byUri.containsKey(dropped.modUri)) {
+                "当前解析不出目标 hash（重扫后未解析或有缺陷）"
+            } else {
+                "源文件不在"
+            }
+            Log.w(
+                "MainViewModel",
+                "包 ${dropped.targetHash} 上已装的 ${dropped.modUri} $reason，本次重打包将不含它"
+            )
+        }
+
+        val pickedPerHash = selected.groupingBy { it.targetHash }.eachCount()
+        for (job in plan.jobs) {
+            val picked = pickedPerHash[job.targetHash] ?: 0
+            if (job.mods.size > picked) {
+                Log.d(
+                    "MainViewModel",
+                    "包 ${job.targetHash} 并入已装 ${job.mods.size - picked} 个，本次选中 $picked 个"
+                )
             }
         }
-        if (kept.isNotEmpty()) {
-            Log.d("MainViewModel", "包 $targetHash 并入已装 ${kept.size} 个，本次选中 ${selected.size} 个")
-        }
-        return kept + selected
+
+        // 计划只带领域标识：按 uri 反查回 ModInfo（计划模型不带 android.net.Uri）。
+        return plan.jobs.map { it.toRepackJob(byUri) }
     }
+
+    /** `ModInfo` → 计划里的领域引用。计划模型刻意不依赖 `android.net.Uri`。 */
+    private fun ModInfo.toPlannedMod(): PlannedMod = PlannedMod(
+        modUri = uri.toString(),
+        name = name,
+        targetHash = targetHash.orEmpty(),
+        familyKey = resolvedFamilyKey
+    )
 
     fun initiateBatchRepack(context: Context) {
         val allMods = _modsList.value
@@ -1371,8 +1378,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 只写一遍 —— 这段逻辑错一次就会出「装第二个把第一个顶掉」那类问题。
      */
     fun startRepackFor(context: Context, mods: List<ModInfo>) {
-        val jobs = mods
-            .filter {
+        val jobs = buildRepackJobs(
+            mods.filter {
                 !it.targetHash.isNullOrBlank() &&
                     it.resolutionState == ResolutionState.KNOWN &&
                     // 异常条目（下架/损坏/画质错配等）拦在装入入口：界面上本就选不到，
@@ -1382,8 +1389,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     // 路径对不上，等于白跑一趟。它得先在待更新区改名治愈。
                     it.outdatedCurrentHash == null
             }
-            .groupBy { it.targetHash!! }
-            .map { (hash, group) -> RepackJob(hash, mergeWithInstalled(hash, group)) }
+        )
 
         if (jobs.isNotEmpty()) {
             _moveState.value = MoveState.Idle
@@ -1721,20 +1727,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     /**
      * 「装产物会覆盖同包已装 mod」的预警。
      *
-     * 产物是已经打包好的完整 bundle，直接覆盖写进游戏目录，没有重打包环节，
-     * 所以**无法**像 [mergeWithInstalled] 那样把同包已装的 mod 并进去 ——
-     * 只能在动手前说清会损失什么。
+     * 类型本身在 `core.model`（[ConvertedOverwritePlan]）：它只描述业务参数，
+     * 存的是产物 uri 字符串而不是 `ModInfo`，所以不依赖 Android 对象。
      */
-    data class ConvertedOverwritePlan(
-        val mods: List<ModInfo>,
-        /** bundle 名 -> 会被覆盖掉的已装 mod 名字 */
-        val casualties: Map<String, List<String>>,
-        /** 其中源文件仍在、可改走转换流程保住的 bundle 名 */
-        val recoverable: Set<String>
-    ) {
-        val total: Int get() = casualties.values.sumOf { it.size }
-    }
-
     private val _convertedOverwritePlan = MutableStateFlow<ConvertedOverwritePlan?>(null)
     val convertedOverwritePlan: StateFlow<ConvertedOverwritePlan?> = _convertedOverwritePlan.asStateFlow()
 
@@ -1742,11 +1737,50 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         _convertedOverwritePlan.value = null
     }
 
+    /**
+     * 计划里的领域标识（uri 字符串）→ 当前列表里的 [ModInfo]。
+     *
+     * 这是「迁移完成前仅允许的显式 adapter」：计划模型不带 Android 对象，装入流程要
+     * `ModInfo`，就在这一步按 uri 反查。查不到（用户在这期间重扫过、条目已不在）直接丢弃 ——
+     * 它本来也装不了了。
+     *
+     * **这与迁出前不是同一件事**：旧实现把 `List<ModInfo>` 实例捕获在计划里，
+     * 确认时直接搬运，**不可能丢**；改成按 uri 反查之后才出现这条丢弃路径。
+     * 因此丢了多少要**说出来** —— 本函数只负责反查，报告由
+     * [confirmConvertedOverwrite] 统一做（日志 + 可见提示），避免两处各说一套。
+     */
+    private fun resolveModInfos(modUris: List<String>): List<ModInfo> {
+        val byUri = _modsList.value.associateBy { it.uri.toString() }
+        return modUris.mapNotNull { byUri[it] }
+    }
+
     /** 用户在预警框里点了「仍要装入」。 */
     fun confirmConvertedOverwrite(context: Context) {
         val plan = _convertedOverwritePlan.value ?: return
         _convertedOverwritePlan.value = null
-        doInstallConvertedBundles(context, plan.mods)
+        val targets = resolveModInfos(plan.modUris)
+        val lost = plan.modUris.size - targets.size
+        if (targets.isEmpty()) {
+            // 旧实现不可能走到这里（计划里存的是捕获好的 ModInfo 实例）。现在
+            // 「弹窗到确认之间全部条目消失」会让这里空手而归 —— 不点出来就是
+            // 「用户点了『仍要装入』，什么都没发生，也没有任何提示」。
+            Log.w(
+                "MainViewModel",
+                "转换预警确认：计划里的 ${plan.modUris.size} 个条目都已不在当前列表，本次装入被跳过"
+            )
+            toast(context, "这些 mod 已不在当前列表（可能刚重扫过），本次装入已取消")
+            return
+        }
+        if (lost > 0) {
+            // 部分丢：还是装，但用户确认的是 N 个、实际装进去的是 N-lost 个，
+            // 差额必须当面说，否则他会以为全装上了。
+            Log.w(
+                "MainViewModel",
+                "转换预警确认：${plan.modUris.size} 个条目里有 $lost 个已不在当前列表，本次装入不含它们"
+            )
+            toast(context, "有 $lost 个 mod 已不在当前列表，本次装入不含它们")
+        }
+        doInstallConvertedBundles(context, targets)
     }
 
     fun installConvertedBundles(context: Context, mods: List<ModInfo>) {
@@ -1776,7 +1810,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             }
             if (casualties.isNotEmpty()) {
                 _convertedOverwritePlan.value =
-                    ConvertedOverwritePlan(targets, casualties, recoverable)
+                    ConvertedOverwritePlan(targets.map { it.uri.toString() }, casualties, recoverable)
                 return
             }
         }
@@ -3600,26 +3634,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     // ---------------------------------------------------------------- 待更新（hash 目录改名）
 
-    /**
-     * 一批 hash 目录改名的结果。**跳过与失败必须分开**：跳过（目标名已存在）不是错误，
-     * 是在那种情形下唯一安全的选择，报成失败只会让用户以为坏了、反复重试。
-     */
-    private sealed class HashRenameResult {
-        /** 改好了（或本来就已经是新哈希，无需改）。 */
-        object Renamed : HashRenameResult()
-
-        /** 同目录里已经有一个同名（新哈希）目录，没动任何东西。 */
-        object TargetExists : HashRenameResult()
-
-        /**
-         * 游戏目录里这个 bundle 还停在别的哈希上（[gameBundleHashes] 有据可查）——
-         * 用户还没进游戏把资源更新到 catalog 这一版。这时改名是改早了：改完游戏
-         * 根本不读，mod 静默失效，正是最坏的失败模式。宁可不改，让用户先更新资源。
-         */
-        object GameBehindCatalog : HashRenameResult()
-
-        data class Failed(val reason: String) : HashRenameResult()
-    }
+    // 改名结果类型在 core.model（[HashRenameResult]）：它只描述结果，
+    // 「跳过（目标名已存在）不是失败」这条语义由类型本身表达，不依赖 ViewModel。
 
     /** 「待更新」区在更新期间置 true：按钮置灰防重复点。 */
     private val _isUpdatingOutdated = MutableStateFlow(false)
@@ -4102,7 +4118,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 内部自动判断走哪条路：已有产物就直接放进游戏目录（不必重打包），
      * 否则走转换流程。用户不该为了装一个 mod 先自己跨过「转换」这道门。
      *
-     * 两条路都会把同包已装的其他 mod 一并处理：转换那条靠 [mergeWithInstalled]，
+     * 两条路都会把同包已装的其他 mod 一并处理：转换那条靠 [buildRepackJobs]，
      * 产物那条没法合并，所以 [installConvertedBundles] 会先弹预警。
      */
     fun installSingle(context: Context, converted: ModInfo?, source: ModInfo?) {
@@ -4123,7 +4139,12 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         }
         _moveState.value = MoveState.Idle
         batchStartTimeMs = System.currentTimeMillis()
-        _installJobs.value = listOf(InstallJob(RepackJob(hash, mergeWithInstalled(hash, listOf(mod)))))
+        val jobs = buildRepackJobs(listOf(mod))
+        if (jobs.isEmpty()) {
+            Log.w("MainViewModel", "装入被跳过：${mod.name} 没能构成装入计划")
+            return
+        }
+        _installJobs.value = jobs.map { InstallJob(it) }
         _finalInstallResult.value = null
         _showInstallDialog.value = true
         processInstallJobs(context)
@@ -4183,13 +4204,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 把 mod 素材收进临时目录，返回 (skel 路径, atlas 路径)。三类来源：
      * 产物（先解包）、目录 mod（逐文件拷）、zip mod（逐条解压）。
      */
-    /** collectPreviewFiles 的产物：spine 三件套 + 全部贴图（静态查看兜底用）。 */
-    data class PreviewAssets(
-        val skelPath: String?,
-        val atlasPath: String?,
-        val pngPaths: List<String>
-    )
-
     private suspend fun collectPreviewFiles(
         context: Context,
         modInfo: ModInfo,

@@ -43,6 +43,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.data.model.*
+import com.bd2toolsbox.core.model.ConvertedOverwritePlan
+import com.bd2toolsbox.core.model.PrepackPlan
+import com.bd2toolsbox.core.model.UninstallPlan
 import com.bd2toolsbox.data.repository.UpdateRepository
 import com.bd2toolsbox.ui.components.InstallJobRow
 import com.bd2toolsbox.ui.components.SelectionRow
@@ -67,7 +70,7 @@ import com.bd2toolsbox.data.model.MoveState
  */
 @Composable
 fun PrepackPlanDialog(
-    plan: MainViewModel.PrepackPlan?,
+    plan: PrepackPlan?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -221,7 +224,7 @@ fun PrepackProgressDialog(
 
 @Composable
 fun UninstallAllDialog(
-    plan: MainViewModel.UninstallPlan?,
+    plan: UninstallPlan?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1567,7 +1570,7 @@ fun LedgerResetDialog(notice: String?, onDismiss: () -> Unit) {
  */
 @Composable
 fun ConvertedOverwriteDialog(
-    plan: MainViewModel.ConvertedOverwritePlan?,
+    plan: ConvertedOverwritePlan?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
