@@ -7,12 +7,14 @@
   "sourceHeadShort": "b83c1c0",
   "worktree": "D:/bd2 mod/worktrees/bdroid-android-refactor",
   "branch": "refactor/android-architecture",
-  "note": "唯一有效执行清单为 2026-09-15-android-refactor-todo.md；两条 2026-09-14 文档仅作历史参考，不再维护。",
+  "note": "唯一有效执行清单为 2026-09-15-android-refactor-todo.md；两条 2026-09-14 文档仅作历史参考，不再维护。本文件是 T01 的携带回执：files[].sha256 记录的是 T01 搬运时算出的值，不是这些文档的永久当前值。",
+  "hashSemantics": "执行清单是活文档，按 §0.3 允许在进度推进时更新其进度复选框与「当前进度」行，因此它的 sha256 会随各任务合法前进；其余 8 份仅在内容修订时才变化。任务改动清单后，须在该任务自己的 evidence 文件登记新哈希，并同步 evidence/README.md 的「当前快照」。核验本回执时应先读本说明，不要把清单的哈希前进当成携带失败。",
   "files": [
     {
       "relativePath": "docs/superpowers/plans/2026-09-15-android-refactor-todo.md",
       "role": "唯一执行清单（2026-09-15 交接修订版）",
-      "sha256": "48063b55ef1a47217d74a7e0f876f5d1b00999840df26a7189db67e9afa4d269"
+      "sha256": "48063b55ef1a47217d74a7e0f876f5d1b00999840df26a7189db67e9afa4d269",
+      "sha256Note": "T01 携带时的值（进度复选框全空）。T02 依法更新进度后为 89729612303afb122b51c4ba9f1b0e113fbf55f06dccffe0544fdddac659c56a，见 evidence/T02.md。"
     },
     {
       "relativePath": "docs/superpowers/plans/2026-09-14-android-refactor-todo.md",
