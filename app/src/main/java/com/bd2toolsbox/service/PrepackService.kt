@@ -268,30 +268,27 @@ class PrepackService : Service() {
                         // python 线程上，不能查协程 isActive，读旗标）
                         cancelRequested
                     }
-                    if (ok) {
-                        val files = outDir.listFiles()?.filter { it.isFile } ?: emptyList()
-                        val hasSkel = files.any {
-                            it.name.endsWith(".skel", true) || it.name.endsWith(".json", true)
-                        }
-                        val hasAtlas = files.any { it.name.endsWith(".atlas", true) }
-                        // 提交条件必须与 isValid 完全一致（skel + atlas + size）：
-                        // 此前只查 skel，skel-but-no-atlas 的产物 commit 了却永远
-                        // isValid=false，每次预解包都重解。无预览价值的统一走负缓存
-                        // —— 否则它们永远不被跳过，每轮都从头解一遍（真机实测
-                        // 卡在列表开头那二十几个包的就是这类）。
-                        if (t.size > 0 && hasSkel && hasAtlas) {
-                            previewCache.commit(t.bundleName, t.hashDir, t.size)
-                        } else {
-                            previewCache.delete(t.bundleName, t.hashDir, t.size)
-                            previewCache.markNoPreview(t.bundleName, t.hashDir, t.size)
-                        }
-                    } else {
-                        // 解包失败可能是临时的（磁盘满/进程被杀），不记负缓存，留重试机会
-                        previewCache.delete(t.bundleName, t.hashDir, t.size)
-                    }
+                    // 合并/负缓存/丢弃的三选一判定不在这里做，交给 [PrepackCommitPolicy]。
+                    // 判定本身不是 Android 逻辑，抽出去之后「预解包完成后缓存里到底留下
+                    // 什么」才能用真实仓储 + 真实文件断言 —— Service 在 JVM 单测里起不来。
+                    val decision = PrepackCommitPolicy.decide(
+                        unpackOk = ok,
+                        srcSize = t.size,
+                        fileNames = outDir.listFiles()
+                            ?.filter { it.isFile }
+                            ?.map { it.name }
+                            .orEmpty()
+                    )
+                    PrepackCommitPolicy.apply(
+                        previewCache, t.bundleName, t.hashDir, t.size, decision
+                    )
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    previewCache.delete(t.bundleName, t.hashDir, t.size)
+                    // 中途出错同样按「丢弃」处理：清掉半成品，不记负缓存，留重试机会
+                    PrepackCommitPolicy.apply(
+                        previewCache, t.bundleName, t.hashDir, t.size,
+                        PrepackCommitPolicy.Decision.DISCARD
+                    )
                 } finally {
                     if (tmp.exists()) tmp.delete()
                 }

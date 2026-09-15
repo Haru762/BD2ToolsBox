@@ -52,8 +52,13 @@ pip-delete-this-directory.txt
 
 # Refactor: local-only preserved artifacts, test inputs and environment config
 # (T01 / 2026-09-15 refactor todo §2.3 — never commit)
-/local/refactor-artifacts/
-/local/refactor-inputs/
+#
+# 整个 local/ 都是本机专用：保全的历史包与 mapping、仓库外大输入、原始报告、
+# 环境配置、临时草稿。§2.3 的表里写明这一层「实施根下，全部忽略」。此前按
+# /local/refactor-artifacts/ 与 /local/refactor-inputs/ 逐条列举，结果
+# local/scratch/ 这类新目录默认不被忽略 —— 一旦 `git add .` 就会把本机配置
+# （含设备 serial、路径）带进版本库。改为整层忽略，避免下一个任务再踩。
+/local/
 /docs/refactor/evidence/environment.local.json
 
 # OS specific

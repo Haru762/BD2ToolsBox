@@ -15,8 +15,9 @@
   · 只 mock IO（load_local_index / get_cdn_version / download_catalog /
     _latest_disk_catalog），resolver 与 catalog_indexer 一律跑真实实现，
     断言真实输出 —— 不 mock 被测逻辑本身。
-  · 真实兼容性断言只用仓库里那份真实 addressables catalog 快照
-    （测试用/…/catalog_alpha.json），合成 fixture 只用于隔离 IO 的形状测试。
+  · 真实兼容性断言只用那份真实 addressables catalog 快照（本地受限输入，
+    由 BD2_TEST_CATALOG 指向；见下方 _REAL_CATALOG_PATH），合成 fixture
+    只用于隔离 IO 的形状测试。
   · Python 3.8 兼容（无 walrus / 无 dict 并集运算符 / 无 f-string '='）。
 """
 import contextlib
@@ -42,9 +43,25 @@ import main_script       # noqa: E402
 # 真实 catalog 快照
 # --------------------------------------------------------------------------
 
-_REAL_CATALOG_PATH = os.path.join(
+# 真实 catalog 快照的位置。
+#
+# 原实现写死「仓库父目录/测试用/com.neowizgames.game.browndust2/files/
+# com.unity.addressables/catalog_alpha.json」—— 这只在原检出布局（父目录就是
+# 素材根 D:/bd2 mod）下成立；在 worktree D:/bd2 mod/worktrees/<name> 里父目录变成
+# worktrees，文件不存在。而 RealCatalogCompatTest 用的是**类装饰器**
+# @unittest.skipUnless(...)，它在**模块导入时**求值一次，于是那 4 条真实兼容性
+# 用例全部静默变成 skip（skip 不算通过），monkeypatch 事后补路径也没用。
+#
+# 因此优先级改为：BD2_TEST_CATALOG 环境变量（由 tools/verification.ps1 的
+# Test-Bd2Python 从 docs/refactor/evidence/environment.local.json 的
+# externalFixtures.catalogAlpha.path 注入，并在调用结束后恢复）→ 原相对路径回退
+# （本机原检出下仍可用）。这是**纯输入定位**改动，resolver / catalog_indexer
+# 的业务逻辑一字未动。
+_FALLBACK_CATALOG_PATH = os.path.join(
     os.path.dirname(_REPO), u"测试用", u"com.neowizgames.game.browndust2",
     u"files", u"com.unity.addressables", u"catalog_alpha.json")
+
+_REAL_CATALOG_PATH = os.environ.get("BD2_TEST_CATALOG") or _FALLBACK_CATALOG_PATH
 
 # 这两个常量本身由 test_real_catalog_maps_cutscene_asset 对着真实 catalog 断言，
 # 免得快照换了之后下面的用例变成「对着自己的假设自证」。

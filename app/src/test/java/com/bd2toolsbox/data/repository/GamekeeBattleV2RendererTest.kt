@@ -6,29 +6,34 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 /**
  * v2 阵容渲染器的回归测试 —— 用公开接口抓下的真实夹具（wiki-v2-detail-2238.json，
  * Ⅶ战术教材1）断言渲染结果，规格来自交接验收清单。
  *
  * Renderer 是纯 Kotlin + Gson（无 Android 依赖），可在 JVM 直跑。
+ *
+ * 夹具从 **classpath** 读取（app/src/test/resources/fixtures/wiki/wiki-v2-detail-2238.json），
+ * 由仓库外真实样本脱敏派生：删掉 meta（request/trace id）、author（账号/头像/IP 归属）、
+ * uid 与计数类字段，data 只保留渲染器实际读的 id/title/desc/content，content 内所有
+ * CDN 图片 URL 置空。此前是向上找名为 "bd2 mod" 的祖先目录再拼外部路径 —— 那只在原
+ * 检出布局下成立，worktree 里会找不到并 Assume 成 skip；**skip 不算通过**，现在夹具
+ * 缺失直接断言失败。
  */
 class GamekeeBattleV2RendererTest {
 
     private fun fixtureData(): JsonObject {
-        // user.dir = bdroid_src/app。夹具在仓库外的工作区（D:/bd2 mod/_大杂烩工作区），
-        // 从 app 目录向上找 "bd2 mod" 根，再拼工作区相对路径；不存在则跳过本组测试。
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        var root: File? = null
-        while (dir != null) {
-            if (dir.parentFile != null && dir.parentFile.name == "bd2 mod") { root = dir.parentFile; break }
-            dir = dir.parentFile
-        }
-        val f = root?.let { File(it, "_大杂烩工作区/wiki-v2-detail-2238.json") }
-        if (f == null || !f.isFile) org.junit.Assume.assumeTrue("夹具不在: $f", false)
-        return JsonParser.parseString(f!!.readText()).asJsonObject
+        val stream = javaClass.getResourceAsStream(FIXTURE_PATH)
+            ?: throw AssertionError(
+                "classpath 夹具缺失：$FIXTURE_PATH（应位于 app/src/test/resources$FIXTURE_PATH）"
+            )
+        val text = stream.use { it.readBytes().toString(Charsets.UTF_8) }
+        return JsonParser.parseString(text).asJsonObject
             .get("data").asJsonObject
+    }
+
+    private companion object {
+        const val FIXTURE_PATH = "/fixtures/wiki/wiki-v2-detail-2238.json"
     }
 
     private fun render(): String = GamekeeBattleV2Renderer.render(2238L, fixtureData())

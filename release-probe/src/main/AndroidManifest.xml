@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自足 release 探针 APK（T04）。
+
+  这是一个**普通应用**，不是一个 androidTest 包 —— 正因如此它才自带完整运行时，
+  不被 AGP 去重，从而可以驱动预先构建好的 minified release 包。它通过下面这条
+  instrumentation 声明把自己挂到 com.bd2toolsbox 上：
+
+      adb shell am instrument -w \
+        -e class com.bd2toolsbox.integration.ReleaseContractProbeTest#baselineStartup \
+        com.bd2toolsbox.releaseprobe/androidx.test.runner.AndroidJUnitRunner
+
+  探针 APK 与被测包必须同签名（本机 debug keystore），这是平台对跨包
+  instrumentation 的硬性要求。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Android 11 起的包可见性：探针是**外来的 UID**，不声明就解析不到被测包的
+      LAUNCHER 入口（PackageManager.resolveActivity 会返回 null）。这里只开被测包
+      一个，不用 QUERY_ALL_PACKAGES。
+    -->
+    <queries>
+        <package android:name="com.bd2toolsbox" />
+    </queries>
+
+    <instrumentation
+        android:name="androidx.test.runner.AndroidJUnitRunner"
+        android:targetPackage="com.bd2toolsbox"
+        android:label="BD2 release probe" />
+
+</manifest>
