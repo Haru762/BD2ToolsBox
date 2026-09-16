@@ -18,6 +18,7 @@ import com.chaquo.python.Python
 import com.bd2toolsbox.SpinePreviewActivity
 // 领域结果/计划模型已迁出本类（T05）。它们不依赖 android.* / UI 包，也不持有
 // ViewModel、Context、Composable 或 PyObject，因此可以在 JVM 单测里直接构造。
+import com.bd2toolsbox.core.fileaccess.SafeArchivePaths
 import com.bd2toolsbox.core.model.ConvertedOverwritePlan
 import com.bd2toolsbox.core.model.HashRenameResult
 import com.bd2toolsbox.core.model.InstalledModRef
@@ -1568,7 +1569,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 var entry = zis.nextEntry
                 while (entry != null) {
                     if (!entry.isDirectory && !shouldIgnoreModEntry(entry.name)) {
-                        val outFile = File(dest, entry.name)
+                        // T06：条目名来自归档、是外部输入。旧写法 File(dest, entry.name)
+                        // 实测能被 `../outside.txt` / `..\outside.txt` 写出 dest 之外。
+                        // 不安全的条目在这里抛 IllegalArgumentException，由
+                        // processSingleJob 的 catch 转成 JobStatus.Failed，finally 清理临时目录。
+                        val outFile = SafeArchivePaths.resolveInside(dest, entry.name)
                         outFile.parentFile?.mkdirs()
                         outFile.outputStream().use { fos -> zis.copyTo(fos) }
                     }

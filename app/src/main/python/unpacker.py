@@ -101,13 +101,78 @@ MAX_DECODE_PIXELS = 16384 * 16384
 MAX_BUNDLE_BYTES = 500 * 1024 * 1024
 
 
+def _safe_export_name(base_name):
+    """把**外部派生**的资产名规范化成不含任何路径分隔符的文件名片段。
+
+    `base_name` 的来源是 Unity 对象的 `m_Name`（见 `_export_objects`），
+    也就是 MOD 作者可以影响的输入。
+
+    改动前这里是 `(base_name or 'unnamed').replace('/', '_')` —— 只消掉了 `/`。
+    后果按平台分开说，不含糊（实测见 docs/refactor/evidence/T06.md §3）：
+
+    · **POSIX（生产：Android）**：`/` 已消掉，`..` 与 `\\` 都只是普通字符，
+      **没有任何可达的越界**。这一层是**纵深防御**，不是已证实的生产越界。
+    · **Windows 语义**：`\\` 是分隔符，`..\\..\\evil` 会真的落到 output_dir 之外；
+      `C:\\evil` 会被 `os.path.join` 当成绝对路径而**整段丢掉 output_dir**。
+
+    这里把两种分隔符一起消掉，使两端行为一致（同一份代码在哪个平台跑都不越界）。
+    另外把 NUL 换成 `_`：NUL 在任何平台上都会让 `open()` 抛
+    `ValueError: embedded null character`，把该资产的导出整个打断。
+
+    正常语义一字未动：中文、`#path_id` 去重后缀、大小写敏感性都由调用方保留。
+    """
+    name = base_name or 'unnamed'
+    name = name.replace('/', '_').replace('\\', '_').replace('\x00', '_')
+    # 盘符前缀（`C:evil`）：Windows 上 os.path.join(out, 'C:evil') 会返回
+    # 驱动器相对路径、把 out 丢掉。把冒号挤掉，两端行为一致。
+    if len(name) >= 2 and name[1] == ':':
+        name = name[0] + '_' + name[2:]
+    return name or 'unnamed'
+
+
+def _require_within(output_dir, dest_path):
+    """纵深防御闸门：`dest_path` 必须**严格落在** `output_dir` 之内，否则抛 ValueError。
+
+    为什么要单独一层，而不只靠 `_safe_export_name`（如实写清，不夸大这一层的作用）：
+    规范化之后，**单靠 `base_name` 已经到不了这里**。这一层守的是同一次拼接里的
+    另外两条输入 —— `output_dir` 本身，以及 `extension` / `path_id`（今天三个调用点
+    传的是字面量 `''`、`'.png'` 和 Unity 对象自带的 path_id，都是**未经规范化**直接
+    拼进来的字符串）。它们是"今天安全、将来改调用点就可能不安全"的位置，
+    所以在写盘接口上放一道与 `base_name` 无关的判定。
+
+    判定用 `os.path.realpath` + `os.path.commonpath`，**不用纯字符串前缀**：
+    实测 `'out-evil/x'.startswith('out')` 返回 True，会被同前缀兄弟目录骗过。
+    """
+    root = os.path.realpath(output_dir)
+    real = os.path.realpath(dest_path)
+    try:
+        common = os.path.commonpath([root, real])
+    except ValueError:
+        # 不同驱动器（Windows）或绝对/相对混用：commonpath 直接抛
+        raise ValueError(
+            "导出路径与输出目录不同根，拒绝: {0!r}（输出目录 {1!r}）".format(dest_path, output_dir)
+        )
+    if common != root or real == root:
+        raise ValueError(
+            "导出路径越出输出目录，拒绝: {0!r}（输出目录 {1!r}）".format(dest_path, output_dir)
+        )
+    return dest_path
+
+
 def _unique_export_path(output_dir, base_name, extension, path_id):
-    """导出路径；同名冲突时追加 #path_id（Unity 对象的 path_id 天然唯一）。"""
-    safe_name = (base_name or 'unnamed').replace('/', '_')
+    """导出路径；同名冲突时追加 #path_id（Unity 对象的 path_id 天然唯一）。
+
+    T06 加固：`base_name` 先过 `_safe_export_name`（消掉 `/`、`\\`、NUL 与盘符前缀），
+    结果再过 `_require_within`（包含性判定）才返回。
+    文件名的其余语义不变：扩展名照旧拼在末尾、去重后缀仍是 ` #<path_id>`。
+    """
+    safe_name = _safe_export_name(base_name)
     dest = os.path.join(output_dir, f"{safe_name}{extension}")
     if not os.path.exists(dest):
-        return dest
-    return os.path.join(output_dir, f"{safe_name} #{path_id}{extension}")
+        return _require_within(output_dir, dest)
+    return _require_within(
+        output_dir, os.path.join(output_dir, f"{safe_name} #{path_id}{extension}")
+    )
 
 
 def _export_texture(data, dest_path, fast):

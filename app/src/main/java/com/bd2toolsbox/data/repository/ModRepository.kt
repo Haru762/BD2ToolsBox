@@ -3,6 +3,8 @@ package com.bd2toolsbox.data.repository
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.util.Log
+import com.bd2toolsbox.core.fileaccess.SafeArchivePaths
 import com.chaquo.python.Python
 import com.bd2toolsbox.data.model.MatchStrategy
 import com.bd2toolsbox.data.model.ModCacheInfo
@@ -621,8 +623,26 @@ class ModRepository(
                     var entry = zis.nextEntry
                     while (entry != null) {
                         if (!entry.isDirectory && !shouldIgnoreModEntry(entry.name)) {
-                            fileNames.add(entry.name)
-                            if (fileId == null) fileId = characterRepository.extractFileId(entry.name)
+                            // T06：这里不写盘，但条目名会被 resolver 按 **basename** 匹配
+                            // （resolver.py:187 `Path(file_name).name`）—— 于是 `../outside.txt`
+                            // 会被当成 `outside.txt` 参与 bundle 判定，一个有越界条目的
+                            // zip 仍可能被判 KNOWN 并送进真正的解压。所以不安全的条目
+                            // 既不记入 fileNames、也不参与 extractFileId。
+                            // 这是**丢东西**，必须留下可见痕迹，不能静默。
+                            val reason = SafeArchivePaths.entryNameRejectionReason(entry.name)
+                            if (reason == null) {
+                                fileNames.add(entry.name)
+                                if (fileId == null) {
+                                    fileId = characterRepository.extractFileId(entry.name)
+                                }
+                            } else {
+                                Log.w(
+                                    TAG,
+                                    "扫描 mod 时跳过不安全的归档条目名" +
+                                        "${SafeArchivePaths.describeForLog(entry.name)}：$reason" +
+                                        "（不参与 bundle 判定；该条目不会进入导入清单）"
+                                )
+                            }
                         }
                         entry = zis.nextEntry
                     }
