@@ -33,6 +33,9 @@ import com.bd2toolsbox.core.model.PrepackPlan
 import com.bd2toolsbox.core.model.PreviewAssets
 import com.bd2toolsbox.core.model.RepackPlanBuilder
 import com.bd2toolsbox.core.model.UninstallPlan
+import com.bd2toolsbox.core.storage.JournalTarget
+import com.bd2toolsbox.core.storage.LedgerWrite
+import com.bd2toolsbox.core.storage.OperationJournalStore
 import com.bd2toolsbox.data.model.*
 import com.bd2toolsbox.data.repository.AvatarRepository
 import com.bd2toolsbox.data.repository.BundleBackupRepository
@@ -40,6 +43,7 @@ import com.bd2toolsbox.data.repository.BundleNameResolver
 import com.bd2toolsbox.data.repository.CharacterMetaRepository
 import com.bd2toolsbox.data.repository.CharacterRepository
 import com.bd2toolsbox.data.repository.InstalledModRepository
+import com.bd2toolsbox.data.repository.LedgerTake
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import com.bd2toolsbox.data.repository.SpineRuntimeRepository
@@ -393,6 +397,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         watchPrepackCompletion()
         cleanStalePreviewDirs(context)
         initRepositories(context)
+        // 核对必须**早于**旧格式迁移：迁移会 clear() 掉账本，之后再核对就是拿着一张
+        // 被清空的表去判「账本里有没有这条记录」，会凭空多出一次待核对。
+        // 两者都触发时对话框归核对那条（它可操作：别把这些 mod 重复装入），
+        // 迁移那条仍有 Log.i（`检测到旧格式账本（n 条），已清空`）留痕，不是静默丢弃。
+        checkRecoveryOnStartup()
         migrateLegacyLedgerIfNeeded()
         // 冷启动先把上次扫描的结果填上（几毫秒的事），真正的扫描随后在后台跑完再整表替换 ——
         // 「全部」那一页因此不用再对着空列表等整个 SAF 扫描
@@ -490,11 +499,15 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         } catch (e: Exception) {
             0
         }
-        installedModRepository.clear()
-        _ledgerResetNotice.value =
+        installedModRepository.clear()?.let { reportLedgerWrite(LedgerWrite.Failed(it), "旧格式账本清空") }
+        // 走 notifyLedgerNotice 而不是直接赋值：T08 二轮整改在它之前加了启动核对
+        // （见 checkRecoveryOnStartup），两者都有话说时不能互相覆盖 ——
+        // 先发生的（核对）更接近根因，且它给的是可操作的提示。
+        notifyLedgerNotice(
             "装入记录的格式已升级（旧版把同一资源包里的多个 mod 记成一条，会导致卸载时" +
                 "连带卸掉别的 mod）。旧记录已清空，游戏里的文件没有动。" +
                 "重新装一次即可恢复状态显示。"
+        )
         Log.i("MainViewModel", "检测到旧格式账本（$n 条），已清空")
     }
 
@@ -759,6 +772,85 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     fun dismissLedgerResetNotice() {
         _ledgerResetNotice.value = null
+    }
+
+    /**
+     * 启动核对结论：上次那次装入提交有没有留下「文件已换、账本未存」的窗口
+     * （T08 二轮整改，复核真缺陷 2）。
+     *
+     * ## 为什么必须有这条通道
+     *
+     * T08 一轮把 `InstalledModRepository.checkRecovery()` 的**判据**做扎实了（21 条用例
+     * 覆盖三态），但生产代码里**没有一个调用者**，也没有任何 UI 渲染
+     * `RecoveryVerdict.PendingReconciliation` —— 于是验收第 2 条「重启后进入明确的
+     * 待核对状态」在交付代码里**不可能发生**。初始化路径上调用一次并把结论放进这个
+     * StateFlow，就是让那句话真的成立。
+     *
+     * ## 为什么用三态的 `RecoveryVerdict` 而不是 `Boolean`
+     *
+     * `Unknown`（journal 读不出来）必须能与 `Consistent`（没问题）区分开 ——
+     * 把「不知道」渲染成「一切正常」正是计划验收禁止的「自动伪装成全成功」。
+     * UI 侧因此只对 `PendingReconciliation` 弹提示，`Unknown` 只记日志。
+     *
+     * 初值 `Consistent` 而不是 null：核对是启动路径上的一次同步读，
+     * 「还没核对」这个中间态对用户没有意义（它转瞬即逝），
+     * 而 null 会让 UI 侧多一个必须处理的分支。
+     */
+    private val _recoveryVerdict =
+        MutableStateFlow<OperationJournalStore.RecoveryVerdict>(
+            OperationJournalStore.RecoveryVerdict.Consistent
+        )
+    val recoveryVerdict: StateFlow<OperationJournalStore.RecoveryVerdict> =
+        _recoveryVerdict.asStateFlow()
+
+    /**
+     * 启动时核对一次「文件已换、账本未存」的窗口，并把结论交给 UI。
+     *
+     * **只读**：不改账本、不改 journal、不改游戏目录（见
+     * [InstalledModRepository.checkRecovery] 的说明），它只交出一份判断。
+     */
+    private fun checkRecoveryOnStartup() {
+        if (!::installedModRepository.isInitialized) return
+        val verdict = try {
+            installedModRepository.checkRecovery()
+        } catch (e: Exception) {
+            // 核对本身抛了也不能挡住启动：降级成 Unknown，如实告诉上层「不知道」，
+            // 而不是悄悄当成「没问题」。
+            Log.w("MainViewModel", "启动核对失败", e)
+            OperationJournalStore.RecoveryVerdict.Unknown(
+                OperationError(
+                    kind = OperationErrorKind.UNKNOWN,
+                    message = "装入核对异常：" + e.message.orEmpty(),
+                    detail = e.toString()
+                )
+            )
+        }
+        _recoveryVerdict.value = verdict
+        when (verdict) {
+            is OperationJournalStore.RecoveryVerdict.PendingReconciliation -> {
+                Log.w(
+                    "MainViewModel",
+                    "启动核对：上次装入可能有「文件已换、账本未存」的窗口 —— " +
+                        "bundle=${verdict.bundleNames} mod=${verdict.modUris}"
+                )
+                // 与账本提示共用一条通道：都是「装入记录出了一件你必须知道的事」，
+                // 分成两个对话框只会让用户要连着关两次。
+                notifyLedgerNotice(
+                    "上次装入可能没有完整收尾：游戏里的文件已经换成新的，但装入记录没来得及更新" +
+                        "（涉及 ${verdict.bundleNames.size} 个资源包：" +
+                        verdict.bundleNames.take(3).joinToString("、") +
+                        (if (verdict.bundleNames.size > 3) " 等" else "") +
+                        "）。建议重新扫描一次确认状态；在确认之前请不要把这些 mod 当成" +
+                        "「未安装」重复装入。"
+                )
+            }
+            is OperationJournalStore.RecoveryVerdict.Unknown -> {
+                // 不打扰用户：journal 读不出来不损失用户数据（真实事实在游戏目录与账本里），
+                // 但也不能当成「没问题」—— 记日志留痕。
+                Log.w("MainViewModel", "启动核对：操作日志读不出来，本次无法确认：${verdict.error.message}")
+            }
+            OperationJournalStore.RecoveryVerdict.Consistent -> Unit
+        }
     }
 
     /**
@@ -2206,7 +2298,12 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     private fun recordConvertedInstalls(mods: List<ModInfo>) {
         if (!::installedModRepository.isInitialized || mods.isEmpty()) return
         val now = System.currentTimeMillis()
-        installedModRepository.putAll(
+        // T08 已知缺口：这条路径**不经过 journal**（无暂存阶段、直接覆盖式写游戏目录，
+        // 提交语义与 moveFilesToGame 不同）。它的提交点在
+        // ShizukuManager.installConvertedBundle 里的 copyDirectory，
+        // 所以「文件已换、账本未存」的窗口在这条路径上仍然敞着 —— 详见 T08.md 的未覆盖项。
+        // 这里只保证**写失败会被上报**，不假装它有 journal 保护。
+        val result = installedModRepository.putAll(
             mods.mapNotNull { mod ->
                 val hash = mod.targetHash ?: return@mapNotNull null
                 InstalledModRecord(
@@ -2220,6 +2317,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 )
             }
         )
+        when (result) {
+            is LedgerWrite.Written -> Unit
+            is LedgerWrite.Repaired -> reportLedgerWrite(result, "产物装入记账")
+            is LedgerWrite.Failed -> reportLedgerWrite(result, "产物装入记账")
+        }
     }
 
     // ------------------------------------------------ mod 目录管理 / 隐藏 / 删除
@@ -2364,13 +2466,16 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
         viewModelScope.launch {
             var ok = false
-            var record: InstalledModRecord? = null
+            var take: LedgerTake = LedgerTake.Absent
             try {
                 // 账本先销账。源文件都没了，这条记录留着只会让状态推导继续把它算成「生效中」，
                 // 而重打包时又找不到文件。注意这里只销账，不动游戏里的实际内容 ——
                 // 那需要重打包，属于「移除 mod」的动作，不是「删源文件」该做的事。
                 // 失败要把它放回去，所以让 removeAndReturn 把记录交回来。
-                record = withContext(Dispatchers.IO) { takeLedgerRecord(key) }
+                take = withContext(Dispatchers.IO) { takeLedgerRecord(key) }
+                // 销账本身出的事（写失败 / 账本损坏被重建）必须让用户看见 ——
+                // 这条路径跑在后台，不处置就等于静默（复核真缺陷 1）。
+                withContext(Dispatchers.IO) { reportLedgerWrite(take.write, "删除时销账") }
                 ok = withContext(Dispatchers.IO) { deleteModSourceFile(context, mod) }
             } catch (t: Throwable) {
                 // 兜底（含协程被取消）：任何意外都要把列表、账本、防重入状态收拾干净，
@@ -2389,7 +2494,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     // 这个其实还在的 mod 就再也扫不回来了
                     deletingModUris.remove(key)
                     restoreDeletedMods(listOf(mod to index))
-                    withContext(NonCancellable + Dispatchers.IO) { putLedgerRecord(record) }
+                    withContext(NonCancellable + Dispatchers.IO) { putLedgerRecord(take.record) }
                     onDone(false, "删除失败，可能没有该目录的写入权限")
                 }
             }
@@ -2449,7 +2554,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 while (i < pending.size) {
                     val mod = pending[i]
                     val key = mod.uri.toString()
-                    val record = takeLedgerRecord(key)
+                    val take = takeLedgerRecord(key)
+                    // 销账出的事同样要上报（写失败 / 账本损坏被重建）——
+                    // 批量删除跑在 IO 上，不处置就是静默（复核真缺陷 1）。
+                    reportLedgerWrite(take.write, "批量删除销账")
                     val ok = deleteModSourceFile(context, mod)
                     if (ok) {
                         removed++
@@ -2458,7 +2566,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     } else {
                         failed += mod
                         deletingModUris.remove(key)     // 没删成 → 别再挡着以后的重扫
-                        putLedgerRecord(record)         // 账本同理，原样放回
+                        putLedgerRecord(take.record)    // 账本同理，原样放回
                     }
                     i++
                 }
@@ -2506,16 +2614,30 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         false
     }
 
-    /** 从账本里销掉一条并把它交回来（删除失败要原样放回）。跑在 IO 上。
-     *  读改写是仓库里一次上锁的 [InstalledModRepository.removeAndReturn] —— 分开调
-     *  load()+remove() 会让并发的另一次写入从中间插进来。 */
-    private fun takeLedgerRecord(modUri: String): InstalledModRecord? {
-        if (!::installedModRepository.isInitialized) return null
+    /**
+     * 从账本里销掉一条并把它交回来（删除失败要原样放回）。跑在 IO 上。
+     * 读改写是仓库里一次上锁的 [InstalledModRepository.removeAndReturn] —— 分开调
+     * load()+remove() 会让并发的另一次写入从中间插进来。
+     *
+     * **返回结局而不是裸记录**（T08 二轮整改，复核真缺陷 1）：裸 `null` 会把
+     * 「本来就没这条」「账本写失败、记录还在」「账本损坏、原件被搬走」三件事混成一个值，
+     * 后两种在这条路径上完全静默。现在把 [LedgerTake] 交回调用方，
+     * 由它经 [reportLedgerWrite] 处置 —— **与其它写入口同一个处置点**。
+     */
+    private fun takeLedgerRecord(modUri: String): LedgerTake {
+        if (!::installedModRepository.isInitialized) return LedgerTake.Absent
         return try {
             installedModRepository.removeAndReturn(modUri)
         } catch (e: Exception) {
             Log.w("MainViewModel", "销账失败: $modUri", e)
-            null
+            LedgerTake.Blocked(
+                OperationError(
+                    kind = OperationErrorKind.UNKNOWN,
+                    message = "装入记录销账异常：" + e.message.orEmpty(),
+                    detail = e.toString(),
+                    target = modUri
+                )
+            )
         }
     }
 
@@ -2523,10 +2645,62 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     private fun putLedgerRecord(record: InstalledModRecord?) {
         if (record == null || !::installedModRepository.isInitialized) return
         try {
-            installedModRepository.put(record)
+            reportLedgerWrite(installedModRepository.put(record), "账本复原")
         } catch (e: Exception) {
             Log.w("MainViewModel", "账本复原失败: ${record.modUri}", e)
         }
+    }
+
+    /**
+     * 账本写入结果的**唯一**处置点（T08）。
+     *
+     * 改动前 `InstalledModRepository` 的写方法返回 `Unit`、失败只 `printStackTrace()` ——
+     * 调用方无从知道写失败了，账本可以静默地与游戏目录脱节。现在写方法回传
+     * `LedgerWrite`（Written / Repaired / Failed），本函数把它落成**用户能看见的东西**：
+     *
+     * | 结局 | 处置 |
+     * |---|---|
+     * | `Written` | 什么都不做（正常路径零噪音） |
+     * | `Repaired` | 记日志 + 走 [notifyLedgerNotice] 提示（**不是错误**：账本已可用，只是重建过） |
+     * | `Failed` | 记日志 + 提示（账本没写成功，旧账本仍在） |
+     *
+     * **切主线程**这件事由 [notifyLedgerNotice] 负责 —— 这些调用点大多跑在
+     * `Dispatchers.IO` 上，直接 `Toast` 会抛「Can't toast on a thread that has not
+     * called Looper.prepare()」，那正是 T07 真缺陷 #3 的形态（见 `T07.md` §8.11）。
+     *
+     * @param what 这次写的是什么（「装入记账」「账本复原」…），拼进提示文案里让用户知道
+     *   是哪一步出的问题。
+     */
+    private fun reportLedgerWrite(result: LedgerWrite, what: String) {
+        when (result) {
+            is LedgerWrite.Written -> Unit
+            is LedgerWrite.Repaired -> {
+                Log.w("MainViewModel", "${what}：账本损坏已重建（原件保留为 ${result.preservedAs}）")
+                notifyLedgerNotice("${what}时发现装入记录无法读取，已将原文件保留为 " +
+                    "${result.preservedAs}，并重建了一份新记录。游戏里的文件没有动。")
+            }
+            is LedgerWrite.Failed -> {
+                Log.w("MainViewModel", "${what}失败：${result.error.message}")
+                notifyLedgerNotice("${what}失败：${result.error.message}")
+            }
+        }
+    }
+
+    /**
+     * 把一条需要用户知道的账本事实送到 UI。
+     *
+     * 复用既有的 [ledgerResetNotice] 通道（`MainActivity` 已有 `LedgerResetDialog` 渲染它），
+     * 不新开一条 StateFlow —— 两者都是「账本出了一件你必须知道的事」，
+     * 分成两个通道只会让 UI 需要同时看两处。
+     *
+     * 后台线程调用是**现实情况**：本函数的调用点跑在 `Dispatchers.IO` 上，
+     * 而 `MutableStateFlow` 本身线程安全、UI 侧 `collectAsState` 会切回主线程，
+     * 所以这里不需要额外的调度 —— 真正需要切线程的是 `Toast`，
+     * 而本函数不 `Toast`。
+     */
+    private fun notifyLedgerNotice(message: String) {
+        // 旧的提示还没被用户消掉时不覆盖：先发生的那条更重要（它更接近根因）。
+        if (_ledgerResetNotice.value == null) _ledgerResetNotice.value = message
     }
 
     /**
@@ -2662,6 +2836,24 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // 文件搬运，弹出来一闪而过反而像出错了；手动点按钮才需要进度反馈。
         installScope.launch {
             if (!silent) _moveState.value = MoveState.Moving
+
+            // ---- T08 journal：这是「文件已换、账本未存」那个窗口的唯一落点 ----
+            //
+            // 三个阶段各写一条，全部由**真实发生的事**驱动（不是猜）：
+            //   PLANNED         —— 决定要装这一批，游戏文件还没动；
+            //   STAGED          —— 产物已就位（对这条路径而言，产物早在转换流程里
+            //                      写进 Download/Shared 了，所以它与 PLANNED 同一时刻为真）；
+            //   TARGET_REPLACED —— **moveDownloadToGame() 成功返回之后**
+            //                      （它内部的 copyDirectory 已经把 UnityCache/Shared 换掉）。
+            // 第四条 LEDGER_COMMITTED 由 finishSubmit() 在账本落盘成功后落。
+            val tracking = ::installedModRepository.isInitialized
+            val operationId = "move-" + System.currentTimeMillis()
+            val journalTargets = journalTargetsForCurrentJobs()
+            if (tracking) {
+                installedModRepository.beginSubmit(operationId, journalTargets)
+                installedModRepository.markStaged()
+            }
+
             val (success, message) = ShizukuManager.moveDownloadToGame()
             _moveState.value = if (success) {
                 MoveState.Success(message)
@@ -2683,32 +2875,78 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     _uninstallState.value = it.copy(command = null)
                 }
 
+                // 游戏文件**已经**被换掉了（copyDirectory 成功）。先把这条事实落盘，
+                // 再去动账本 —— 中间崩掉时，journal 里这条 TARGET_REPLACED 就是
+                // 下次启动能核对出窗口的唯一依据。
+                if (tracking) installedModRepository.markTargetReplaced()
+
                 // 一键卸载的装入完成 —— 记账里不该再留任何「生效中」，否则状态与游戏实际相反。
                 // 必须早于 recordSuccessfulInstall()：卸载任务的 mod 列表是空的，本来不会写账，
                 // 但残留的旧记录得在这里一并清掉。
+                var ledgerError: OperationError? = null
                 if (pendingRecordClear) {
-                    if (::installedModRepository.isInitialized) {
-                        withContext(Dispatchers.IO) { installedModRepository.clear() }
+                    if (tracking) {
+                        ledgerError = withContext(Dispatchers.IO) { installedModRepository.clear() }
+                        ledgerError?.let { reportLedgerWrite(LedgerWrite.Failed(it), "账本清空") }
                     }
                     pendingRecordClear = false
                 } else {
                     // 装入游戏成功才算「生效」，此时才记账 —— 转换只是把产物放到 Download/，
                     // 没进游戏目录的话 mod 并未生效，记了反而会谎报状态。
-                    recordSuccessfulInstall()
-                    pendingUninstallTargetHash?.let { installedModRepository.removeByTargetHash(it) }
+                    ledgerError = recordSuccessfulInstall()
+                    pendingUninstallTargetHash?.let { hash ->
+                        installedModRepository.removeByTargetHash(hash)?.let {
+                            reportLedgerWrite(it, "卸载后清理账本")
+                        }
+                    }
                     pendingUninstallTargetHash = null
                 }
+                // 账本成功 → 落 LEDGER_COMMITTED 并清 journal（窗口关闭）；
+                // 失败 → journal 原样留着，下次启动核对得出来。
+                if (tracking) installedModRepository.finishSubmit(ledgerError)
+
                 // 游戏目录已变，重新检测并刷新列表状态（顺带让状态徽章立刻更新）
                 withContext(Dispatchers.IO) { refreshBundleCleanStates() }
                 refreshInstallStates()
                 refreshBackupUsage()
+            } else {
+                // 提交没成功：游戏文件没被换掉，账本也不需要动。
+                // 清掉这次提交的 journal —— 留着它会让下次启动误报「有待核对」。
+                if (tracking) installedModRepository.finishSubmit(null)
             }
         }
     }
 
-    /** 把本批成功装入的 job 写进账本 —— 一个 mod 一条。 */
-    private fun recordSuccessfulInstall() {
-        if (!::installedModRepository.isInitialized) return
+    /**
+     * 当前这批装入任务涉及的提交目标（T08 journal 的目标摘要）。
+     *
+     * 只收**已经完成**的 job —— 与 [recordSuccessfulInstall] 的筛选口径一致：
+     * 没跑完的 job 没进过游戏目录，把它们写进「目标已替换」会让恢复核对误报。
+     *
+     * `modUris` 是恢复判据唯一能拿去账本里对的东西，所以取的是**这批 job 要装的全部 mod**，
+     * 而不是只取成功的那些：核对要回答的是「账本有没有漏记这次提交」，
+     * 范围应当与「这次动了哪些 bundle」对齐。
+     */
+    private fun journalTargetsForCurrentJobs(): List<JournalTarget> =
+        _installJobs.value
+            .filter { it.status is JobStatus.Finished }
+            .map { installJob ->
+                JournalTarget(
+                    bundleName = installJob.job.hashedName,
+                    hashDir = null,
+                    dataBytes = 0L,
+                    modUris = installJob.job.modsToInstall.map { it.uri.toString() }
+                )
+            }
+
+    /**
+     * 把本批成功装入的 job 写进账本 —— 一个 mod 一条。
+     *
+     * @return 写失败时的错误（null = 成功或无事可做），交回 [moveFilesToGame]
+     *   决定要不要保留 journal。
+     */
+    private fun recordSuccessfulInstall(): OperationError? {
+        if (!::installedModRepository.isInitialized) return null
         val now = System.currentTimeMillis()
         val quality = _selectedQuality.value
         val astc = _useAstc.value
@@ -2732,7 +2970,17 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     )
                 }
             }
-        installedModRepository.putAll(records)
+        return when (val result = installedModRepository.putAll(records)) {
+            is LedgerWrite.Written -> null
+            is LedgerWrite.Repaired -> {
+                reportLedgerWrite(result, "装入记账")
+                null
+            }
+            is LedgerWrite.Failed -> {
+                reportLedgerWrite(result, "装入记账")
+                result.error
+            }
+        }
     }
 
     /** 不重新扫描 mod 目录，只按最新的检测结果刷新状态徽章。 */
@@ -2781,7 +3029,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // 早先是 detachMod(familyKey, uri)，而账本按 familyKey「一包一条」记 ——
         // 卸同包第二个 mod 时按它自己的 familyKey 查不到记录，detachMod 返回空，
         // 就被当成「该包已无 mod」而整包还原，把同包其他 mod 一起卸了。
-        installedModRepository.remove(mod.uri.toString())
+        installedModRepository.remove(mod.uri.toString())?.let { reportLedgerWrite(it, "账本移除") }
         val remainingUris = installedModRepository.listByTargetHash(targetHash).map { it.modUri }
 
         if (remainingUris.isEmpty()) {
@@ -2796,7 +3044,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         if (keep.isEmpty()) {
             // 记录还在但源文件都没了，重打包无从下手，只能还原原版
             Log.w("MainViewModel", "包 $targetHash 尚有 ${remainingUris.size} 条记录但源文件均缺失，改为还原原版")
-            installedModRepository.removeByTargetHash(targetHash)
+            installedModRepository.removeByTargetHash(targetHash)?.let { reportLedgerWrite(it, "账本清理") }
             initiateUninstall(context, targetHash)
             refreshInstallStates()
             return
