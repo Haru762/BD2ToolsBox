@@ -76,7 +76,8 @@ object ShizukuManager {
         // v5: listBundleDirectory 改分页版（listBundleDirectoryPaged）—— 全量 JSON
         //     在 bundle 数 1800+ 时撑爆 binder 1MB 事务被截断，真机表现为
         //     JSONException Unterminated array，进而被笼统报成「游戏未安装」。
-        .version(5)
+        // v6: copyStream 改为同目录暂存 + 校验 + 原子提交。
+        .version(6)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {

@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
@@ -19,6 +21,7 @@ import com.bd2toolsbox.SpinePreviewActivity
 // 领域结果/计划模型已迁出本类（T05）。它们不依赖 android.* / UI 包，也不持有
 // ViewModel、Context、Composable 或 PyObject，因此可以在 JVM 单测里直接构造。
 import com.bd2toolsbox.core.fileaccess.SafeArchivePaths
+import com.bd2toolsbox.core.fileaccess.decideBackupGate
 import com.bd2toolsbox.core.model.ConvertedOverwritePlan
 import com.bd2toolsbox.core.model.HashRenameResult
 import com.bd2toolsbox.core.model.InstalledModRef
@@ -76,6 +79,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Collections
 import java.util.zip.ZipInputStream
 
 class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
@@ -1403,6 +1407,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     private fun processInstallJobs(context: Context) {
+        // 新批次开始：清掉上一批的「未完成备份」记录（T07 整改裁定 3 附加）。
+        // 放在这个漏斗里而不是每个调用点：五个入口共用这一条，新增入口不会漏。
+        resetUnfinishedBackups()
         installScope.launch {
             val total = _installJobs.value.size
             // 用 appContext 而不是传进来的 Activity context：这条流程刻意要活过界面
@@ -1497,8 +1504,20 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             // 「装哪个备份哪个」，已备份的不重复占空间。
             if (backupOriginals.value && baseIsGameFormat && backupBase == null) {
                 hashDirOf(relativePath)?.let { hashDir ->
-                    withContext(Dispatchers.IO) {
+                    val saved = withContext(Dispatchers.IO) {
                         backupRepository.saveBackup(hashedName, hashDir, originalDataCache!!)
+                    }
+                    // T07：这条**不在**提交路径上（产物照样落到 Download/Shared），
+                    // 所以失败不中止转换，但必须让用户看见。判定走纯函数
+                    // BackupGate.decideBackupGate，三个调用点同一套规则。
+                    val gate = decideBackupGate(
+                        backupEnabled = true,
+                        backupSucceeded = saved,
+                        onCommitPath = false
+                    )
+                    if (gate.mustReport) {
+                        Log.w("MainViewModel", "备份原版失败，本次仍继续转换：$hashedName($hashDir)")
+                        reportBackupFailure(hashedName, "原版备份失败：转换产物不受影响，但卸载后无法本地还原。")
                     }
                 }
             }
@@ -1610,9 +1629,47 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // 有千分之几差异（实测 6,243,701 vs 6,238,441），干净检测把备份大小也当
         // 原版基准，卸载后状态才不会一直停在「被修改」。
         hashDirOf(relativePath)?.let { hashDir ->
-            withContext(Dispatchers.IO) {
-                backupRepository.saveBackup(hashedName, hashDir, output)
-            }
+            withContext(Dispatchers.IO) { backupRestoredBundle(hashedName, hashDir, output) }
+        }
+    }
+
+    /**
+     * 还原产物顺手备份：**开关关着就什么都不做**（T07 三轮整改，先看开关）。
+     *
+     * ## 为什么这一处以前是错的
+     *
+     * 二轮把这条链的失败收进了「未完成的备份」汇总，但这里**不检查
+     * [backupOriginals] 开关**就调 `saveBackup` —— 于是用户**明确关掉**自动备份时，
+     * 一次**没被要求过**的备份失败也会被收进汇总，结果对话框弹出一条
+     * 「未完成的备份：……卸载时需重新下载原版」。用户没要求备份，却被告知备份没做成。
+     *
+     * 现在与另外两处（`processSingleJob` 的 `:1505`、提交路径的 `:2008`）形状一致：
+     * **外层先判开关**，关着就既不建备份、也不产生任何条目。这同时守住
+     * 「用户明确关掉的设置不被静默改回开启」这条既有约束。
+     *
+     * ## 为什么它不是 `suspend`
+     *
+     * `saveBackup` 是阻塞文件拷贝，切线程这件事留在调用点（`withContext(Dispatchers.IO)`），
+     * 生产行为与改动前**逐字一致**。拆成普通私有函数是为了让它能在设备用例里被反射
+     * 驱动 —— 私有 `suspend` 方法要 `kotlin-reflect` 才调得动，而 androidTest 没有它。
+     * 见 `BackupFailureSummaryTest.restoreBackupHonoursTheAutoBackupSwitch`。
+     */
+    private fun backupRestoredBundle(hashedName: String, hashDir: String, output: File) {
+        if (!backupOriginals.value) {
+            Log.d("MainViewModel", "自动备份已关闭，跳过还原产物的备份：$hashedName")
+            return
+        }
+        val saved = backupRepository.saveBackup(hashedName, hashDir, output)
+        // T07：与 processSingleJob 里那处同一条规则 —— 不在提交路径上，
+        // 失败不中止还原（产物照样落到 Download/Shared），但要让用户看见。
+        val gate = decideBackupGate(
+            backupEnabled = true,
+            backupSucceeded = saved,
+            onCommitPath = false
+        )
+        if (gate.mustReport) {
+            Log.w("MainViewModel", "备份还原产物失败，本次仍继续：$hashedName($hashDir)")
+            reportBackupFailure(hashedName, "还原产物的备份失败：还原本身不受影响，但卸载后无法本地秒还原。")
         }
     }
 
@@ -1707,27 +1764,136 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      *
      * 用于「直接装入产物」这条路径：它覆盖式写游戏目录，写完原版就找不回来了，
      * 而它既不下载也不重打包，没有别的地方能顺手拿到原版。
+     *
+     * **T07 的改动：返回值从 `Unit` 变成 [BackupAttempt]。** 旧实现在备份失败时
+     * 照样打印「已备份原版」（那是一条虚假记录），异常还被 `printStackTrace()` 吞掉。
+     * 现在把结果带回调用方，由 `decideBackupGate` 判定 —— 这条**在提交路径上**，
+     * 备份失败即中止本目标的写入（写完原版就没了，没有第二次机会）。
+     *
+     * 「不需要备份」与「备份成功」都返回 [BackupAttempt.NotNeeded]：
+     * 两者对调用方的含义相同（可以继续写入），区分它们只会制造一个没人用的分支。
      */
-    private suspend fun backupPristineOriginal(bundleName: String) {
-        if (!::backupRepository.isInitialized) return
-        if (bundleCleanStates[bundleName] != BundleCleanState.PRISTINE) return
-        val hashDir = gameBundleHashes[bundleName] ?: return
-        if (backupRepository.hasBackup(bundleName, hashDir)) return
+    private suspend fun backupPristineOriginal(bundleName: String): BackupAttempt {
+        if (!::backupRepository.isInitialized) return BackupAttempt.NotNeeded
+        if (bundleCleanStates[bundleName] != BundleCleanState.PRISTINE) return BackupAttempt.NotNeeded
+        val hashDir = gameBundleHashes[bundleName] ?: return BackupAttempt.NotNeeded
+        if (backupRepository.hasBackup(bundleName, hashDir)) return BackupAttempt.NotNeeded
 
-        val tmp = File(appContext?.cacheDir ?: return, "backup_stage/$bundleName/$hashDir/__data")
+        val cacheDir = appContext?.cacheDir ?: return BackupAttempt.NotNeeded
+        val tmp = File(cacheDir, "backup_stage/$bundleName/$hashDir/__data")
         tmp.parentFile?.mkdirs()
-        try {
+        return try {
             val ok = ShizukuManager.copyLocalBundleToCache(bundleName, hashDir, tmp.absolutePath)
-            if (ok && tmp.isFile && tmp.length() > 0) {
-                backupRepository.saveBackup(bundleName, hashDir, tmp)
+            if (!ok || !tmp.isFile || tmp.length() <= 0L) {
+                Log.w("MainViewModel", "取原版失败，未备份：$bundleName($hashDir) copied=$ok")
+                BackupAttempt.Failed("读取游戏目录里的原版失败")
+            } else if (backupRepository.saveBackup(bundleName, hashDir, tmp)) {
+                // 这条日志只许在备份**真的**成功时打印（旧实现在失败时也打）
                 Log.d("MainViewModel", "已备份原版 $bundleName (${tmp.length()} 字节)")
+                BackupAttempt.Saved
+            } else {
+                Log.w("MainViewModel", "写备份失败：$bundleName($hashDir)")
+                BackupAttempt.Failed("写入备份文件失败")
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // 旧写法在这里 printStackTrace() 吞掉 —— 失败必须传播，不许吞
+            Log.e("MainViewModel", "备份原版出错：$bundleName($hashDir)", e)
+            BackupAttempt.Failed(e.message ?: "备份原版出错")
         } finally {
             try { tmp.delete() } catch (_: Exception) {}
         }
     }
+
+    /**
+     * 原版备份的尝试结果。
+     *
+     * 三态而不是布尔：[NotNeeded]（备份关着 / 不是原版 / 已经备份过）与 [Saved]
+     * 对调用方是同一个含义，但与 [Failed] **不同** —— 用布尔会把「跳过」和
+     * 「做了且成功」压成同一个 `true`，那样 `decideBackupGate` 的输入就失真了。
+     */
+    private sealed class BackupAttempt {
+        /** 这次不需要备份（或已经备份过）。 */
+        object NotNeeded : BackupAttempt()
+
+        /** 备份已落盘。 */
+        object Saved : BackupAttempt()
+
+        /** 备份失败，[reason] 是给用户看的原因。 */
+        data class Failed(val reason: String) : BackupAttempt()
+    }
+
+    /**
+     * 把一次备份失败挂到该任务的状态上，让用户**看得见**（T07）。
+     *
+     * 用 `JobStatus.Installing` 而不是 `Failed`：失败的是「顺手备份」这一步，
+     * 不是这次转换/还原本身 —— 用 `Failed` 会把一个仍在正常进行的任务显示成失败，
+     * 而那正是这一整项要消灭的「报虚假状态」的另一面。
+     * [AtomicFileWriter] 那一侧同理：宁可多一条可见的警告，也不要一条不可见的丢失。
+     *
+     * **同时收进批次汇总**（T07 二轮整改，裁定 3 附加）：toast 一闪而过，任务随后被置成
+     * [JobStatus.Finished]，用户在结果对话框里看不到这件事 —— 而「卸载时能不能本地还原」
+     * 恰恰是他事后才会发现的事。所以除了即时提示，还要在收尾时单列一节。
+     *
+     * ## toast 必须自己切回主线程（二轮整改时由设备用例抓出来的真缺陷）
+     *
+     * 这个方法被 `processSingleJob`（跑在 `Dispatchers.IO`）与 `restoreBaseBundle` 调用，
+     * 而 `Toast.makeText(...).show()` 在**没调过 `Looper.prepare()` 的线程**上直接抛
+     * `NullPointerException: Can't toast on a thread that has not called Looper.prepare()`。
+     * 那个异常会被 `processSingleJob` 的 `catch (e: Exception)` 接住 → 该 job 被标成
+     * [JobStatus.Failed]，**整个转换连同已下载的基底一起中止**，用户看到的还是一条
+     * 与真实原因无关的报错。
+     *
+     * 这与裁定 1（「非提交路径备份失败只警告、不中止」）**方向相反** —— 也就是说
+     * 不修这一处，那条裁定在真机上根本不成立。所以这里显式切主线程：
+     * `toast(...)` 自己只换 application context、不切线程（见它的 KDoc）。
+     */
+    private fun reportBackupFailure(hashedName: String, message: String) {
+        updateJobStatus(hashedName, JobStatus.Installing(message))
+        // 累加是纯内存操作，留在当前线程 —— 汇总不能因为切线程而被漏掉。
+        recordUnfinishedBackup(hashedName, message)
+        val ctx = appContext ?: return
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            toast(ctx, message)
+        } else {
+            Handler(Looper.getMainLooper()).post { toast(ctx, message) }
+        }
+    }
+
+    /**
+     * 本次任务里没做成的备份（T07 二轮整改，裁定 3 附加）。
+     *
+     * 三处备份失败都记到这里：转换流程顺手备份（`processSingleJob`）、还原产物顺手备份
+     * （`restoreBaseBundle`）、以及提交路径上因备份失败被跳过的目标。前两处不中止任务，
+     * 只有一闪而过的 toast；都收进来之后 [summarizeResults] 才能在结果对话框里
+     * 如实回报「哪些备份没做成」—— 那正是用户原话要的「回报是否全部完成，
+     * 如果没有则显示哪些没有」。
+     *
+     * 用同步列表：`processSingleJob` 的 job 是并发跑的（`Semaphore(5)`），
+     * 累加必须线程安全。按 [FailedJobInfo.hashedName] 去重，同一个 bundle 只留一条。
+     *
+     * **不改变** [FinalInstallResult.successfulJobs] / [FinalInstallResult.failedJobs]：
+     * 备份失败不是装入失败（CDN 能重下），计数只反映装载结果。
+     */
+    private val unfinishedBackups: MutableList<FailedJobInfo> =
+        Collections.synchronizedList(mutableListOf())
+
+    /** 记下一条「没做成的备份」。同一个 [hashedName] 只留第一条（原因以首次为准）。 */
+    private fun recordUnfinishedBackup(hashedName: String, message: String) {
+        synchronized(unfinishedBackups) {
+            if (unfinishedBackups.none { it.hashedName == hashedName }) {
+                unfinishedBackups.add(FailedJobInfo(hashedName, message))
+            }
+        }
+    }
+
+    /** 开新批次前清空上一批的备份失败记录。 */
+    private fun resetUnfinishedBackups() {
+        synchronized(unfinishedBackups) { unfinishedBackups.clear() }
+    }
+
+    /** 收尾时取一份快照，交给 [FinalInstallResult]。 */
+    private fun unfinishedBackupsSnapshot(): List<FailedJobInfo> =
+        synchronized(unfinishedBackups) { unfinishedBackups.toList() }
 
     /**
      * 「装产物会覆盖同包已装 mod」的预警。
@@ -1824,6 +1990,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     private fun doInstallConvertedBundles(context: Context, targets: List<ModInfo>) {
         if (targets.isEmpty()) return
+        // 这条路不经 processInstallJobs（它自己就是漏斗），备份失败记录要在这里清。
+        resetUnfinishedBackups()
         _moveState.value = MoveState.Idle
         batchStartTimeMs = System.currentTimeMillis()
         _installJobs.value = targets.map { InstallJob(RepackJob(it.targetHash!!, listOf(it))) }
@@ -1860,8 +2028,34 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 // 直接装入是覆盖式写游戏目录，写完原版就没了。所以先把原版留一份 ——
                 // 这条路径不下载、不重打包，备份只能在这里做（转换流程那边是在拿到
                 // 下载/复用的基底时顺手存的，两条路互不经过）。
+                //
+                // T07：这是**提交路径**——写完这个目标，游戏目录里那份原版就永远
+                // 找不回来了。所以备份失败就跳过这个目标（不是只打日志继续往下写）。
+                // 旧实现在这里无条件继续，备份失败时照样覆盖原版、日志里还写着「已备份」。
                 if (backupOriginals.value) {
-                    withContext(Dispatchers.IO) { backupPristineOriginal(bundleName) }
+                    val attempt = withContext(Dispatchers.IO) { backupPristineOriginal(bundleName) }
+                    val gate = decideBackupGate(
+                        backupEnabled = true,
+                        backupSucceeded = attempt is BackupAttempt.Saved || attempt is BackupAttempt.NotNeeded,
+                        onCommitPath = true
+                    )
+                    if (!gate.allowsWrite) {
+                        val reason = (attempt as? BackupAttempt.Failed)?.reason ?: "备份原版失败"
+                        val msg = "已跳过装入（未能备份原版，覆盖后将无法还原）：$reason"
+                        Log.e("MainViewModel", "$msg [$bundleName]")
+                        failed.add(FailedJobInfo(bundleName, msg))
+                        // 这一处与另外两处不同：备份失败**确实**让这次装入没做成，
+                        // 所以它同时出现在「失败的分组」与「未完成的备份」两节里 ——
+                        // 前者说「这次没生效」，后者说「卸载时没法本地还原」。两句话都对。
+                        recordUnfinishedBackup(bundleName, msg)
+                        updateJobStatus(bundleName, JobStatus.Failed(msg, "$reason；目标未改动"))
+                        continue
+                    }
+                } else {
+                    // 开关关着：不建备份、照常写入。这条分支显式写出来（而不是靠
+                    // decideBackupGate 内部处理）是为了让「用户的明确选择」在调用点
+                    // 也看得见 —— 见 BackupGate.decideBackupGate 的文档注释。
+                    Log.d("MainViewModel", "自动备份已关闭，跳过原版备份：$bundleName")
                 }
 
                 val (success, message) = withContext(Dispatchers.IO) {
@@ -1901,6 +2095,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 command = null,
                 elapsedTimeMs = System.currentTimeMillis() - batchStartTimeMs,
                 failedJobDetails = failed,
+                // 备份失败单列一节（T07 整改裁定 3 附加）：转换/还原流程里那两处顺手备份
+                // 失败只闪一条 toast，不汇总的话用户在结果里看不到。不计入 failedJobs。
+                unfinishedBackups = unfinishedBackupsSnapshot(),
                 shizukuAvailable = ShizukuManager.isRunning(),
                 alreadyInGame = true
             )
@@ -2398,6 +2595,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                     error = (it.status as JobStatus.Failed).detailedLog
                 )
             },
+            // 备份失败的单独一节（T07 整改裁定 3 附加）：不改变 success/failed 计数，
+            // 只告诉用户「这些 bundle 没做成备份，卸载时要重新下载」。
+            unfinishedBackups = unfinishedBackupsSnapshot(),
             shizukuAvailable = ShizukuManager.isRunning()
         )
 

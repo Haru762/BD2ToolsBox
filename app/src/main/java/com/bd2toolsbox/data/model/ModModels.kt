@@ -295,6 +295,22 @@ data class FinalInstallResult(
     val command: String?,
     val elapsedTimeMs: Long = 0L,
     val failedJobDetails: List<FailedJobInfo> = emptyList(),
+    /**
+     * **本次任务里没做成的备份**（T07 二轮整改，裁定 3 附加）。
+     *
+     * 与 [failedJobDetails] 分开列，是因为这两件事的用户含义不同：装失败 = 这次
+     * mod 没生效，要处理；备份没做成 = mod 照样生效了，只是**卸载时没法本地还原**
+     * （得重新下载），属于「要知道但不阻断」的信息。
+     *
+     * 三处备份失败都收进这里：转换流程顺手备份、还原产物顺手备份（两处不中止任务，
+     * 只有一闪而过的 toast，任务随后被置成 Finished —— 不汇总的话用户在结果对话框里
+     * 根本看不到），以及提交路径上因备份失败被跳过的目标（那一处同时也在
+     * [failedJobDetails] 里，因为它确实没装成）。
+     *
+     * **不会**改变 [successfulJobs] / [failedJobs] 的计数：备份失败不是装入失败
+     * （CDN 能重下），计数只反映装载结果。
+     */
+    val unfinishedBackups: List<FailedJobInfo> = emptyList(),
     val shizukuAvailable: Boolean = false,
     /**
      * true = 产物是**直接写进游戏目录**的，压根不存在「再装一次」这一步。

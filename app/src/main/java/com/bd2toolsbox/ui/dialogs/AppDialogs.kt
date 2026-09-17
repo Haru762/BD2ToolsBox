@@ -969,6 +969,13 @@ fun ParallelInstallDialog(
                                 Spacer(Modifier.height(16.dp))
                                 FailedJobList(finalResult.failedJobDetails)
                             }
+
+                            // 未完成的备份（T07 整改裁定 3 附加）：与「失败的分组」分开列，
+                            // 因为含义不同 —— 这些 mod 装上了，只是卸载时没法本地还原。
+                            if (finalResult.unfinishedBackups.isNotEmpty()) {
+                                Spacer(Modifier.height(16.dp))
+                                UnfinishedBackupList(finalResult.unfinishedBackups)
+                            }
                         }
                     }
                 }
@@ -1030,6 +1037,68 @@ private fun FailedJobList(details: List<FailedJobInfo>) {
                     text = failedJob.error,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                )
+            }
+        }
+    }
+}
+
+/**
+ * **未完成的备份**（T07 整改裁定 3 附加）。
+ *
+ * 与 [FailedJobList] 刻意分开：那里是「这次 mod 没装成」，这里是「装成了，但卸载时
+ * 没法本地还原」—— 后者不阻断使用，用户要的只是**知道哪些没做成**（原话：
+ * 「成功备份的备份，失败的就跳过，直到完成该次任务，然后进行回报是否全部完成，
+ * 如果没有则显示哪些没有」）。
+ *
+ * 所以这里用 tertiary（提示色）而不是 error（错误色）：它不是失败，是一条
+ * 「你以后会需要知道」的信息。措辞也点明补救方式 —— CDN 能重下，不必惊慌。
+ */
+@Composable
+private fun UnfinishedBackupList(details: List<FailedJobInfo>) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
+    Text(
+        "未完成的备份：",
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.tertiary,
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "这些分组没能存下原版备份，装入本身不受影响；卸载时需重新下载原版。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center
+    )
+    Spacer(Modifier.height(8.dp))
+    details.forEach { unfinished ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(8.dp))
+                .clickable {
+                    clipboardManager.setText(AnnotatedString(unfinished.error))
+                    Toast.makeText(context, "信息已复制！", Toast.LENGTH_SHORT).show()
+                }
+                .padding(12.dp)
+        ) {
+            Text(
+                text = "分组：${unfinished.hashedName.take(16)}...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            Spacer(Modifier.height(4.dp))
+            SelectionContainer {
+                Text(
+                    text = unfinished.error,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier.horizontalScroll(rememberScrollState())
                 )
             }
