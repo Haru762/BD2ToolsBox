@@ -490,11 +490,12 @@
       "sourceVersion": "0.2.16/versionCode17",
       "deviceStatusAtAudit": "not-captured",
       "reason": "保全清单未包含原始备份目录，且不能把游戏真实文件当作用户数据样本提交",
-      "impact": "T04/T07/T08 必须使用合成 UnityFS 原版与备份，不得写成真实设备已通过",
+      "impact": "T04/T07/T08 必须使用合成 UnityFS 原版与备份，不得写成真实设备已通过。T09 复核（2026-09-18，只读 adb 127.0.0.1:16384）：设备上 origin_backup/ 目录根本不存在（test -d → NOT_EXIST，files/ 下也没有它），0 个 __data.game，故 T09 仍无真实备份夹具，PristineVerifier 与 BundleBackupRepository 的用例全部用 TemporaryFolder 合成；T09 的 m_Hash 实证另用了设备上真实的 UnityCache/Shared（1830 个 __data，只读不写），那部分不属本夹具。",
       "successorTasks": [
         "T04",
         "T07",
         "T08",
+        "T09",
         "T22",
         "T56"
       ],

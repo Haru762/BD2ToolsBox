@@ -33,9 +33,14 @@ import com.bd2toolsbox.core.model.PrepackPlan
 import com.bd2toolsbox.core.model.PreviewAssets
 import com.bd2toolsbox.core.model.RepackPlanBuilder
 import com.bd2toolsbox.core.model.UninstallPlan
+import com.bd2toolsbox.core.storage.BackupProvenance
+import com.bd2toolsbox.core.storage.BaselineSource
+import com.bd2toolsbox.core.storage.CatalogAnchor
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerWrite
 import com.bd2toolsbox.core.storage.OperationJournalStore
+import com.bd2toolsbox.core.storage.PristineVerifier
+import com.bd2toolsbox.core.storage.Verdict
 import com.bd2toolsbox.data.model.*
 import com.bd2toolsbox.data.repository.AvatarRepository
 import com.bd2toolsbox.data.repository.BundleBackupRepository
@@ -138,6 +143,14 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     private lateinit var installedModRepository: InstalledModRepository
     private lateinit var backupRepository: BundleBackupRepository
     private lateinit var previewCacheRepository: PreviewCacheRepository
+
+    /**
+     * 干净判定的纯函数实现（T09）。无状态、无 `Context`，构造一次即可复用。
+     *
+     * 摘要用默认的流式 SHA-256 —— 最大 bundle 实测 414 MB，读进内存不是选项
+     * （`StreamingDigest` 的 64 KiB 分块）。
+     */
+    private val verifier = PristineVerifier()
 
     /**
      * 全部 mod 源目录。
@@ -1596,8 +1609,23 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             // 「装哪个备份哪个」，已备份的不重复占空间。
             if (backupOriginals.value && baseIsGameFormat && backupBase == null) {
                 hashDirOf(relativePath)?.let { hashDir ->
+                    // T09：来源元数据。
+                    //
+                    // 这份基底的来源有且只有两种，由 `baseIsGameFormat` 那条链唯一决定：
+                    // - `localBase` 走的是 tryUseLocalBundle → 游戏目录里那份，
+                    //   它在采集时被干净检测判过 PRISTINE（= catalog 锚点一致）。
+                    // - `localBase` 为 null 时走 CDN 下载 → 官方字节。
+                    // 判据用「是在哪条分支拿到的」，不是事后靠尺寸猜。
+                    val source = if (localBase != null) {
+                        BaselineSource.GAME_DIR
+                    } else {
+                        BaselineSource.CATALOG_DOWNLOAD
+                    }
+                    val provenance = provenanceFor(source, hashedName)
                     val saved = withContext(Dispatchers.IO) {
-                        backupRepository.saveBackup(hashedName, hashDir, originalDataCache!!)
+                        backupRepository.saveBackup(
+                            hashedName, hashDir, originalDataCache!!, provenance
+                        )
                     }
                     // T07：这条**不在**提交路径上（产物照样落到 Download/Shared），
                     // 所以失败不中止转换，但必须让用户看见。判定走纯函数
@@ -1667,6 +1695,53 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             if (it.size >= 2) it[it.size - 2] else null
         }
 
+    // ---------------------------------------------------------------- T09：备份来源元数据
+
+    /**
+     * 采集备份时用的 catalog 登记尺寸（`m_BundleSize`），拿不到返回 null。
+     *
+     * 它是 sidecar 里 `catalogVerified` 的锚点之一：**采集那一刻**这个值与
+     * 待存字节一致，才说明这份备份曾被外部锚点钉住。拿不到表（离线且无缓存）
+     * 就返回 null → `catalogVerified` 推导为 false → 该备份**不会**被当成可信基准。
+     * 这是刻意的：宁可少一份可信备份，不可凭空断言。
+     */
+    private fun catalogSizeFor(bundleName: String): Long? =
+        catalogBundleMeta?.get(bundleName)?.first
+
+    /**
+     * 当前档位的 catalog 版本号，仅用于 sidecar 的 `catalogVersion` 追溯字段。
+     *
+     * **不参与任何判定**，所以拿不到就返回 null。取法是从磁盘缓存文件名反推
+     * （`catalog_{画质}_{版本}.json`，见 `catalog_indexer.cache_file_name`）——
+     * 这样不必给 `ModdingService.getBundleMeta` 加返回值（那会把 T09 的范围
+     * 扩到 `service/` 去，超出计划列的文件清单）。
+     */
+    private fun currentCatalogVersion(quality: String): String? {
+        val dir = appContext?.filesDir ?: return null
+        val prefix = "catalog_${if (quality == "FHD") "HD" else quality}_"
+        return dir.listFiles()
+            ?.asSequence()
+            ?.filter { it.isFile && it.name.startsWith(prefix) && it.name.endsWith(".json") }
+            // 同一档只会留一份（download_catalog 落盘后清旧的），取最新以防万一
+            ?.maxByOrNull { it.lastModified() }
+            ?.name
+            ?.removePrefix(prefix)
+            ?.removeSuffix(".json")
+    }
+
+    /** 采集一份备份的来源声明。三个调用点共用，保证 sidecar 字段形状一致。 */
+    private fun provenanceFor(
+        source: BaselineSource,
+        bundleName: String,
+        anchoredInputSize: Long? = null,
+    ): BackupProvenance = BackupProvenance(
+        source = source,
+        catalogSize = catalogSizeFor(bundleName),
+        anchoredInputSize = anchoredInputSize,
+        catalogVersion = currentCatalogVersion(selectedQuality.value),
+        quality = selectedQuality.value,
+    )
+
     /** 一个 mod 的源文件解到收集目录：目录 mod 整树拷入，zip mod 逐条解压。 */
     private fun extractModInto(mod: ModInfo, context: Context, dest: File) {
         if (mod.isDirectory) {
@@ -1716,12 +1791,29 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         ) { progress -> updateJobStatus(hashedName, JobStatus.Installing(progress)) }
         if (!ok) throw Exception("Restore failed: $msg")
 
-        // 还原产物就是原版的游戏格式，顺手存成备份。两个好处：
-        // 下次卸载零下载；而且 restore_bundle 用 lz4 重打包，字节数与官方 catalog
-        // 有千分之几差异（实测 6,243,701 vs 6,238,441），干净检测把备份大小也当
-        // 原版基准，卸载后状态才不会一直停在「被修改」。
+        // 还原产物就是原版的游戏格式，顺手存成备份：下次卸载零下载。
+        //
+        // T09：**旧注释的后半句已经删掉**。它说「restore_bundle 用 lz4 重打包，
+        // 字节数与官方 catalog 有千分之几差异（实测 6,243,701 vs 6,238,441），
+        // 干净检测把备份大小也当原版基准，卸载后状态才不会一直停在「被修改」」——
+        // 那就是被 T09 消灭的那条循环自证判据。替代路径见下面传给
+        // backupRestoredBundle 的 anchoredInputSize 与 PristineVerifier 的注释。
         hashDirOf(relativePath)?.let { hashDir ->
-            withContext(Dispatchers.IO) { backupRestoredBundle(hashedName, hashDir, output) }
+            // 走到这里说明 baseIsGameFormat == false，也就是基底**来自 CDN 下载**
+            // （另两种来源都是游戏格式、在上面就 return 了）。所以：
+            // - 输入是被 TLS 通道 + catalog 大小钉住的官方字节；
+            // - 转换是确定性的（T09 实测：同一输入两次运行字节完全相同）；
+            // - 于是产物可信，且这份输入的大小就是锚点。
+            // 记 anchoredInputSize 而不是给输入再算一次摘要，是为了避免为了审计
+            // 把几百 MB 的输入全量读一遍 —— 输入大小已经足够复现这次锚定。
+            val provenance = provenanceFor(
+                source = BaselineSource.RESTORE_PRODUCT,
+                bundleName = hashedName,
+                anchoredInputSize = base.length(),
+            )
+            withContext(Dispatchers.IO) {
+                backupRestoredBundle(hashedName, hashDir, output, provenance)
+            }
         }
     }
 
@@ -1745,13 +1837,25 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 生产行为与改动前**逐字一致**。拆成普通私有函数是为了让它能在设备用例里被反射
      * 驱动 —— 私有 `suspend` 方法要 `kotlin-reflect` 才调得动，而 androidTest 没有它。
      * 见 `BackupFailureSummaryTest.restoreBackupHonoursTheAutoBackupSwitch`。
+     *
+     * ## T09：多一个 [provenance] 参数
+     *
+     * 因为它现在必须能区分「这份还原产物是从什么锚定的输入派生出来的」——
+     * 没有它，`saveBackup` 只能写出一份 `catalogVerified=false` 的备份
+     * （于是判定落 UNKNOWN），卸载后状态又会停在「被修改」。
+     * 见 `restoreBaseBundle` 的调用点注释。
      */
-    private fun backupRestoredBundle(hashedName: String, hashDir: String, output: File) {
+    private fun backupRestoredBundle(
+        hashedName: String,
+        hashDir: String,
+        output: File,
+        provenance: BackupProvenance,
+    ) {
         if (!backupOriginals.value) {
             Log.d("MainViewModel", "自动备份已关闭，跳过还原产物的备份：$hashedName")
             return
         }
-        val saved = backupRepository.saveBackup(hashedName, hashDir, output)
+        val saved = backupRepository.saveBackup(hashedName, hashDir, output, provenance)
         // T07：与 processSingleJob 里那处同一条规则 —— 不在提交路径上，
         // 失败不中止还原（产物照样落到 Download/Shared），但要让用户看见。
         val gate = decideBackupGate(
@@ -1792,6 +1896,45 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         dest.parentFile?.mkdirs()
         return try {
             backupRepository.backupFile(bundleName, hashDir).copyTo(dest, overwrite = true)
+
+            // T09：**用之前先验**。旧写法只判 `hasBackup`，任何存在的备份都被当成权威
+            // 原版拿去重打包 —— 一份来源不明、甚至其实是被改过的备份会把旧 mod 内容
+            // 原样带进新产物（计划验收：「被修改备份不会作为干净基底再次复用」）。
+            //
+            // ## 为什么是 byteAnchoredBaseline 而不是 trustedBaseline（二轮整改）
+            //
+            // 首版这里用的是 `trustedBaseline` —— 而它**不筛来源强度**，`GAME_DIR` 照样
+            // 放行。复核者的攻击当场证伪（runId 20260918-031658，`expected:<UNKNOWN>
+            // but was:<PRISTINE>`）：一个**同尺寸的 mod** 躺在游戏目录里，扫描层因为看
+            // 不到字节、只能按 `size == catalog.size` 判它 PRISTINE，于是
+            // `backupPristineOriginal` 以 `GAME_DIR` 来源把它存成「可信」备份 ——
+            // 之后 `tryUseBackup` 拿它当干净基底复用。**那正是 T09 要消灭的形态**
+            // （「被修改备份不会作为干净基底再次复用」），在这条路径上没被消灭，
+            // 只是把判据从「无 sidecar 的任意备份」收窄到「GAME_DIR + 尺寸对得上」。
+            //
+            // `GAME_DIR` 的 `catalogVerified` 规则本身在扫描层判 PRISTINE 之后就是**循环**的：
+            // 判 PRISTINE 用的就是 size == catalog，存备份时又拿 size == catalog 当
+            // 「被锚定」的证据。所以这里必须只认 [BaselineSource.BYTE_ANCHORED]
+            // （CDN 下载 / 由它确定性派生）—— 与扫描层 `byteAnchoredBaseline` 同一口径。
+            //
+            // 现在备份要能当基底，必须带 sidecar 且其来源属于 BYTE_ANCHORED。
+            // **旧备份没有 sidecar → 返回 null → 落 UNKNOWN → 这里拒绝**，
+            // 改走游戏目录或 CDN 下载那条路。
+            //
+            // 这是**有意的行为变化**：旧备份从此不再被信任。代价是那些 bundle 卸载
+            // 时要重新下载一次；换来的是「来源不明的字节不会被当原版用」。
+            // 取舍写进 T09.md §「删掉大小判据」。
+            val baseline = backupRepository.byteAnchoredBaseline(bundleName, hashDir)
+            val verdict = verifier.classifyBackup(dest, baseline)
+            if (verdict != Verdict.PRISTINE) {
+                Log.w(
+                    "MainViewModel",
+                    "备份未通过可信校验，弃用并改走其他基底：$bundleName($hashDir) " +
+                            "verdict=$verdict baseline=${baseline?.source ?: "none"}"
+                )
+                runCatching { dest.delete() }
+                return null
+            }
             Log.d("MainViewModel", "使用本地备份原版: $bundleName (${dest.length()} 字节)")
             dest.absolutePath
         } catch (e: Exception) {
@@ -1813,6 +1956,35 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 if (dest.exists()) dest.delete()
             } catch (_: Exception) {}
             return null
+        }
+
+        // T09：拿到字节之后再做一次**字节级**复验。
+        //
+        // 这一步只在**有摘要基准**时才有约束力 —— 而游戏目录的原版恰恰通常没有：
+        // 实测证明 catalog 的 `m_Hash` 不是 `__data` 字节的内容摘要（T09.md
+        // §「m_Hash 语义」），所以「官方原版长什么样」这件事，官方清单本身答不了。
+        // 唯一能给出摘要的是带 sidecar 的可信备份（CDN 下载 / 由它派生）。
+        //
+        // 因此这里的行为是：
+        // - 有可信备份基准（同名同 hashDir）→ **要求逐字节一致**，不一致就弃用；
+        // - 没有摘要基准（纯 catalog 锚点）→ 保持原行为（name+size 一致即接受）。
+        //   这不是退让，是当前能拿到的最强证据；扫描层那条注释解释了为什么
+        //   `m_Hash` 只能撑到「锚点一致」级。
+        val baseline = if (::backupRepository.isInitialized) {
+            backupRepository.byteAnchoredBaseline(bundleName, hashDir)
+        } else {
+            null
+        }
+        if (baseline != null && baseline.hasContentDigest) {
+            val verdict = verifier.classify(dest, baseline.copy(expectedHashDir = hashDir))
+            if (verdict != Verdict.PRISTINE) {
+                Log.w(
+                    "MainViewModel",
+                    "游戏目录这份与可信备份不一致，弃用：$bundleName($hashDir) verdict=$verdict"
+                )
+                runCatching { dest.delete() }
+                return null
+            }
         }
         Log.d("MainViewModel", "复用本地原版 bundle: $bundleName (${dest.length()} 字节)")
         return dest.absolutePath
@@ -1879,7 +2051,15 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             if (!ok || !tmp.isFile || tmp.length() <= 0L) {
                 Log.w("MainViewModel", "取原版失败，未备份：$bundleName($hashDir) copied=$ok")
                 BackupAttempt.Failed("读取游戏目录里的原版失败")
-            } else if (backupRepository.saveBackup(bundleName, hashDir, tmp)) {
+            } else if (backupRepository.saveBackup(
+                    bundleName, hashDir, tmp,
+                    // T09：这份字节直接来自游戏目录，且上面刚判过 bundleCleanStates
+                    // 是 PRISTINE（catalog 锚点一致）。来源照实记 GAME_DIR ——
+                    // 它的强度上限就是「采集当时 name+size 对得上」，sidecar 里
+                    // 也如实体现（deriveCatalogVerified 要求尺寸等于 catalog 登记值）。
+                    provenanceFor(BaselineSource.GAME_DIR, bundleName),
+                )
+            ) {
                 // 这条日志只许在备份**真的**成功时打印（旧实现在失败时也打）
                 Log.d("MainViewModel", "已备份原版 $bundleName (${tmp.length()} 字节)")
                 BackupAttempt.Saved
@@ -3761,18 +3941,35 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         for ((name, expected) in meta) {
             val (expectedSize, expectedHash) = expected
             val actual = local[name]
-            states[name] = when {
-                actual == null -> BundleCleanState.ABSENT
-                actual.first != expectedHash -> BundleCleanState.VERSION_MISMATCH
-                actual.second < 0 -> BundleCleanState.UNKNOWN
-                actual.second == expectedSize -> BundleCleanState.PRISTINE
-                // 与本地备份一致也算原版：备份要么是装 mod 前从游戏目录留下的原版，
-                // 要么是卸载时 restore_bundle 产出的原版。后者用 lz4 重打包，字节数与
-                // 官方 catalog 会差千分之几，不认这一条的话卸载完会一直显示「被修改」。
-                hasBackupRepo && actual.second ==
-                        backupRepository.backupSize(name, actual.first) -> BundleCleanState.PRISTINE
-                else -> BundleCleanState.MODIFIED
+            val hashDir = actual?.first
+            if (actual == null) {
+                states[name] = BundleCleanState.ABSENT
+                continue
             }
+            // T09：判定收进 PristineVerifier.classifyListing —— 纯函数、可单测。
+            //
+            // 它**不再**拿「游戏目录里那份的大小 == 我们自己备份的大小」当原版判据
+            // （旧实现在这里有一分支正是如此）。那条判据是循环自证：备份是我们自己
+            // 存下来的，来源无从查证。现在备份要能当基准，必须带 sidecar 且其来源
+            // 属于 BYTE_ANCHORED（从官方 CDN 下载、或由它确定性派生）——
+            // 旧备份没有 sidecar，一律落 UNKNOWN，不会被当成原版。
+            //
+            // 注意这一层**只看得到 (目录名, 尺寸)** —— 游戏目录的字节这个 app 读不到
+            // （在别的应用的 data 下，要 Shizuku 才读得了），所以扫描层能做到的上限
+            // 就是「锚点一致」级。真正的字节级判定在使用点（tryUseLocalBundle /
+            // tryUseBackup），那里读得到字节，走的是 classify() 的摘要比对。
+            val catalogAnchor = CatalogAnchor(expectedHashDir = expectedHash, size = expectedSize)
+            val backupBaseline = if (hasBackupRepo && hashDir != null) {
+                backupRepository.byteAnchoredBaseline(name, hashDir)
+            } else {
+                null
+            }
+            states[name] = verifier.classifyListing(
+                hashDir = hashDir,
+                size = actual.second,
+                catalog = catalogAnchor,
+                backup = backupBaseline,
+            ).toBundleCleanState()
         }
         bundleCleanStates = states
         cleanScanError = null
@@ -3780,6 +3977,21 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         Log.d("MainViewModel", "干净检测: ${states.size} 个 bundle，" +
                 "其中被修改 ${states.count { it.value == BundleCleanState.MODIFIED }} 个")
         return states
+    }
+
+    /**
+     * `PristineVerifier` 的 [Verdict] → UI 用的 [BundleCleanState]。
+     *
+     * 两个枚举**逐字对齐**（见 `PristineVerifier.kt` 的 Verdict 注释），所以这里是
+     * 一次没做任何转换的直接映射 —— 保留成显式函数而不是 `valueOf`，是为了让
+     * 「将来某一边加了取值」在编译期就红，而不是运行期抛。
+     */
+    private fun Verdict.toBundleCleanState(): BundleCleanState = when (this) {
+        Verdict.PRISTINE -> BundleCleanState.PRISTINE
+        Verdict.MODIFIED -> BundleCleanState.MODIFIED
+        Verdict.VERSION_MISMATCH -> BundleCleanState.VERSION_MISMATCH
+        Verdict.ABSENT -> BundleCleanState.ABSENT
+        Verdict.UNKNOWN -> BundleCleanState.UNKNOWN
     }
 
     /**

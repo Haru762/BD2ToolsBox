@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.bd2toolsbox.core.storage.BackupProvenance
+import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.data.model.InstallJob
 import com.bd2toolsbox.data.model.JobStatus
 import com.bd2toolsbox.data.model.RepackJob
@@ -370,12 +372,31 @@ class BackupFailureSummaryTest {
         }
     }
 
-    /** 反射调用 `restoreBaseBundle` 尾部那段私有备份逻辑（见上面用例的「测的是哪一层」）。 */
+    /**
+     * 反射调用 `restoreBaseBundle` 尾部那段私有备份逻辑（见上面用例的「测的是哪一层」）。
+     *
+     * **T09 二轮整改：签名从三参数变成四参数。** T09 给 `backupRestoredBundle` 加了
+     * `provenance: BackupProvenance`（它要能区分「这份还原产物锚定自什么输入」，
+     * 否则 `saveBackup` 只能写出 `catalogVerified=false` 的备份）。
+     * 参数变了但这里没跟着改，于是本用例在 T09 交付态下抛
+     * `NoSuchMethodException`（复核者实测 `Tests run: 5, Failures: 1`）——
+     * **一条已交付的设备用例被静默打坏**。现在补上第四个实参。
+     *
+     * 传的 provenance 对本用例的三个子检查没有影响（它们断言的是「开关关着时备份目录
+     * 建没建」「有没有产生未完成条目」），只要构造得合法即可。用 `GAME_DIR` +
+     * `catalogSize` 是它与生产调用点最接近的一种形状。
+     */
     private fun invokeBackupRestoredBundle(hashedName: String, hashDir: String, output: File) {
         MainViewModel::class.java
-            .getDeclaredMethod("backupRestoredBundle", String::class.java, String::class.java, File::class.java)
+            .getDeclaredMethod(
+                "backupRestoredBundle",
+                String::class.java, String::class.java, File::class.java, BackupProvenance::class.java,
+            )
             .apply { isAccessible = true }
-            .invoke(vm, hashedName, hashDir, output)
+            .invoke(
+                vm, hashedName, hashDir, output,
+                BackupProvenance(source = BaselineSource.GAME_DIR, catalogSize = 64),
+            )
     }
 
     /**
