@@ -371,7 +371,9 @@
           "T35",
           "T36"
         ],
-        "handoffRequirement": "不再被要求「修一个会丢弃旧快照的 loader」——release 根本不丢弃。要处理的是构建相关分歧：断言「旧快照被丢弃/被接受」的测试必须显式声明跑在 debug 还是 minified release。"
+        "handoffRequirement": "不再被要求「修一个会丢弃旧快照的 loader」——release 根本不丢弃。要处理的是构建相关分歧：断言「旧快照被丢弃/被接受」的测试必须显式声明跑在 debug 还是 minified release。",
+        "t10LocalR8Reproduction": "T10 在本工作区用 ./gradlew :app:minifyReleaseWithR8 当场复现了同一现象（不再只是离线推断）：release mapping.txt 里 MainViewModel$ModListSnapshot 的字段仍是 savedAt->a / mods->b / sourceDirs->c、version 无任何条目；解 classes.dex(2945708 B) 的 string_ids 得到「快照版本」命中 0 次、「丢弃」命中 0 次，而「写入冷启动快照失败」「冷启动快照读取失败，按没有快照处理」「快照改名失败，本次不落盘」三条各 1 次 —— 与 0.2.16 historical 包的现象逐条一致。",
+        "t10LoaderMigration": "T10 之后该文件的读取结果由 ModSnapshotStore 的 legacy 分支决定：能读回 5 条（mapping.txt 给的 a->savedAt/b->mods/c->sourceDirs 无歧义，ModInfo 内层字段因 proguard-rules 的 data.model 包级 keep 未被改名）。JVM 与设备用例各有一条钉住。"
       }
     }
   ],
@@ -408,6 +410,27 @@
       "requiredness": "g0-required",
       "status": "available",
       "deliveredVia": "tools/verification.ps1 Test-Bd2Python 注入 BD2_TEST_CATALOG / BD2_TEST_CATALOG_SHA256；测试模块顶层读取（类装饰器在导入期求值，事后 monkeypatch 无效）"
+    },
+    {
+      "id": "repo.mod-snapshot-release-fixture",
+      "storageClass": "repo-resource",
+      "targetPath": "app/src/test/resources/legacy/mod-snapshot-release.json",
+      "companionPath": "app/src/androidTest/assets/legacy/mod-snapshot-release.json",
+      "bytes": 2965,
+      "sha256": "cd468d7b1f0ba92c801df3408d64a9e4a3271e8c00d23d09bbb5bb450c1b57be",
+      "sourceFixtureIds": [
+        "legacy.cache.mod-list-snapshot-obfuscated"
+      ],
+      "producerTask": "T10",
+      "redaction": "基于 T03 从设备真实捕获的 files/mod_list_snapshot.json（git-ignored，本仓不入库）逐结构派生：**保留**顶层键名 a/b/c 与键序、5 条 ModInfo 的字段名/字段数/字段序、全部枚举词表（NOT_INSTALLED / MODIFIED_BY_OTHER / CONVERTED_BUNDLE / PC_SOURCE / KNOWN 等）、a 的数值形态、c 的数组长度与元素形态；**替换**所有可能含用户信息的值 —— character/costume/name 换成合成的 SampleCharA / Sample Costume 1 / Sample Mod 1 等，targetHash/targetHashedName/convertedHashDir 换成 sha256 派生的合成 32-hex，uri 与 sourceDirs 的目录段换成 content://com.example.documents/tree/primary%3Asample-mods-alpha|beta。convertedDataSize 保留量级（15321066 / 0），它不是用户信息。",
+      "whyKeepObfuscatedKeys": "a/b/c **正是本任务的题眼**：它们是 0.2.16 那次 R8 混淆的产物，T10 要证明的就是「这份真实产物还能被读回」。脱敏若把键名也换成规范名，夹具就不再代表真实 release 形态，整个 T10 失去验证对象。",
+      "usedBy": [
+        "app/src/test/java/com/bd2toolsbox/core/storage/ModSnapshotStoreTest.kt",
+        "app/src/androidTest/java/com/bd2toolsbox/data/repository/ReleaseSnapshotCompatibilityTest.kt"
+      ],
+      "requiredness": "phase-required",
+      "status": "available",
+      "notes": "两份副本（JVM resources + androidTest assets）内容逐字节相同、同一 sha256；androidTest 侧用 InstrumentationRegistry.context.assets 读（androidTest 的 classpath 不含 src/test/resources，照计划字面放会 FileNotFoundException）。"
     }
   ],
   "gaps": [

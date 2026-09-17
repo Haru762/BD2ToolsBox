@@ -38,8 +38,13 @@ import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.core.storage.CatalogAnchor
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerWrite
+import com.bd2toolsbox.core.storage.ModSnapshotStore
 import com.bd2toolsbox.core.storage.OperationJournalStore
+import com.bd2toolsbox.core.storage.PendingWrite
 import com.bd2toolsbox.core.storage.PristineVerifier
+import com.bd2toolsbox.core.storage.SnapshotCommit
+import com.bd2toolsbox.core.storage.SnapshotEntry
+import com.bd2toolsbox.core.storage.SnapshotLoad
 import com.bd2toolsbox.core.storage.Verdict
 import com.bd2toolsbox.data.model.*
 import com.bd2toolsbox.data.repository.AvatarRepository
@@ -59,14 +64,6 @@ import com.bd2toolsbox.service.PrepackService
 import com.bd2toolsbox.service.ScanService
 import com.bd2toolsbox.service.ShizukuManager
 import com.bd2toolsbox.ui.theme.AppTheme
-import com.google.gson.ExclusionStrategy
-import com.google.gson.FieldAttributes
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
-import com.google.gson.TypeAdapter
-import com.google.gson.stream.JsonReader
-import com.google.gson.stream.JsonToken
-import com.google.gson.stream.JsonWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
@@ -122,15 +119,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         /** UnityFS bundle 文件头的魔数（"UnityFS" + 结尾 NUL，共 8 字节），产物 __data 的损坏判定用。
          *  用字节字面量而不是字符串：源码字符串里的裸 NUL 既看不见也容易被编辑工具吞掉。 */
         private val UNITYFS_MAGIC = byteArrayOf(0x55, 0x6E, 0x69, 0x74, 0x79, 0x46, 0x53, 0x00)
-
-        /** 冷启动列表快照（见 [saveModListSnapshot]）：上次扫描落定的整张列表。 */
-        private const val SNAPSHOT_FILENAME = "mod_list_snapshot.json"
-
-        /**
-         * 快照结构版本。改了 [ModInfo] 的字段含义就 +1 —— 老快照直接丢弃按「没有快照」走，
-         * 比按缺字段的半截数据渲染强（那种数据会以 NPE 的形式在很远的地方炸）。
-         */
-        private const val SNAPSHOT_VERSION = 1
     }
 
     private fun shouldIgnoreModEntry(entryName: String?): Boolean {
@@ -3618,68 +3606,136 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 快照只是显示用的缓存，**不是**事实来源：它可能过期（用户删了目录、撤销了授权、
      * 在文件管理器里动了文件），这些偏差都由随后的那次扫描收敛；扫描还会把新结果写回去。
      * 因此读写失败、文件损坏都只是「这次没有快照」，不影响任何功能。
+     *
+     * ## 磁盘格式与读写语义都在 [ModSnapshotStore]（T10 迁出）
+     *
+     * 本类从这一版起**只做转发**：`ModInfo` ⇄ [SnapshotEntry] 的转换（`Uri` 是 android
+     * 类型，Store 刻意不碰）、以及「读出来之后怎么灌进列表」。块里旧实现的三个真缺陷被
+     * 一并修掉（失败不上报、改名回退先删目标再改名 → 新旧皆失、schema 校验散在四处），
+     * 详见 `ModSnapshotStore` 的类注释与 `docs/refactor/evidence/T10.md` §2。
+     *
+     * **旧快照仍能读回**：0.2.16 release 写出的 `{"a":…,"b":…,"c":…}`（字段被 R8 改名、
+     * `version` 被整个删掉）由 Store 的 legacy 分支按 `mapping.txt` 的无歧义映射迁移读取。
+     * 新写出的文件用规范键名，**绝不**再写 `a`/`b`/`c`。
      */
-    private data class ModListSnapshot(
-        val version: Int = SNAPSHOT_VERSION,
-        /** 落盘时刻，仅供排查（读侧不据此判新旧：新旧由扫描结果决定）。 */
-        val savedAt: Long = 0L,
-        val mods: List<ModInfo> = emptyList(),
-        val sourceDirs: List<String>? = null
-    )
+    private var snapshotStoreDir: File? = null
+    private var snapshotStoreInstance: ModSnapshotStore? = null
 
-    private data class SnapshotWrite(val revision: Long, val snapshot: ModListSnapshot)
-    private var snapshotWriteRevision = 0L
+    /**
+     * 快照的磁盘访问点。
+     *
+     * **必须是「每个 filesDir 一个实例」的缓存，不能是每次现算**：`capture` 分配的
+     * `revision` 是 [ModSnapshotStore] 的**实例状态**，`commit` 拿它做闸门。若 `capture`
+     * 与 `commit` 落在两个不同的实例上，后者的计数器还是 0，**每一次提交都会被判成过期**、
+     * 快照永远写不出去 —— 而且 debug 下完全看不出来（没有异常、只有一条 `Log.i`）。
+     *
+     * 缓存的是「上一次给的 filesDir → 那个 Store」，不是 `Context`：测试会换 `filesDir`
+     * （`ModSnapshotTest` 用 `ContextWrapper`），换了就得换实例，按目录判等正好覆盖这个
+     * 场景，同时不会把一个已经作废的 Context 留在这里。
+     */
+    private fun snapshotStore(): ModSnapshotStore? {
+        val filesDir = appContext?.filesDir ?: return null
+        if (snapshotStoreDir != filesDir) {
+            snapshotStoreInstance = ModSnapshotStore(File(filesDir, ModSnapshotStore.SNAPSHOT_FILENAME))
+            snapshotStoreDir = filesDir
+        }
+        return snapshotStoreInstance
+    }
 
     /** 在列表提交时编号，旧 IO 任务即使较晚完成也不能盖掉较新的结果。 */
-    @Synchronized
-    private fun captureModListSnapshot(mods: List<ModInfo>): SnapshotWrite = SnapshotWrite(
-        ++snapshotWriteRevision,
-        ModListSnapshot(SNAPSHOT_VERSION, System.currentTimeMillis(), mods.toList(),
-            _modSourceDirs.value.map { it.toString() })
+    private fun captureModListSnapshot(mods: List<ModInfo>): PendingWrite? =
+        snapshotStore()?.capture(
+            entries = mods.map(::toSnapshotEntry),
+            sourceDirs = _modSourceDirs.value.map { it.toString() }
+        )
+
+    /**
+     * `ModInfo` → 磁盘条目。
+     *
+     * 落盘时刻意**不写** `resolvedTargets` / `unresolvedFiles` / `convertedDataUri`
+     * —— 它们是转换路径的数据，整个 Kotlin 侧没有消费者，却是体积大头。
+     *
+     * 改动前靠一个只作用于序列化的 `ExclusionStrategy` 按字段名排除它们。T10 首版把这段
+     * 注释写成「那条策略在 release 包里**是坏的**（`FieldAttributes.getName()` 拿到 R8
+     * 改名后的名字）」—— **二轮复核用本任务自己的夹具反证了它，这句是错的**：`ModInfo` 有
+     * `data.model.**` 的包级 keep（自 0.1 就在），历史 release 的字段名原样未改，那条策略
+     * **当年确实在生效**；夹具里这三个键本来就不存在，就是它生效的产物（详见
+     * `ModSnapshotStore` 的类注释与 `T10.md` §11.1）。
+     *
+     * 现在改成 DTO 里根本没有这三个字段，**收益不是「修一个失效的策略」，而是判据不再依赖
+     * 反射字段名** —— 与 0.2.16 里 `ModListSnapshot` 字段被改成 `a`/`b`/`c` 是同一类契约
+     * 脆弱性（"持久化格式不许依赖会被改的东西"，T09 二轮那条教训的同型）。
+     *
+     * 代价（读侧）与旧行为**完全相同**：三个字段读回来分别是空表 / 空表 / null，
+     * 见 [fromSnapshotEntry]。
+     */
+    private fun toSnapshotEntry(mod: ModInfo) = SnapshotEntry(
+        name = mod.name,
+        character = mod.character,
+        costume = mod.costume,
+        type = mod.type,
+        isEnabled = mod.isEnabled,
+        uri = mod.uri.toString(),
+        targetHashedName = mod.targetHashedName,
+        isDirectory = mod.isDirectory,
+        resolutionState = mod.resolutionState.name,
+        targetHash = mod.targetHash,
+        resolvedFamilyKey = mod.resolvedFamilyKey,
+        errorReason = mod.errorReason,
+        installState = mod.installState.name,
+        kind = mod.kind.name,
+        convertedHashDir = mod.convertedHashDir,
+        convertedDataSize = mod.convertedDataSize,
+        defect = mod.defect?.name,
+        outdatedCurrentHash = mod.outdatedCurrentHash
     )
 
     /**
-     * Uri ⇄ 字符串。
-     *
-     * Gson 默认拿 Uri 没辙：它是抽象类、字段私有，反射序列化出来是一堆内部字段
-     * （甚至直接抛异常），读回来也构造不出对象。统一按 [Uri.toString] 存、
-     * [Uri.parse] 读 —— 与整份代码里「uri 当字符串用」的口径一致。
+     * 磁盘条目 → `ModInfo`。结构完整性已由 [ModSnapshotStore] 在读侧判过
+     * （8 个非空字段逐个相同），这里剩下的只有「字符串 → 枚举」的解析：
+     * 枚举名对不上说明文件来自别的 schema，**整条丢掉**（[mapNotNull]），
+     * 不猜一个默认值 —— 猜出来的状态会在 UI 上显示成一条像真的假信息。
      */
-    private object UriStringAdapter : TypeAdapter<Uri>() {
-        override fun write(out: JsonWriter, value: Uri?) {
-            out.value(value?.toString())
-        }
-
-        override fun read(input: JsonReader): Uri? {
-            if (input.peek() == JsonToken.NULL) {
-                input.nextNull()
-                return null
-            }
-            return Uri.parse(input.nextString())
-        }
+    private fun fromSnapshotEntry(entry: SnapshotEntry): ModInfo? {
+        val uri = entry.uri ?: return null
+        val name = entry.name ?: return null
+        val character = entry.character ?: return null
+        val costume = entry.costume ?: return null
+        val type = entry.type ?: return null
+        val resolutionState = enumOrNull<ResolutionState>(entry.resolutionState) ?: return null
+        val installState = enumOrNull<ModInstallState>(entry.installState) ?: return null
+        val kind = enumOrNull<ModKind>(entry.kind) ?: return null
+        return ModInfo(
+            name = name,
+            character = character,
+            costume = costume,
+            type = type,
+            isEnabled = entry.isEnabled,
+            uri = Uri.parse(uri),
+            targetHashedName = entry.targetHashedName,
+            isDirectory = entry.isDirectory,
+            resolutionState = resolutionState,
+            targetHash = entry.targetHash,
+            resolvedFamilyKey = entry.resolvedFamilyKey,
+            // 落盘时被丢掉的三个字段，读回来与旧实现给的值一致：空表 / 空表 / null。
+            // 这不是「丢了数据」，而是「本来就没存」（旧实现靠 Gson 的 Unsafe 造实例，
+            // 读回来同样是这三个值）。
+            resolvedTargets = emptyList(),
+            unresolvedFiles = emptyList(),
+            errorReason = entry.errorReason,
+            installState = installState,
+            kind = kind,
+            convertedHashDir = entry.convertedHashDir,
+            convertedDataSize = entry.convertedDataSize,
+            convertedDataUri = null,
+            defect = enumOrNull<ModDefect>(entry.defect),
+            outdatedCurrentHash = entry.outdatedCurrentHash
+        )
     }
 
-    /**
-     * 落盘时丢掉的字段。
-     *
-     * `resolvedTargets`/`unresolvedFiles` 是转换路径的数据，整个 Kotlin 侧没有消费者，
-     * 却是体积大头（一条一个几百字节的数组）；`convertedDataUri` 是一长串 document uri，
-     * 扫描时会重新发现，快照里那份只在「恢复了条目但还没扫完」这几秒内有用，丢掉它换来的
-     * 是校验路径自动跳过（checkUnityFsHeader 拿不到 uri 就返回 null，不判损坏，安全）。
-     * 只作用于序列化：读侧结构不变，历史快照里带着这些字段也照读不误。
-     */
-    private val snapshotDroppedFields =
-        setOf("resolvedTargets", "unresolvedFiles", "convertedDataUri")
-
-    private val snapshotGson: Gson by lazy {
-        GsonBuilder()
-            .registerTypeAdapter(Uri::class.java, UriStringAdapter)
-            .addSerializationExclusionStrategy(object : ExclusionStrategy {
-                override fun shouldSkipField(f: FieldAttributes) = f.name in snapshotDroppedFields
-                override fun shouldSkipClass(clazz: Class<*>?) = false
-            })
-            .create()
-    }
+    /** 按名字取枚举；不认识的名字（或 null）返回 null。 */
+    private inline fun <reified T : Enum<T>> enumOrNull(name: String?): T? =
+        name?.let { n -> enumValues<T>().firstOrNull { it.name == n } }
 
     /**
      * 本轮进程里扫描是否已经落定过一次。
@@ -3691,95 +3747,37 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     @Volatile
     private var scanSettled = false
 
-    private fun modListSnapshotFile(): File? =
-        appContext?.let { File(it.filesDir, SNAPSHOT_FILENAME) }
-
-    /** 源目录被清空时把快照一并抹掉（写空表即可，读侧按「没有快照」走）。 */
+    /** 源目录被清空时把快照一并抹掉（**只删快照文件本身**，绝不碰账本/配置）。 */
     private fun clearModListSnapshot() {
-        val snapshot = captureModListSnapshot(emptyList())
-        viewModelScope.launch(Dispatchers.IO) { saveModListSnapshot(snapshot) }
+        val store = snapshotStore() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!store.discard()) {
+                Log.w("MainViewModel", "快照失效失败（不影响功能）：${store.file.path}")
+            }
+        }
     }
 
     /**
      * 落快照。写在 IO 上、失败只记日志：宁可下次启动回到「没有快照」的老路径，
      * 也不能因为一个缓存文件写不进去影响扫描收尾。
      *
-     * 先写 .tmp 再改名：写到一半被杀（用户清后台）时旧的完整快照还在，不会留下
-     * 半截 JSON —— 虽然读侧也按损坏处理，但能救回来一份就用一份。
-     * [Synchronized]：删除成功、扫描收尾、清目录三处都会写，交错写会把 .tmp 写坏，
-     * 相互串起来（同一进程内只有这一处在写这个文件）。
+     * 原子提交与失败回退都在 [ModSnapshotStore.commit]（走 T07 的 `AtomicFileWriter`）。
+     * 调用方**不需要**再判 revision/源目录 —— 那两道闸在 Store 里，且能如实回报
+     * 「为什么这次没落盘」（[SnapshotCommit.Skipped]）；改动前这里是静默 `return`，
+     * 「这份快照为什么没写进去」在测试里只能靠间接推断。
      */
-    @Synchronized
-    private fun saveModListSnapshot(write: SnapshotWrite) {
-        if (write.revision != snapshotWriteRevision ||
-            write.snapshot.sourceDirs != _modSourceDirs.value.map { it.toString() }
-        ) return
-        val file = modListSnapshotFile() ?: return
-        try {
-            val json = snapshotGson.toJson(write.snapshot)
-            val tmp = File(file.parentFile, "${file.name}.tmp")
-            tmp.delete()                    // 上次进程被杀留下的半截 .tmp
-            tmp.writeText(json)
-            if (!tmp.renameTo(file)) {
-                file.delete()
-                if (!tmp.renameTo(file)) {
-                    Log.w("MainViewModel", "快照改名失败，本次不落盘")
-                    tmp.delete()
-                }
-            }
-        } catch (e: Exception) {
-            Log.w("MainViewModel", "写入冷启动快照失败（不影响功能）", e)
+    private fun saveModListSnapshot(write: PendingWrite?) {
+        // null = 这次没有可写的快照（`appContext` 还没挂上，或扫描在提交前就被源目录变化
+        // 判废）。与「写了但被闸门拒绝」不是一回事，所以在这里就返回，不进 Store。
+        val store = snapshotStore() ?: return
+        if (write == null) return
+        when (val result = store.commit(write, _modSourceDirs.value.map { it.toString() })) {
+            is SnapshotCommit.Written -> Unit
+            is SnapshotCommit.Skipped -> Log.i("MainViewModel", "本次不落快照：${result.reason}")
+            is SnapshotCommit.Failed ->
+                Log.w("MainViewModel", "写入冷启动快照失败（不影响功能）", null)
         }
     }
-
-    /** 读快照。任何异常（文件不存在、JSON 半截、字段缺失）都按「没有快照」返回空表。 */
-    private fun loadModListSnapshot(): List<ModInfo> {
-        val file = modListSnapshotFile() ?: return emptyList()
-        if (!file.exists()) return emptyList()
-        return try {
-            val text = file.readText()
-            if (text.isBlank()) return emptyList()
-            val snapshot = snapshotGson.fromJson(text, ModListSnapshot::class.java)
-                ?: return emptyList()
-            if (snapshot.version != SNAPSHOT_VERSION) {
-                Log.i("MainViewModel", "快照版本 ${snapshot.version} 不是 $SNAPSHOT_VERSION，丢弃")
-                return emptyList()
-            }
-            if (snapshot.sourceDirs != _modSourceDirs.value.map { it.toString() }) return emptyList()
-            // Gson 不管 Kotlin 的非空约束：字段在 JSON 里缺失/被改坏时会给 null，
-            // 放过去就会在很远的地方炸 NPE（与 InstalledModRepository.load 同一道防线）
-            snapshot.mods.mapNotNull { it?.let(::normalizeSnapshotEntry) }
-        } catch (e: Exception) {
-            Log.w("MainViewModel", "冷启动快照读取失败，按没有快照处理", e)
-            emptyList()
-        }
-    }
-
-    /**
-     * 快照条目的校验与补全。
-     *
-     * 落盘时被排除的 resolvedTargets/unresolvedFiles 读回来**必然是 null** —— Gson 用
-     * Unsafe 造实例、不走 Kotlin 的默认值。留着 null 会在转换/校验路径上炸 NPE，补成空表；
-     * 其余关键字段缺失（JSON 被改坏、枚举名对不上）没法修，整条丢掉。
-     */
-    private fun normalizeSnapshotEntry(mod: ModInfo): ModInfo? {
-        @Suppress("SENSELESS_COMPARISON")
-        if (mod.uri == null || mod.name == null || mod.character == null || mod.costume == null ||
-            mod.type == null || mod.resolutionState == null || mod.installState == null || mod.kind == null
-        ) return null
-        return mod.copy(
-            resolvedTargets = nullToEmptyList(mod.resolvedTargets),
-            unresolvedFiles = nullToEmptyList(mod.unresolvedFiles)
-        )
-    }
-
-    /**
-     * null → 空表。
-     *
-     * 必须跨一层函数边界：直接写 `mod.resolvedTargets ?: emptyList()` 时，编译器按字段的
-     * 非空静态类型判定左侧恒非空，判空会被优化掉，null 照样漏过去。
-     */
-    private fun <T> nullToEmptyList(list: List<T>?): List<T> = list ?: emptyList()
 
     /**
      * 冷启动把快照灌进列表。跑在 IO 上，读完才回主线程。
@@ -3790,17 +3788,60 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 扫描跑完自然会落回生效中/需重新应用那些真实状态。
      *
      * defect/outdated 按快照原样显示（它们依赖 catalog，冷启动时还没有更新的依据）。
+     *
+     * ## 分态处置（T10）
+     *
+     * - [SnapshotLoad.Loaded]：按旧口径灌列表（下面那套闸不变）。
+     * - [SnapshotLoad.StaleVersion] / [SnapshotLoad.Corrupt]：**显式失效** —— 只删快照
+     *   文件本身，重建即可。这是计划第 2 条要的「明确重新加载」，而不是让一份读不回来的
+     *   文件永远躺在那里、每次冷启动都空转一次。
+     * - [SnapshotLoad.SourceDirsChanged]：**不删**。表是好的，只是属于另一组源目录；
+     *   用户可能只是临时切走再切回来，下一次扫描收尾会正常覆盖它。
+     * - [SnapshotLoad.Absent] / [SnapshotLoad.IoError]：什么都不做。
      */
     private fun restoreModListSnapshot() {
         viewModelScope.launch {
+            val store = snapshotStore()
             val sources = _modSourceDirs.value
             val restored = withContext(Dispatchers.IO) {
-                val snapshot = loadModListSnapshot()
-                if (snapshot.isEmpty()) {
-                    emptyList()
-                } else {
-                    val hidden = loadHidden()
-                    applyInstallState(snapshot.filterNot { it.uri.toString() in hidden })
+                if (store == null) return@withContext emptyList()
+                when (val loaded = store.load(sources.map { it.toString() })) {
+                    is SnapshotLoad.Loaded -> {
+                        if (loaded.droppedEntries > 0) {
+                            // 「表读出来了」与「表读出来了但少了几条」是两件事，必须分开可见。
+                            // 旧实现的 mapNotNull 把后者静默吞了。
+                            Log.w(
+                                "MainViewModel",
+                                "快照有 ${loaded.droppedEntries} 条结构不完整，已跳过"
+                            )
+                        }
+                        val hidden = loadHidden()
+                        val mods = loaded.entries.mapNotNull(::fromSnapshotEntry)
+                        if (mods.isEmpty()) emptyList()
+                        else applyInstallState(mods.filterNot { it.uri.toString() in hidden })
+                    }
+                    is SnapshotLoad.StaleVersion -> {
+                        Log.i(
+                            "MainViewModel",
+                            "快照版本 ${loaded.version} 不是 ${ModSnapshotStore.SCHEMA_VERSION}，丢弃重建"
+                        )
+                        store.discard()
+                        emptyList()
+                    }
+                    is SnapshotLoad.Corrupt -> {
+                        Log.w("MainViewModel", "冷启动快照损坏（${loaded.reason}），丢弃重建", null)
+                        store.discard()
+                        emptyList()
+                    }
+                    is SnapshotLoad.SourceDirsChanged -> {
+                        Log.i("MainViewModel", "快照属于另一组源目录，本次不用（不删）")
+                        emptyList()
+                    }
+                    is SnapshotLoad.Absent -> emptyList()
+                    is SnapshotLoad.IoError -> {
+                        Log.w("MainViewModel", "冷启动快照读取失败，按没有快照处理", null)
+                        emptyList()
+                    }
                 }
             }
             // 扫描已经出过结果时不许覆盖：那份才是真的（见 scanSettled）。
