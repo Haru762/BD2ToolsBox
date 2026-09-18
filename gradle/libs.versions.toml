@@ -1,0 +1,98 @@
+# 版本目录（Gradle Version Catalog）—— 全仓依赖与插件的**唯一**版本来源。
+#
+# 纪律（T11 建立，T12/T14 沿用）：
+#   1. 只放「依赖与插件的版本」。App 发版号在 gradle/version.properties，
+#      不在这里 —— 见该文件的说明。
+#   2. 禁止动态版本：不得出现 "+"、"latest.release"、区间（"1.0,)"）或 "-SNAPSHOT"。
+#   3. 升级只在 T14 做；T11 是**纯搬迁**，任何一行的值都必须与搬迁前逐字相同。
+#
+# alias 命名方案（T12/T14 沿用同一套，详见 docs/refactor/evidence/T11.md §3）：
+#   · [versions] 键用 camelCase，按「它给什么定版本」命名，不按构件名。
+#   · [plugins] 键用 kebab-case，取插件 id 去掉厂商前缀后的可辨识部分。
+#   · [libraries] 键用 kebab-case，规则是「组前缀尽量保留、构件名去掉与组重复的段」：
+#       androidx.<组>:<构件>  → androidx-<组>-<构件>      （androidx.core:core-ktx → androidx-core-ktx）
+#       androidx.<组>.<子>:<构件> → androidx-<组>-<子>-<构件>
+#       第三方              → 厂商/产品名优先          （com.valentinilk.shimmer → shimmer-*）
+#   · 由 BOM 管版本的构件**不写 version**（用了 BOM 还写版本会让 BOM 失效）。
+#
+# 依赖来源分组（读取顺序即解析顺序）：:app 与 :release-probe 共用同一份。
+#   :app          → androidx-core-ktx … shizuku-provider
+#   :release-probe → androidx-test-core / androidx-test-runner / androidx-test-ext-junit /
+#                    junit / kotlin-stdlib（后两条与 :app 共用同一个 alias）
+
+[versions]
+# ---- 构建插件（根脚本 build.gradle.kts 声明，各模块只 alias 引用）----
+agp = "8.4.1"                     # com.android.application
+kotlin = "1.9.0"                  # org.jetbrains.kotlin.android（同时是 kotlin-stdlib / kotlin-test 的版本）
+chaquopy = "15.0.1"               # com.chaquo.python
+
+# ---- 构建参数 ----
+# 这几项不是依赖，但同样在两个模块里各写了一份（改了 :app 忘了改 :release-probe
+# 就会分叉）。T15 要动 SDK 等级，届时只需要改这里一处。
+compileSdk = "34"
+minSdk = "29"
+targetSdk = "34"
+javaVersion = "11"                # Java source/target compatibility 与 Kotlin jvmTarget 共用
+
+# ---- 依赖版本 ----
+composeBom = "2024.06.00"
+# Compose 编译器扩展**独立于 Kotlin**：当前 1.5.1 ≠ Kotlin 1.9.0。
+# 刻意不写成 version.ref = "kotlin" —— 那会在 T11 当场改值（违反「只搬迁不升级」）。
+# T14 才把它对齐 Kotlin 并换成 org.jetbrains.kotlin.plugin.compose 插件。
+composeCompiler = "1.5.1"
+coreKtx = "1.13.1"
+lifecycle = "2.8.6"
+activityCompose = "1.9.2"
+documentfile = "1.1.0"
+gson = "2.11.0"
+junit = "4.13.2"
+mockk = "1.13.8"
+coroutinesTest = "1.7.3"
+androidxTestCore = "1.6.1"
+androidxTestRunner = "1.6.2"
+androidxTestJunit = "1.2.1"
+espresso = "3.6.1"
+shimmer = "1.2.0"
+shizuku = "13.1.5"
+
+[libraries]
+# ---- :app 主运行时 ----
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+shimmer-compose = { module = "com.valentinilk.shimmer:compose-shimmer", version.ref = "shimmer" }
+shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
+shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
+
+# ---- Compose（版本全部来自 BOM，故不写 version）----
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+
+# ---- :app 测试 ----
+junit = { module = "junit:junit", version.ref = "junit" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutinesTest" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestJunit" }
+androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
+
+# ---- :release-probe（自足的 release 探针，见 release-probe/build.gradle.kts 顶部说明）----
+# 它自带一份运行时，所以这里的 kotlin-stdlib 必须与 :app 的 Kotlin **同一个来源**，
+# 否则 T14 升级 Kotlin 时探针会静默留在旧版，运行时与被测包不再兼容。
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }

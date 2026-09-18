@@ -17,20 +17,26 @@
 //
 // 这个模块不是产品的一部分，不参与发布；它只在 Test-Bd2ReleaseSmoke 里被构建和使用。
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
 }
+
+// 探针自己的发版号（1 / "1.0"）刻意**不**走 gradle/version.properties：
+// 那是 App 的发布身份，探针不参与发布，共用一个文件反而会让「改 App 发版号」
+// 看起来像是在改探针。探针版本只在这里，且没有下游消费者。
+val probeVersionCode = 1
+val probeVersionName = "1.0"
 
 android {
     namespace = "com.bd2toolsbox.releaseprobe"
-    compileSdk = 34
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
         applicationId = "com.bd2toolsbox.releaseprobe"
-        minSdk = 29
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        minSdk = libs.versions.minSdk.get().toInt()
+        targetSdk = libs.versions.targetSdk.get().toInt()
+        versionCode = probeVersionCode
+        versionName = probeVersionName
     }
 
     // 探针自己不做收缩：它的运行时必须完整保留，否则又回到上面那两个坑里。
@@ -44,19 +50,19 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
     }
 
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = libs.versions.javaVersion.get()
     }
 }
 
 dependencies {
-    implementation("androidx.test:core:1.6.1")
-    implementation("androidx.test:runner:1.6.2")
-    implementation("androidx.test.ext:junit:1.2.1")
-    implementation("junit:junit:4.13.2")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.0")
+    implementation(libs.androidx.test.core)
+    implementation(libs.androidx.test.runner)
+    implementation(libs.androidx.test.ext.junit)
+    implementation(libs.junit)
+    implementation(libs.kotlin.stdlib)
 }
