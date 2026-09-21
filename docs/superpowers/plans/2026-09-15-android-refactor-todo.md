@@ -13,10 +13,10 @@
 **状态：** 用户已确认需求边界；本清单共 **62 个主任务、10 个阶段**。下方 2026-09-18 追加记录保留为历史（当时曾写「G1 已收口、G2 已完成 T11」），但以文首的当前状态更正为准；不把当前基线构建或测试结果等同于重构、设备验收或发布完成。
 
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
-> - **T08 IN_PROGRESS。** 恢复投影、内容补账、move/converted 接线已在源码；本次补齐跨操作冲突拒绝、旧日志 bundleName 判废和一次性恢复租约释放。全量 JVM **404/0/0/0**，三项修复独立复审通过。历史只读观察设备用例保留；真实覆盖中断 / 杀进程补账仍缺（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
-> - **T10 IMPLEMENTED_NOT_VERIFIED。** 当前 x86_64 minified Store 跨进程 **5 条** PASS，主界面 chrome 验证 PASS；明确记录 **uiColdStartVerified=false**，不再把 chrome 当成业务列表恢复。filesDir legacy 快照源目录不匹配，未升格。完整列表保存/重启/恢复及 arm64 未验收（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
-> - **T12 IN_PROGRESS。** decoder 来源和两份 .so 已随 e993800 提交；astcenc、.tpk、FMOD 原始构建来源仍未闭合；arm64 真机未跑；不推进 T13。
-> - 覆盖安装白名单 MuMu；未 pm clear、未写真实游戏目录、未正式发布。
+> - **T08 IN_PROGRESS。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账均为 PASS，并已回滚原游戏文件。更早两次 converted 失败保留。arm64 未跑，整个历史清单不勾完成（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
+> - **T10 IMPLEMENTED_NOT_VERIFIED。** x86_64 真实 minified 列表冷启动已通过，含移走快照后为空的对照；只覆盖两条未解析 PC 夹具。旧 Store case 的 `uiColdStartVerified=false` 不改写。arm64 未跑（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
+> - **T12 IN_PROGRESS。** decoder 来源和两份 .so 已随 e993800 提交。当前 astcenc、uncompressed.tpk 与全部 FMOD 文件仍与 BDroid_X `566990cf1290a8d718b0ddd596b07ca7c36794c8` 逐字节相同，但这只钉住分发提交，不钉住原始构建或生成 commit。arm64 真机未跑，不推进 T13。
+> - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
 
 ---
 
@@ -522,7 +522,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.GameFileCommitTest' -Abi 'x86
 
 ### T08 — 安装账本原子落盘并记录可恢复的提交事实
 
-- [ ] **T08 完成** — 状态 **IN_PROGRESS**（2026-09-21 接续验收）：投影/内容补账、move/converted 暂存绑定与 StrictDirectoryCopy 已接线；跨操作不同事实拒绝、旧日志缺 bundleName 判废、一次性恢复租约释放经定向复审。全量 JVM **404/0/0/0**。**真实覆盖中断/杀进程补账仍缺**（需游戏目录写入授权）（[T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。原验收要求不变。
+- [ ] **T08 完成** — 状态 **IN_PROGRESS**：x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，rollback PASS；更早失败保留。arm64 未跑，不把这一项写成整个 T08 完成（[T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。原验收要求不变。
 
 **优先级：** P0　**前置：** T07
 
@@ -591,7 +591,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.PristineVerifierTest'
 
 ### T10 — 先修现有 release 快照的序列化契约风险
 
-- [ ] **T10 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-21 接续验收）：当前 x86_64 minified Store 跨进程 5 条 PASS；am start + uiautomator 只证明主界面 chrome，**uiColdStartVerified=false**；mapping keep PASS。filesDir legacy 快照源目录不匹配，未升格。完整业务列表恢复与 arm64 未验收；instrumentation 拉起 Activity 的历史 ClassCast 未另行复测（[T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
+- [ ] **T10 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**：x86_64 真实 minified 列表「扫描→保存→冷启动→快照恢复」已通过，并有无快照对照。夹具是两条未解析 PC 源，不能安装。arm64 未跑。旧 snapshot-compatibility 的 `uiColdStartVerified=false` 保持原样（[T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
 
 **优先级：** P0　**前置：** T03、T05、T08
 
