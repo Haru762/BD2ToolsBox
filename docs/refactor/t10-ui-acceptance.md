@@ -42,7 +42,7 @@
 - 保存 PID `21570` → 正向恢复 PID `22371` → 无快照对照 PID `22619` → 放回快照 PID `22796`，均为独立冷启动。
 - 正向两轮均完整显示 `T10_Alpha` / `T10_Beta`；阴性对照为空；各轮源目录不可读、重扫失败，快照不是由重扫补出的。
 - canonical 快照 SHA-256：`97be0cf2b83e9f80e137219a0c34ce867c0b169ee0372ecc31c94fa5a2524045`。
-- 原账本/日志存在性、原配置/缓存/快照字节及既有 URI 权限已恢复；真实游戏文件未被 T10 修改。
+- 原账本/日志存在性、原配置/缓存/快照字节及既有 URI 权限当时收尾未做好，现已在事后补上核对并确认已恢复；真实游戏文件未被 T10 修改。
 
 原始证据在 `local/pi-resume/authorized-e2e-20260921-190937/`：`t10-ui-acceptance.json`、`t10-production-snapshot.json`、`t10-cold-start.json`、三轮 UI XML/PNG/对应 PID 日志、`t10-negative-start.json`、`t10-rollback.json` 及授权集合前后记录。
 
