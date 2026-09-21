@@ -575,7 +575,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.OperationRecoveryTest'
 
 **验收与回归：**
 - [x] 两个同名同尺寸但内容不同的 bundle，只有匹配可信基准者可作为原版；不得用待验证文件自己的摘要循环证明自己。
-- [ ] 既有 SD/HD、缓存来源和真实原版重编码场景都有明确验证来源；被修改备份不会作为干净基底再次复用。debug 真机已证明一份 UnityCache 副本的 `restore_bundle` 确定性。当前混淆 Release 的字段仍被改名，但 sidecar 键是常量；不可调试进程上的读写仍未直接跑，arm64 未跑。
+- [ ] 既有 SD/HD、缓存来源和真实原版重编码场景都有明确验证来源；被修改备份不会作为干净基底再次复用。debug 真机已证明一份 UnityCache 副本的 `restore_bundle` 确定性。当前混淆 Release 已用 8 字节夹具跑通 sidecar 读写，键名仍是 `schemaVersion`。SD/HD 全量样本和 arm64 未跑。
 
 **执行/验证命令：**
 ~~~powershell
