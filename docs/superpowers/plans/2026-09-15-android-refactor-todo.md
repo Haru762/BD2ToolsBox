@@ -14,7 +14,7 @@
 
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
 > - **T08 完成（仅原验收范围）。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，Release 补账后第二次冷启动不再提示核对，游戏文件已回滚。更早失败保留。arm64 不在 T08 验收里，也未跑（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
-> - **T10 IMPLEMENTED_NOT_VERIFIED。** x86_64 真实 minified 列表冷启动已通过，含移走快照后为空的对照；只覆盖两条未解析 PC 夹具。旧 Store case 的 `uiColdStartVerified=false` 不改写。arm64 未跑（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
+> - **T10 IMPLEMENTED_NOT_VERIFIED。** x86_64 真实 minified 列表冷启动已通过，含移走快照后为空的对照；只覆盖两条未解析 PC 夹具。2026-09-22 对当前包 `6de58b5c…` 重跑 snapshot-compatibility，Store 跨进程和 chrome 通过，`uiColdStartVerified` 仍是 false。arm64 未跑（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
 > - **T12 IN_PROGRESS。** decoder 来源和两份 .so 已随 e993800 提交。astcenc、`.tpk`、FMOD 只钉住分发提交。2026-09-22 在 MuMu 上安装 arm64 Release 后进程因 Houdini 内的 FORTIFY mutex 崩溃退出，不是通过。本机 Emulator 37 不能启动 arm64 系统镜像。不推进 T13。
 > - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
 
@@ -591,7 +591,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.PristineVerifierTest'
 
 ### T10 — 先修现有 release 快照的序列化契约风险
 
-- [ ] **T10 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**：x86_64 真实 minified 列表「扫描→保存→冷启动→快照恢复」已通过，并有无快照对照。夹具是两条未解析 PC 源，不能安装。arm64 未跑。旧 snapshot-compatibility 的 `uiColdStartVerified=false` 保持原样（[T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
+- [ ] **T10 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**：x86_64 真实 minified 列表「扫描→保存→冷启动→快照恢复」已通过，并有无快照对照。夹具是两条未解析 PC 源，不能安装。当前包 `6de58b5c…` 的 snapshot-compatibility 只证明 Store 跨进程和 chrome，`uiColdStartVerified=false`。arm64 未跑（[T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
 
 **优先级：** P0　**前置：** T03、T05、T08
 
