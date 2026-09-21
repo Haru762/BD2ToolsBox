@@ -536,11 +536,11 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.GameFileCommitTest' -Abi 'x86
 **落实要求：**
 - [x] 区分文件不存在、有效空账本、读取失败和损坏；损坏/读失败时保留原件，禁止按空表自动覆盖。写入结果必须传回上层，不能只打印异常。（InstalledLedgerStore + JVM）
 - [x] 使用原子文件写入和统一并发所有者保护 read-modify-write，保留现有锁的作用而不是误判为完全无锁。保存失败时旧账本仍可用。
-- [x] 为有副作用的操作记录计划、暂存、目标已替换、账本已提交等阶段及目标摘要（converted submitter + move journal）。**真实游戏目录崩溃注入仍未做**，见下方验收第 2 条。
+- [x] 为有副作用的操作记录计划、暂存、目标已替换、账本已提交等阶段及目标摘要（converted submitter + move journal）。x86_64 单目标崩溃注入已做，见下方验收第 2 条。
 
 **验收与回归：**
 - [x] 并发写入不丢记录；保存中断仍可读取旧账本；损坏账本不会被下一次安装当空表覆盖。（JVM InstalledModRepositoryLedgerTest）
-- [ ] 注入“文件已换、账本未存”故障，重启后进入明确的待核对状态，依据日志和目标内容恢复一致性；不重复叠加安装。**未在真实 UnityCache 上注入中断**（需游戏目录写入授权）。夹具 Shared 树 / JVM apply 已覆盖语义。
+- [x] 注入“文件已换、账本未存”故障，重启后进入明确的待核对状态，依据日志和目标内容恢复一致性；不重复叠加安装。x86_64 真实 UnityCache 单目标 converted `200114` 与 move `200548` 均为 PASS，并已回滚。更早失败保留。arm64 未跑，T08 总项仍不勾完成。
 
 **执行/验证命令：**
 ~~~powershell
