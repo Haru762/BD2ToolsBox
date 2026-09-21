@@ -231,16 +231,19 @@ object StreamingDigest {
      * 既然对不上任何既有语义，就选没有已知碰撞的 SHA-256。
      */
     fun sha256(): Digester = Digester { file ->
+        file.inputStream().use { input -> hex(digestChunks(input)) }
+    }
+
+    /** 按 [CHUNK_BYTES] 读取。测试用它确认不会一次索要整份输入。 */
+    internal fun digestChunks(input: java.io.InputStream, chunkBytes: Int = CHUNK_BYTES): ByteArray {
         val md = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(CHUNK_BYTES)
-        file.inputStream().use { input ->
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                md.update(buffer, 0, read)
-            }
+        val buffer = ByteArray(chunkBytes)
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            md.update(buffer, 0, read)
         }
-        hex(md.digest())
+        return md.digest()
     }
 
     fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xFF) }

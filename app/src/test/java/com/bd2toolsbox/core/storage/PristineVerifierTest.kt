@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayInputStream
 import java.io.File
 
 /**
@@ -554,6 +555,24 @@ class PristineVerifierTest {
         val d = StreamingDigest.sha256().digest(f)
         // 空输入的 SHA-256 是个公开常量
         assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", d)
+    }
+
+    @Test
+    fun streamingDigestRequestsOnlyChunkSizedReads() {
+        val size = StreamingDigest.CHUNK_BYTES + 20
+        val bytes = ByteArray(size) { (it % 251).toByte() }
+        val requested = mutableListOf<Int>()
+        val input = object : ByteArrayInputStream(bytes) {
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                requested += len
+                return super.read(b, off, len)
+            }
+        }
+        val digest = StreamingDigest.digestChunks(input)
+        assertTrue(requested.isNotEmpty())
+        assertTrue(requested.all { it == StreamingDigest.CHUNK_BYTES })
+        val expected = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+        assertArrayEquals(expected, digest)
     }
 
     // ==================================================================
