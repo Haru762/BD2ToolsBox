@@ -13,7 +13,7 @@
 **状态：** 用户已确认需求边界；本清单共 **62 个主任务、10 个阶段**。下方 2026-09-18 追加记录保留为历史（当时曾写「G1 已收口、G2 已完成 T11」），但以文首的当前状态更正为准；不把当前基线构建或测试结果等同于重构、设备验收或发布完成。
 
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
-> - **T08 IN_PROGRESS。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账均为 PASS，并已回滚原游戏文件。更早两次 converted 失败保留。arm64 未跑，整个历史清单不勾完成（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
+> - **T08 完成（仅原验收范围）。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，Release 补账后第二次冷启动不再提示核对，游戏文件已回滚。更早失败保留。arm64 不在 T08 验收里，也未跑（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
 > - **T10 IMPLEMENTED_NOT_VERIFIED。** x86_64 真实 minified 列表冷启动已通过，含移走快照后为空的对照；只覆盖两条未解析 PC 夹具。旧 Store case 的 `uiColdStartVerified=false` 不改写。arm64 未跑（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
 > - **T12 IN_PROGRESS。** decoder 来源和两份 .so 已随 e993800 提交。当前 astcenc、uncompressed.tpk 与全部 FMOD 文件仍与 BDroid_X `566990cf1290a8d718b0ddd596b07ca7c36794c8` 逐字节相同，但这只钉住分发提交，不钉住原始构建或生成 commit。arm64 真机未跑，不推进 T13。
 > - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
@@ -522,7 +522,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.GameFileCommitTest' -Abi 'x86
 
 ### T08 — 安装账本原子落盘并记录可恢复的提交事实
 
-- [ ] **T08 完成** — 状态 **IN_PROGRESS**：x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，rollback PASS；更早失败保留。arm64 未跑，不把这一项写成整个 T08 完成（[T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。原验收要求不变。
+- [x] **T08 完成** — x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，rollback PASS。Release 补账写出冻结记录，第二次冷启动不再提示核对。更早失败保留。arm64 未跑，也不在本任务验收命令里（[T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
 
 **优先级：** P0　**前置：** T07
 
@@ -540,7 +540,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.GameFileCommitTest' -Abi 'x86
 
 **验收与回归：**
 - [x] 并发写入不丢记录；保存中断仍可读取旧账本；损坏账本不会被下一次安装当空表覆盖。（JVM InstalledModRepositoryLedgerTest）
-- [x] 注入“文件已换、账本未存”故障，重启后进入明确的待核对状态，依据日志和目标内容恢复一致性；不重复叠加安装。x86_64 真实 UnityCache 单目标 converted `200114` 与 move `200548` 均为 PASS，并已回滚。更早失败保留。arm64 未跑，T08 总项仍不勾完成。
+- [x] 注入“文件已换、账本未存”故障，重启后进入明确的待核对状态，依据日志和目标内容恢复一致性；不重复叠加安装。x86_64 真实 UnityCache 单目标 converted `200114` 与 move `200548` 均为 PASS，并已回滚。Release 路径同样补账成功。更早失败保留。arm64 未跑。
 
 **执行/验证命令：**
 ~~~powershell
