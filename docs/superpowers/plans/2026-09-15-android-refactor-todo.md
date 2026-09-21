@@ -557,7 +557,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.OperationRecoveryTest'
 
 ### T09 — 区分可信原版与仅仅同尺寸的文件
 
-- [x] **T09 完成**
+- [x] **T09 完成** — 判定链和 JVM 测试已交付。2026-09-22 补了 debug 真机 Chaquopy 上 `restore_bundle` 两次产物相同；输入不是 CDN 原包，minified Release 的 sidecar 读写仍未跑，arm64 未跑。
 
 **优先级：** P0　**前置：** T07、T08
 
@@ -569,13 +569,13 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.OperationRecoveryTest'
 - 新增测试：[app/src/test/java/com/bd2toolsbox/core/storage/PristineVerifierTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/test/java/com/bd2toolsbox/core/storage/PristineVerifierTest.kt>)
 
 **落实要求：**
-- [ ] 查明 catalog/hash 目录名的真实语义，不假定它就是内容 MD5/SHA256；大小仅作快速排除。复用或标为原版前必须与可信来源/摘要建立可验证关联。
-- [ ] 明确“恢复到操作前的备份”与“可作转换基底的干净原版”不同。已装 MOD、同尺寸不同内容、来源不明的备份不能直接标 PRISTINE。
-- [ ] 摘要采用流式计算，不把大 bundle 全读入内存；无法确认保留 UNKNOWN 并给出可解释的处理路径，不能为减少联网次数而假称已验证原版。
+- [x] 查明 catalog/hash 目录名的真实语义，不假定它就是内容 MD5/SHA256；大小仅作快速排除。复用或标为原版前必须与可信来源/摘要建立可验证关联。
+- [x] 明确“恢复到操作前的备份”与“可作转换基底的干净原版”不同。已装 MOD、同尺寸不同内容、来源不明的备份不能直接标 PRISTINE。
+- [x] 摘要采用流式计算，不把大 bundle 全读入内存；无法确认保留 UNKNOWN 并给出可解释的处理路径，不能为减少联网次数而假称已验证原版。流式由 64 KiB 分块实现保证；全量读与分块读输出相同，断言仍看不出差别。
 
 **验收与回归：**
-- [ ] 两个同名同尺寸但内容不同的 bundle，只有匹配可信基准者可作为原版；不得用待验证文件自己的摘要循环证明自己。
-- [ ] 既有 SD/HD、缓存来源和真实原版重编码场景都有明确验证来源；被修改备份不会作为干净基底再次复用。
+- [x] 两个同名同尺寸但内容不同的 bundle，只有匹配可信基准者可作为原版；不得用待验证文件自己的摘要循环证明自己。
+- [ ] 既有 SD/HD、缓存来源和真实原版重编码场景都有明确验证来源；被修改备份不会作为干净基底再次复用。debug 真机已证明一份 UnityCache 副本的 `restore_bundle` 确定性。Release 设备上的 sidecar 读写仍未跑，arm64 未跑。
 
 **执行/验证命令：**
 ~~~powershell
@@ -640,13 +640,13 @@ Test-Bd2ReleaseSmoke -Case 'snapshot-compatibility' -Abi 'x86_64'
 - 新增：[gradle/version.properties](<D:/bd2 mod/worktrees/bdroid-android-refactor/gradle/version.properties>)
 
 **落实要求：**
-- [ ] 先只迁移配置，不升级版本：把现有插件、Maven 依赖、测试依赖和 Compose BOM 统一为 catalog aliases，去掉根脚本/模块里的重复字面版本；保留迁移前解析结果。
-- [ ] App 发布配置使用 appVersionName/appVersionCode 两个字段（配置迁移时保持执行基线值，当前为0.2.16/17），继续支持有文档的 APP_VERSION_NAME 覆盖。校验版本名非空、versionCode 为正整数且发布时递增；不新增根工程发布号或内部模块独立发版体系。
-- [ ] wrapper 版本仍由 wrapper properties 执行，Python 包由 T12 管理；不能把它们写进 TOML 后就声称已生效。记录依赖锁定/校验文件覆盖范围，禁用动态版本和无约束 latest。
+- [x] 先只迁移配置，不升级版本：把现有插件、Maven 依赖、测试依赖和 Compose BOM 统一为 catalog aliases，去掉根脚本/模块里的重复字面版本；保留迁移前解析结果。
+- [x] App 发布配置使用 appVersionName/appVersionCode 两个字段（配置迁移时保持执行基线值，当前为0.2.16/17），继续支持有文档的 APP_VERSION_NAME 覆盖。校验版本名非空、versionCode 为正整数且发布时递增；不新增根工程发布号或内部模块独立发版体系。
+- [x] wrapper 版本仍由 wrapper properties 执行，Python 包由 T12 管理；不能把它们写进 TOML 后就声称已生效。记录依赖锁定/校验文件覆盖范围，禁用动态版本和无约束 latest。
 
 **验收与回归：**
-- [ ] 迁移前后 releaseRuntimeClasspath 的坐标/版本一致，默认生成 APK 仍为基线应用版本和标识。
-- [ ] 正常 APP_VERSION_NAME 覆盖仅影响显示版本；空值/非法 versionCode 应在配置阶段明确失败；Compose BOM 和 kotlin-test 不再重复维护。
+- [x] 迁移前后 releaseRuntimeClasspath 的坐标/版本一致，默认生成 APK 仍为基线应用版本和标识。
+- [x] 正常 APP_VERSION_NAME 覆盖仅影响显示版本；空值/非法 versionCode 应在配置阶段明确失败；Compose BOM 和 kotlin-test 不再重复维护。
 
 **执行/验证命令：**
 ~~~powershell
