@@ -15,7 +15,7 @@
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
 > - **T08 IN_PROGRESS。** 恢复投影、内容补账、move/converted 接线已在源码；本次补齐跨操作冲突拒绝、旧日志 bundleName 判废和一次性恢复租约释放。全量 JVM **404/0/0/0**，三项修复独立复审通过。历史只读观察设备用例保留；真实覆盖中断 / 杀进程补账仍缺（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
 > - **T10 IMPLEMENTED_NOT_VERIFIED。** 当前 x86_64 minified Store 跨进程 **5 条** PASS，主界面 chrome 验证 PASS；明确记录 **uiColdStartVerified=false**，不再把 chrome 当成业务列表恢复。filesDir legacy 快照源目录不匹配，未升格。完整列表保存/重启/恢复及 arm64 未验收（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
-> - **T12 IN_PROGRESS。** 当前 x86_64 Release Python 3.8.18 import、20 个 C 导出和真实 BC1 解码均 PASS；宿主 Python **104/0/0/0**。新增 decoder 固定来源/补丁/构建说明，x86_64 库已解除单文件忽略但未提交。arm64 真机及其他第三方来源缺口仍在。**不推进 T13**。
+> - **T12 IN_PROGRESS。** decoder 来源和两份 .so 已随 e993800 提交；astcenc、.tpk、FMOD 原始构建来源仍未闭合；arm64 真机未跑；不推进 T13。
 > - 覆盖安装白名单 MuMu；未 pm clear、未写真实游戏目录、未正式发布。
 
 ---
@@ -663,7 +663,7 @@ Invoke-Bd2Gradle :app:assembleDebug :app:assembleRelease --console=plain
 
 ### T12 — 固定 Python 依赖、目标解释器和第三方来源
 
-- [ ] **T12 完成** — 状态 **IN_PROGRESS**（2026-09-21 接续验收）：当前 x86_64 minified Python 3.8.18 import、全部 20 个导出及真实 BC1 解码 PASS；包装层成功码修正经独立复验。宿主 Python **104/0/0/0**。decoder 固定来源/补丁/构建说明已保存，单文件 Git 忽略例外已验证但未提交。arm64 真机及其他 JNI/TPK 原始来源仍有缺口（[T12.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T12.md>)）。**不推进 T13**。
+- [ ] **T12 完成** — 状态 **IN_PROGRESS**：x86_64 minified Python 3.8.18 import、20 个导出及真实 BC1 解码 PASS。decoder 来源和两份 `.so` 已随 `e993800` 提交。astcenc、`.tpk`、FMOD 原始构建来源仍未闭合；arm64 真机未跑。**不推进 T13**。
 
 **优先级：** P1　**前置：** T03、T11
 

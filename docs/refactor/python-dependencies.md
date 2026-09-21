@@ -200,15 +200,9 @@ arm64 仍未运行。详见 `evidence/T12.md` §7，T12 仍 **IN_PROGRESS**。
 
 - `THIRD-PARTY-NOTICES.md` 登记：`libastcenc.so` ← astc-encoder（Apache-2.0，Arm Limited）；
   `libtexture2ddecoder.so` ← texture2ddecoder（MIT，(c) 2020 K0lb3）。
-- **当前源树实际分布（2026-09-21）**：两 ABI 均有 `libastcenc.so` + `libtexture2ddecoder.so`。
-  x86_64 decoder 已设备 LoadLibrary PASS。arm64 decoder 已用与 x86_64 相同源/旗标重编（完整 C ABI），**未上真机**。
-- **2026-09-20 分发来源复核**：三个当前 JNI 文件均与本地保存的
-  `refs/remotes/upstream/main`（BDroid_X 提交
-  `566990cf1290a8d718b0ddd596b07ca7c36794c8`）逐字节相同。未刷新远端，
-  不称该 ref 为最新。ELF machine 分别确认 arm64 为 183、x86_64 为 62。
-- 三个 ELF 内嵌 Android NDK `r26b` / `10909125` 与 clang/LLD `17.0.2` 字符串。
-  **嵌入式工具链信息与分发提交不等于原始库源码 commit、构建脚本或可复现构建证明**；
-  这些仍是缺口。本地仓库中未找到对应 C/C++ 库源码与构建入口。
+- **当前源树实际分布（2026-09-21）**：两 ABI 均有 `libastcenc.so` + `libtexture2ddecoder.so`。x86_64 decoder 已设备 LoadLibrary PASS。arm64 真机 import / LoadLibrary 仍未执行。T12 保持 IN_PROGRESS。
+- **2026-09-20 分发来源复核**：2026-09-20「三个 JNI 都与 BDroid_X 提交 `566990cf1290a8d718b0ddd596b07ca7c36794c8` 逐字节相同」只对当时的文件成立。当前 `libtexture2ddecoder.so` 是后来按上面的固定源码重编的，不能再算进那条旧结论。`libastcenc.so` 没有新的源码提交或构建配方，原始源码 commit / 构建步骤仍是 UNKNOWN。
+- `libtexture2ddecoder.so` 的两份 ABI 已包含在提交 `e993800`。来源是 K0lb3/Texture2DDecoder 固定提交 `3ebc3b758bd6b1a3108b50148f7998ee34f058c6`、仓库补丁 `tools/native/texture2ddecoder-c-linkage.patch`、NDK `26.3.11579264`。细节以 `docs/refactor/native-texture-decoder.md` 和 `tools/native/texture2ddecoder-source.json` 为准。不要再说「x86_64 库未提交」。
 - 证据：`local/pi-director/20260920/continue-2026-09-20T02-12-54-898Z/native-origin-local-audit.json`；
   `.tpk` 分发比对见同目录 `other-thirdparty-origin-local-audit.json`。
 - `repacker/repacker.py` 头声明：0.3.0 起已全新实现，仅对齐 astc-encoder 公开 C ABI
@@ -243,7 +237,14 @@ arm64 仍未运行。详见 `evidence/T12.md` §7，T12 仍 **IN_PROGRESS**。
 - vendored UnityPy 对上游 1.23.0 逐行差异**已完成只读审计**（见
   `docs/refactor/unitypy-upstream-audit.md`：12 真实补丁 + 6 新增 + 1 二进制）；FMOD 库
   字节已溯源到 sdist 且已核实随 3 个 Release APK 分发。但
-  `resources/uncompressed.tpk` 原始生成输入/commit UNKNOWN、FMOD 原始编译 commit / 声称版本 /
-  授权法律性质 UNKNOWN、设备上 runtime 加载未验证；JNI 原始源码 commit/构建步骤仍缺。
-  `.tpk` 与 JNI 的 BDroid_X 分发提交现已登记，不能再笼统称其全部来源未知。
-- x86_64 `libtexture2ddecoder.so` 已补编并在白名单设备 PASS。arm64 同源重编已入库，真机 LoadLibrary 仍缺。
+  `resources/uncompressed.tpk` 的原始生成输入仍是 UNKNOWN。FMOD 原始编译 commit、声称版本 2.00.10 和授权法律性质仍是 UNKNOWN。不要推断许可证结论。设备上 runtime 加载未验证；`libastcenc.so` 原始源码 commit/构建步骤仍缺。
+- x86_64 `libtexture2ddecoder.so` 已补编并在白名单设备 PASS。arm64 真机 import / LoadLibrary 仍未执行。T12 保持 IN_PROGRESS。
+
+
+## 8. 2026-09-22 来源口径更正
+
+1. `libtexture2ddecoder.so` 的两份 ABI 已包含在提交 `e993800`。来源是 K0lb3/Texture2DDecoder 固定提交 `3ebc3b758bd6b1a3108b50148f7998ee34f058c6`、仓库补丁 `tools/native/texture2ddecoder-c-linkage.patch`、NDK `26.3.11579264`。细节以 `docs/refactor/native-texture-decoder.md` 和 `tools/native/texture2ddecoder-source.json` 为准。不要再说「x86_64 库未提交」。
+2. 2026-09-20「三个 JNI 都与 BDroid_X 提交 `566990cf1290a8d718b0ddd596b07ca7c36794c8` 逐字节相同」只对当时的文件成立。当前 `libtexture2ddecoder.so` 是后来按上面的固定源码重编的，不能再算进那条旧结论。`libastcenc.so` 没有新的源码提交或构建配方，原始源码 commit / 构建步骤仍是 UNKNOWN。
+3. `resources/uncompressed.tpk` 的原始生成输入仍是 UNKNOWN。FMOD 原始编译 commit、声称版本 2.00.10 和授权法律性质仍是 UNKNOWN。不要推断许可证结论。
+4. arm64 真机 import / LoadLibrary 仍未执行。T12 保持 IN_PROGRESS。
+5. 2026-09-22 用 NDK 26.3 的 `llvm-readelf` / `llvm-strings` 复核当前两份 `libastcenc.so`：SONAME 分别是 `libastcenc-neon-shared.so` 和 `libastcenc-sse4.1-shared.so`，NEEDED 只有 libm/libdl/libc。两份都嵌入 `/workspaces/Ark/astc-encoder-src` 与 NDK `26.1.10909125`、Clang 17。仓库内没有对应源码，不能把这些字符串当成上游 commit。结论仍是 UNKNOWN。
