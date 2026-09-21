@@ -183,8 +183,9 @@ CRLF→LF 归一后与上游逐字节相同。**`classes/generated.py` 确认仅
 
 剩余缺口（未闭合）：
 - `resources/uncompressed.tpk` 原始生成输入/commit UNKNOWN（BDroid_X 分发提交已确认）。
-- FMOD 库的原始编译 commit、声称版本（2.00.10）与授权法律性质 UNKNOWN（字节可溯源 ≠ 版本/合规已证）。
+- FMOD 库的原始编译 commit 与授权法律性质仍 UNKNOWN。本地新增的 `lib/README.MD` 声称 2.00.10，但 8 个二进制里都没有这个字符串。2026-09-22 复核：Windows x86/x64 的 UTF-16 资源含 `2.0.22 (build 122614)` 和 Firelight Technologies；Windows arm 只有 `2.0.22`；Linux 四个 ABI 和 Darwin 都没有这两个版本串。因此不能把整套库标成 2.00.10 或 2.0.22，也不能把版本字符串当成编译 commit。
 - FMOD 在设备上是否被 runtime 实际加载/调用未验证（本审计只看静态 ZIP 内容）。
+- `uncompressed.tpk` 当前 SHA-256 是 `3777edf16f1a57908640ef6d1e49fa51533e545424188b239c1b8e2ead3988da`（1,326,072 字节）。文件头魔数 `TPK*`、版本 1、无压缩、类型为 TypeTree。版本表有 1212 条，从 `3.4.0f5` 到 `6000.2.0a6`。`cli/update_tpk.py` 指向浮动的 nightly.link master 产物，不能证明这次生成的 commit。生成来源仍是 UNKNOWN。
 - 主控已复算三个 2026-09-19 APK 的 SHA256，与旧审计相同；这不是当前代码的新构建证据。
 - native `.so` 原始库源码 commit / 构建步骤仍缺；三个当前 JNI 文件已匹配到上述
   BDroid_X 分发提交（见 `python-dependencies.md` §6.3），不等于原始编译来源已闭合。

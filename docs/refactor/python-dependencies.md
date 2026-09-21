@@ -248,3 +248,4 @@ arm64 仍未运行。详见 `evidence/T12.md` §7，T12 仍 **IN_PROGRESS**。
 3. `resources/uncompressed.tpk` 的原始生成输入仍是 UNKNOWN。FMOD 原始编译 commit、声称版本 2.00.10 和授权法律性质仍是 UNKNOWN。不要推断许可证结论。
 4. arm64 真机 import / LoadLibrary 仍未执行。T12 保持 IN_PROGRESS。
 5. 2026-09-22 用 NDK 26.3 的 `llvm-readelf` / `llvm-strings` 复核当前两份 `libastcenc.so`：SONAME 分别是 `libastcenc-neon-shared.so` 和 `libastcenc-sse4.1-shared.so`，NEEDED 只有 libm/libdl/libc。两份都嵌入 `/workspaces/Ark/astc-encoder-src` 与 NDK `26.1.10909125`、Clang 17。仓库内没有对应源码，不能把这些字符串当成上游 commit。结论仍是 UNKNOWN。
+6. 同日复核 FMOD 与 `.tpk`，细节见 `unitypy-upstream-audit.md`。README 的 2.00.10 没有出现在任何一个 FMOD 二进制里；Windows x86/x64 另有 UTF-16 `2.0.22 (build 122614)`，不能外推到 Linux/Darwin。`.tpk` 能解析出版本表，但 `update_tpk.py` 的 nightly master URL 不能钉住生成 commit。两项都仍是 UNKNOWN。
