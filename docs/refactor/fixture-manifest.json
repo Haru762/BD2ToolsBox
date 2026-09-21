@@ -379,6 +379,22 @@
   ],
   "derivedTargets": [
     {
+      "id": "repo.mod-snapshot-release-probe-fixture",
+      "storageClass": "repo-resource",
+      "targetPath": "release-probe/src/main/assets/legacy/mod-snapshot-release.json",
+      "bytes": 2965,
+      "sha256": "cd468d7b1f0ba92c801df3408d64a9e4a3271e8c00d23d09bbb5bb450c1b57be",
+      "sourceFixtureIds": [
+        "legacy.cache.mod-list-snapshot-obfuscated"
+      ],
+      "producerTask": "T10",
+      "derivation": "Byte-identical copy of repo.mod-snapshot-release-fixture; original obfuscated a/b/c keys and existing redaction retained.",
+      "usedBy": [
+        "release-probe/src/main/java/com/bd2toolsbox/integration/ReleaseSnapshotProbeTest.kt"
+      ],
+      "status": "available"
+    },
+    {
       "id": "repo.wiki-v2-detail-2238",
       "storageClass": "repo-resource",
       "targetPath": "app/src/test/resources/fixtures/wiki/wiki-v2-detail-2238.json",

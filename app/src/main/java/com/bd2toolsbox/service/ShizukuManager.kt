@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
+import com.bd2toolsbox.core.storage.GameBundleLayout
 import rikka.shizuku.Shizuku
 import java.io.File
 
@@ -192,6 +193,25 @@ object ShizukuManager {
                 ok
             } catch (e: Exception) {
                 Log.e(TAG, "Error copying local bundle $bundleName", e)
+                false
+            }
+        }
+
+    /**
+     * 只读把游戏 Shared 下某 bundle 的 `__data` 拷到 [destPath]，供恢复核对。
+     * 不写游戏目录。路径逃逸由 [GameBundleLayout] 拒绝。
+     */
+    suspend fun copyGameDataForRecovery(bundleName: String, hashDir: String?, destPath: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                if (!isAvailable()) return@withContext false
+                val service = ensureServiceBound() ?: return@withContext false
+                val gamePath = GameBundleLayout.remoteDataPath(GAME_SHARED_PATH, bundleName, hashDir)
+                val ok = service.copyFile(gamePath, destPath)
+                if (!ok) Log.w(TAG, "Recovery copy failed: $gamePath")
+                ok
+            } catch (e: Exception) {
+                Log.e(TAG, "Error copying game data for recovery $bundleName", e)
                 false
             }
         }

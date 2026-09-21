@@ -1,5 +1,6 @@
 package com.bd2toolsbox.core.storage
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -92,14 +93,11 @@ class OperationRecoveryTest {
             assertNull(store.append(entry(stage, at = 1000L + stage.ordinal)))
         }
         val entries = (store.read() as JournalRead.Loaded).entries
-        assertEquals("四个阶段各一条，共 4 条", 4, entries.size)
+        // 用 JournalStage.entries.size 而不硬编码：五阶段
+        // （PLANNED / STAGED / TARGET_REPLACING / TARGET_REPLACED / LEDGER_COMMITTED）各一条。
+        assertEquals("每个阶段各一条", JournalStage.values().size, entries.size)
         assertEquals(
-            listOf(
-                JournalStage.PLANNED.id,
-                JournalStage.STAGED.id,
-                JournalStage.TARGET_REPLACED.id,
-                JournalStage.LEDGER_COMMITTED.id
-            ),
+            JournalStage.values().map { it.id },
             entries.map { it.stage }
         )
     }
@@ -147,22 +145,16 @@ class OperationRecoveryTest {
         assertTrue("不认识的阶段必须判不可读", store.read() is JournalRead.Unreadable)
     }
 
-    /**
-     * 损坏的 journal **不阻断重新开始**：append 会把读不出来的旧内容丢掉、重开一份。
-     *
-     * 这不是静默丢弃 —— `read()` 已经把 Unreadable 上报过了；
-     * journal 是诊断证据，保住「以后还能核对」比留住一份读不出来的历史更有价值。
-     */
+    /** 损坏日志是恢复证据：追加必须拒绝，不能丢弃旧原件重开。 */
     @Test
-    fun appendingOverACorruptJournalStartsFreshAndIsReportedByRead() {
+    fun appendingOverACorruptJournalPreservesTheOriginalEvidence() {
         val store = newStore()
         journal.writeText("not json at all")
-        assertTrue("前提：旧内容确实读不出来", store.read() is JournalRead.Unreadable)
-
-        assertNull("重开一份必须成功", store.append(entry(JournalStage.PLANNED)))
-        val read = store.read()
-        assertTrue("重开之后应当可读，实际 $read", read is JournalRead.Loaded)
-        assertEquals("旧内容已被丢弃，只剩新的一条", 1, (read as JournalRead.Loaded).entries.size)
+        val before = journal.readBytes()
+        assertTrue(store.read() is JournalRead.Unreadable)
+        org.junit.Assert.assertNotNull(store.append(entry(JournalStage.PLANNED)))
+        assertArrayEquals("Bad journal must not be discarded", before, journal.readBytes())
+        assertTrue(store.read() is JournalRead.Unreadable)
     }
 
     /** `clear()` 之后回到 [JournalRead.Absent]。 */
@@ -206,9 +198,9 @@ class OperationRecoveryTest {
         assertEquals("核对结论要带上原始时间戳（那是那次提交的时刻）", 5000L, pending.detectedAtMillis)
     }
 
-    /** **窗口已闭合**：journal 里有 TARGET_REPLACED，但账本里那几条都在 → 一致。 */
+    /** 无内容证据的 TARGET_REPLACED 即使账本 URI/bundle 对得上也不能放行。 */
     @Test
-    fun replacedTargetPresentInLedgerIsConsistent() {
+    fun replacedTargetWithoutFactsStaysPendingEvenWhenLedgerMatches() {
         val store = newStore()
         store.append(
             JournalEntry(
@@ -220,9 +212,9 @@ class OperationRecoveryTest {
         )
 
         val verdict = store.recoveryVerdict(mapOf("uri-a" to record("uri-a", "bundle-a")))
-        assertEquals(
-            "账本里已经有这条记录了，说明那次提交后来落了账（journal 只是没清）",
-            OperationJournalStore.RecoveryVerdict.Consistent, verdict
+        assertTrue(
+            "缺本次内容证明时不能仅靠账本放行，实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation
         )
     }
 
@@ -253,8 +245,8 @@ class OperationRecoveryTest {
             verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation
         )
         assertEquals(
-            "只该列出缺的那一个 bundle",
-            listOf("bundle-b"),
+            "未闭合窗口的全部目标都要列出来，不能靠账本里已有的一半假装闭合",
+            listOf("bundle-a", "bundle-b"),
             (verdict as OperationJournalStore.RecoveryVerdict.PendingReconciliation).bundleNames
         )
     }
@@ -279,15 +271,12 @@ class OperationRecoveryTest {
     }
 
     /**
-     * **只看最新的那条 TARGET_REPLACED。**
-     *
-     * 历史上有过窗口、但后来成功闭合（账本里有），同时**最近一次**还没闭合 ——
-     * 判据必须落在最近的那次上，否则会把「现在正裂着」误判成「早就没事了」。
+     * 旧窗口必须由**本 op 自己的 LEDGER_COMMITTED** 闭合，不能靠账本里还有旧 URI。
+     * 已闭合的旧 op 不再报 pending；未闭合的新 op 必须报出来。
      */
     @Test
-    fun onlyTheMostRecentReplacedEntryDrivesTheVerdict() {
+    fun onlyUnclosedReplacedEntriesDriveTheVerdict() {
         val store = newStore()
-        // 旧的：账本已经补上了
         store.append(
             JournalEntry(
                 operationId = "op-old",
@@ -296,7 +285,14 @@ class OperationRecoveryTest {
                 targets = listOf(JournalTarget("bundle-old", "h", 1L, listOf("uri-old")))
             )
         )
-        // 新的：账本里没有
+        store.append(
+            JournalEntry(
+                operationId = "op-old",
+                stage = JournalStage.LEDGER_COMMITTED.id,
+                atMillis = 1001L,
+                targets = listOf(JournalTarget("bundle-old", "h", 1L, listOf("uri-old")))
+            )
+        )
         store.append(
             JournalEntry(
                 operationId = "op-new",
@@ -306,9 +302,9 @@ class OperationRecoveryTest {
             )
         )
 
-        val verdict = store.recoveryVerdict(mapOf("uri-old" to record("uri-old", "bundle-old")))
+        val verdict = store.recoveryVerdict(emptyMap())
         val pending = verdict as? OperationJournalStore.RecoveryVerdict.PendingReconciliation
-        assertTrue("必须落在最近那条（9000ms）上，实际 $verdict", pending != null)
+        assertTrue("必须落在未闭合的新 op 上，实际 $verdict", pending != null)
         assertEquals(listOf("bundle-new"), pending!!.bundleNames)
         assertEquals(9000L, pending.detectedAtMillis)
     }
@@ -360,6 +356,260 @@ class OperationRecoveryTest {
         assertTrue(
             "没有可核对的 mod uri 时不能报「一致」——那是猜测",
             store.recoveryVerdict(emptyMap()) is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+    }
+
+    /**
+     * **同一个 URI 撞了、但账本记的是别的 bundle → 必须报待核对**（本轮真缺陷）。
+     * 判据要落在 [LedgerRecord.snapshotTargetHash] 与 bundleName 对不对得上，而不是 `uri` 键在不在；
+     * 否则旧的同 URI 记录会把「本次没落账」伪装成一致（计划验收第 2 条禁止）。
+     */
+    @Test
+    fun aReplacedTargetWhoseLedgerRecordPointsAtADifferentBundleIsPending() {
+        val store = newStore()
+        store.append(
+            JournalEntry(
+                operationId = "op-1",
+                stage = JournalStage.TARGET_REPLACED.id,
+                atMillis = 5000L,
+                targets = listOf(JournalTarget("bundle-a", "hash-a", 4096L, listOf("uri-a")))
+            )
+        )
+
+        // 账本里**有** uri-a 这个键，但它的 snapshotTargetHash 记的是**另一个 bundle**
+        // （上一次别的安装留下的）。只看「键在不在」会把它当成一致——那正是缺陷。
+        val ledger = mapOf("uri-a" to record("uri-a", "bundle-OTHER"))
+        val verdict = store.recoveryVerdict(ledger)
+        assertTrue(
+            "同 URI 但账本记的是别的 bundle → 必须报待核对，实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        val pending = verdict as OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        assertEquals(listOf("bundle-a"), pending.bundleNames)
+        assertEquals(listOf("uri-a"), pending.modUris)
+    }
+
+    /** 账本部分匹配也不能缩小未闭合窗口：两个目标都还没被本 op 的 commit 闭合。 */
+    @Test
+    fun ledgerPartialMatchDoesNotShrinkAnUnclosedReplacementWindow() {
+        val store = newStore()
+        store.append(
+            JournalEntry(
+                operationId = "op-1",
+                stage = JournalStage.TARGET_REPLACED.id,
+                atMillis = 5000L,
+                targets = listOf(
+                    JournalTarget("bundle-a", "hash-a", 1L, listOf("uri-a")),
+                    JournalTarget("bundle-b", "hash-b", 2L, listOf("uri-b"))
+                )
+            )
+        )
+
+        val ledger = mapOf(
+            "uri-a" to record("uri-a", "bundle-a"),
+            "uri-b" to record("uri-b", "bundle-WRONG")
+        )
+        val verdict = store.recoveryVerdict(ledger)
+        assertTrue(
+            "缺内容证明时整批保持待核对，实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        val pending = verdict as OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        assertEquals(listOf("bundle-a", "bundle-b"), pending.bundleNames)
+        assertEquals(listOf("uri-a", "uri-b"), pending.modUris)
+    }
+
+    // ------------------------------------ 写前意图（target_replacing）未闭合
+
+    /**
+     * **写前意图未闭合 → 必须报待核对，不是「不知道」。**（T08 本轮引入）
+     *
+     * ## 这一格补的是什么窗口
+     *
+     * [JournalStage.TARGET_REPLACED] 是 `copyDirectory` **返回成功之后**才落的 ——
+     * 它回答的是「文件确实换了」。但在**动手换文件之前**、意图刚落盘到真正调用
+     * `copyDirectory` 之间，还有一小段：进程若在那里崩，磁盘上可能是「文件换了一半」
+     * 或「压根没换」，而账本、TARGET_REPLACED 都还没写。既有判据只认 TARGET_REPLACED，
+     * 于是这一段崩溃会被判成 [OperationJournalStore.RecoveryVerdict.Consistent]（伪装成没事）。
+     *
+     * 写前意图阶段 `target_replacing`（**用字面串，不依赖尚不存在的枚举值**）就是
+     * 用来钉住这一段的：只要 journal 里存着一条 `target_replacing` 而**没有它自己后续的**
+     * [JournalStage.LEDGER_COMMITTED]，就必须报
+     * [OperationJournalStore.RecoveryVerdict.PendingReconciliation] —— 「不知道文件换没换」
+     * 也是**必须核对**的状态，不能当成一致，更不能因为 stage 不认识就退化成
+     * [OperationJournalStore.RecoveryVerdict.Unknown]（那会把一条合法的进行中意图当成损坏日志）。
+     *
+     * 今天这条**必红**：现有 `parse()` 不认识 `target_replacing`，整份判 `Unreadable`，
+     * `recoveryVerdict` 因此返回 `Unknown`。绿灯要求引入该 stage 且让未闭合意图 → 待核对。
+     */
+    @Test
+    fun anUnclosedWriteAheadIntentIsPendingNotUnknown() {
+        val store = newStore()
+        store.append(
+            JournalEntry(
+                operationId = "op-1",
+                stage = "target_replacing",
+                atMillis = 5000L,
+                targets = listOf(JournalTarget("bundle-a", "hash-a", 4096L, listOf("uri-a")))
+            )
+        )
+
+        val verdict = store.recoveryVerdict(emptyMap())
+        assertTrue(
+            "未闭合的写前意图必须报待核对，不能是 Unknown（stage 不认识）或 Consistent（伪装没事），实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        val pending = verdict as OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        assertEquals(listOf("bundle-a"), pending.bundleNames)
+        assertEquals(listOf("uri-a"), pending.modUris)
+        assertEquals("待核对结论要带上意图落盘的时刻", 5000L, pending.detectedAtMillis)
+    }
+
+    /**
+     * **账本里已有相同 URI/hash 的记录，也挡不住未闭合意图报待核对。**
+     *
+     * 这是与 [JournalStage.TARGET_REPLACED] 判据的关键分野：TARGET_REPLACED 只要账本对得上
+     * 就算账本 URI/bundle 对得上（见
+     * [replacedTargetWithoutFactsStaysPendingEvenWhenLedgerMatches]），也不能把未闭合意图当没事。
+     * 但 `target_replacing` 只宣告「打算换」——账本里那条相同 URI/bundle 的记录可能是
+     * **上一次**成功安装留下的，跟这次「打算换」的意图闭没闭合毫无关系。若因为账本对得上就放过，
+     * 正是计划验收第 2 条禁止的「把没完成的当成全成功」。
+     *
+     * 因此：只要这条 `target_replacing` 没有它**自己**后续的 LEDGER_COMMITTED，
+     * 哪怕账本 `uri-a → bundle-a` 完全吻合，也必须报待核对。
+     */
+    @Test
+    fun anUnclosedIntentStaysPendingEvenWhenTheLedgerAlreadyMatches() {
+        val store = newStore()
+        store.append(
+            JournalEntry(
+                operationId = "op-1",
+                stage = "target_replacing",
+                atMillis = 5000L,
+                targets = listOf(JournalTarget("bundle-a", "hash-a", 4096L, listOf("uri-a")))
+            )
+        )
+
+        // 账本里 uri-a → bundle-a 完全吻合（上一次安装留下的），但这次意图并未闭合。
+        val ledger = mapOf("uri-a" to record("uri-a", "bundle-a"))
+        val verdict = store.recoveryVerdict(ledger)
+        assertTrue(
+            "相同 URI/bundle 已在账本 ≠ 本次意图已闭合，仍必须报待核对，实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        assertEquals(
+            listOf("bundle-a"),
+            (verdict as OperationJournalStore.RecoveryVerdict.PendingReconciliation).bundleNames
+        )
+    }
+
+    /**
+     * **别的操作提交了账本，遮不住本操作的未闭合意图。**
+     *
+     * 闭合意图的只能是它**自己**（同 operationId）后续的 LEDGER_COMMITTED。别的 op
+     * 写了 LEDGER_COMMITTED 只说明**那一次**收尾了，与 `op-1` 那条悬着的 `target_replacing`
+     * 无关。若判据被别人的收尾带偏，就能被无关操作「洗白」——那正是伪装成全成功的一条暗路。
+     */
+    @Test
+    fun anotherOperationsCommitDoesNotHideThisIntentsPendingState() {
+        val store = newStore()
+        // op-1 悬着一条写前意图；op-2 已走完自己的收尾（时间更晚）。
+        // 两条必须共存，用字面量避免第二次 append 丢掉读不出来的意图条。
+        journal.writeText(
+            """{"schemaVersion":1,"entries":[
+                 {"operationId":"op-1","stage":"target_replacing","atMillis":5000,
+                  "targets":[{"bundleName":"bundle-a","hashDir":"hash-a","dataBytes":4096,"modUris":["uri-a"]}]},
+                 {"operationId":"op-2","stage":"ledger_committed","atMillis":9000,
+                  "targets":[{"bundleName":"bundle-z","hashDir":"hash-z","dataBytes":1,"modUris":["uri-z"]}]}
+               ]}"""
+        )
+
+        val verdict = store.recoveryVerdict(mapOf("uri-z" to record("uri-z", "bundle-z")))
+        assertTrue(
+            "别的 op 收尾遮不住 op-1 未闭合的意图，仍必须报待核对，实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        assertEquals(
+            "待核对指向的必须是 op-1 那条意图涉及的 bundle",
+            listOf("bundle-a"),
+            (verdict as OperationJournalStore.RecoveryVerdict.PendingReconciliation).bundleNames
+        )
+    }
+
+    /**
+     * **只有它自己后续的 LEDGER_COMMITTED 才能闭合意图 → 一致。**
+     *
+     * 这是绿灯的正面：`op-1` 落了 `target_replacing`，随后**同一个 op-1** 又落了
+     * LEDGER_COMMITTED（账本也确实对得上），窗口彻底关闭，必须报
+     * [OperationJournalStore.RecoveryVerdict.Consistent]。
+     *
+     * 与 [anotherOperationsCommitDoesNotHideThisIntentsPendingState] 成对：闭合看的是
+     * **同 operationId** 的后续收尾，不是「journal 里存在任意一条 LEDGER_COMMITTED」。
+     */
+    @Test
+    fun anIntentClosedByItsOwnLaterLedgerCommitIsConsistent() {
+        val store = newStore()
+        // 同一个 op-1 先落写前意图、后落收尾，两条必须共存——同样用字面量避免
+        // 第二次 append 把读不出来的写前意图丢掉。
+        journal.writeText(
+            """{"schemaVersion":1,"entries":[
+                 {"operationId":"op-1","stage":"target_replacing","atMillis":5000,
+                  "targets":[{"bundleName":"bundle-a","hashDir":"hash-a","dataBytes":4096,"modUris":["uri-a"]}]},
+                 {"operationId":"op-1","stage":"ledger_committed","atMillis":6000,
+                  "targets":[{"bundleName":"bundle-a","hashDir":"hash-a","dataBytes":4096,"modUris":["uri-a"]}]}
+               ]}"""
+        )
+
+        val verdict = store.recoveryVerdict(mapOf("uri-a" to record("uri-a", "bundle-a")))
+        assertEquals(
+            "意图被它自己后续的 LEDGER_COMMITTED 闭合，窗口关闭 → 一致",
+            OperationJournalStore.RecoveryVerdict.Consistent,
+            verdict
+        )
+    }
+
+    /**
+     * **重启后连续两次核对：判定层自己不写任何东西、结论幂等。**
+     * 只声称 [OperationJournalStore.recoveryVerdict] 这一层是纯读——不重放、不写任何文件（包括
+     * 旁边预置的模拟账本与目标哨兵文件）；**不**声称整条安装链已防叠加。
+     * 用空账本制造稳定的待核对态（不依赖 bundle 匹配修复），对同一文件重新 new store 模拟重启。
+     */
+    @Test
+    fun theVerdictIsPureAcrossRestartsWritingNothing() {
+        val store = newStore()
+        store.append(
+            JournalEntry(
+                operationId = "op-1",
+                stage = JournalStage.TARGET_REPLACED.id,
+                atMillis = 5000L,
+                targets = listOf(JournalTarget("bundle-a", "hash-a", 4096L, listOf("uri-a")))
+            )
+        )
+        val dir = journal.parentFile!!
+        // 旁边放两个哨兵（纯临时目录内，不碰真实游戏路径）：模拟账本与一份目标文件。
+        val ledgerSentinel = File(dir, "installed_mods.json").apply { writeText("""{"sentinel":"ledger"}""") }
+        val targetSentinel = File(dir, "__data").apply { writeText("sentinel-target-bytes") }
+        val journalBytesBefore = journal.readBytes()
+        val ledgerBytesBefore = ledgerSentinel.readBytes()
+        val targetBytesBefore = targetSentinel.readBytes()
+        val filesBefore = dir.list()!!.sorted()
+
+        // 模拟重启：对同一个 journal 文件重新 new 一个 store。空账本 = 稳定的待核对。
+        val restarted = OperationJournalStore(journal)
+        val first = restarted.recoveryVerdict(emptyMap())
+        val second = restarted.recoveryVerdict(emptyMap())
+
+        assertTrue(
+            "待核对态：第一次核对必须报 PendingReconciliation，实际 $first",
+            first is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        assertEquals("连续两次核对结论必须一致（幂等）", first, second)
+        assertArrayEquals("核对不许改动 journal 字节", journalBytesBefore, journal.readBytes())
+        assertArrayEquals("核对不许改动模拟账本字节", ledgerBytesBefore, ledgerSentinel.readBytes())
+        assertArrayEquals("核对不许改动目标哨兵字节", targetBytesBefore, targetSentinel.readBytes())
+        assertEquals(
+            "核对不许新建任何文件（判定层不写 ledger/journal/目标）",
+            filesBefore, dir.list()!!.sorted()
         )
     }
 
@@ -428,6 +678,34 @@ class OperationRecoveryTest {
                 verdict is OperationJournalStore.RecoveryVerdict.Unknown
             )
         }
+    }
+
+    @Test
+    fun legacyTargetWithoutBundleNameIsUnreadable() {
+        assertMalformedLegacyTargetRejected("""{"modUris":["uri-a"]}""")
+    }
+
+    @Test
+    fun legacyTargetWithNullBundleNameIsUnreadable() {
+        assertMalformedLegacyTargetRejected("""{"bundleName":null,"modUris":["uri-a"]}""")
+    }
+
+    private fun assertMalformedLegacyTargetRejected(rawTarget: String) {
+        val store = newStore()
+        journal.writeText(
+            """{"schemaVersion":1,"entries":[
+                {"operationId":"op-a","stage":"target_replaced","atMillis":1,
+                 "targets":[$rawTarget]}]}"""
+        )
+        val before = journal.readBytes()
+
+        assertTrue("missing target identity must be unreadable", store.read() is JournalRead.Unreadable)
+        assertTrue(
+            "malformed legacy target must not reach observation",
+            store.recoveryVerdict(emptyMap()) is OperationJournalStore.RecoveryVerdict.Unknown
+        )
+        assertTrue("append must not replace malformed evidence", store.append(entry(JournalStage.PLANNED)) != null)
+        assertArrayEquals(before, journal.readBytes())
     }
 
     // ---------------------------------------------- 破坏判据会红在哪（自我说明）

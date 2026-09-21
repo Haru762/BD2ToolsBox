@@ -212,6 +212,31 @@ function Get-Bd2UnitResultsDir {
     return (Join-Path $Root (Join-Path 'app/build/test-results' $name))
 }
 
+function Move-Bd2UnitResultsToRecycleBin {
+    param([Parameter(Mandatory=$true)][string]$ResultsDir)
+    $base = [IO.Path]::GetFullPath((Join-Path $Root 'app/build/test-results')).TrimEnd('\', '/')
+    $target = [IO.Path]::GetFullPath($ResultsDir).TrimEnd('\', '/')
+    if (-not [string]::Equals([IO.Path]::GetDirectoryName($target), $base, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($target) -notmatch '^test[A-Za-z0-9_]*UnitTest$') {
+        throw 'Refused unsafe unit report cleanup path'
+    }
+    if (-not (Test-Path -LiteralPath $target)) { return }
+    # GetFullPath alone does not resolve junctions. Refuse reparse points in the
+    # entire path instead of recycling a directory outside this workspace.
+    $item = Get-Item -LiteralPath $target -Force
+    if (-not $item.PSIsContainer) { throw 'Unit report cleanup target is not a directory' }
+    $ancestor = $item
+    while ($null -ne $ancestor) {
+        if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refused reparse-point unit report cleanup path' }
+        $ancestor = $ancestor.Parent
+    }
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+        $target, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+        [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin,
+        [Microsoft.VisualBasic.FileIO.UICancelOption]::ThrowException)
+}
+
 function Read-Bd2UnitXml {
     param([Parameter(Mandatory=$true)][string]$ResultsDir)
     $agg = [ordered]@{
@@ -301,7 +326,7 @@ function Test-Bd2Unit {
         只看 Gradle 退出码不够：`--tests` 命中不到类时 Gradle 会失败，但报告缺失/为空、
         用例被 skip 这类「假绿色」不会体现在退出码上。所以本函数
 
-          · 跑之前删掉该任务的 test-results 目录，避免上一轮的 XML 被当成这一轮的结果；
+          · 跑之前把该任务的 test-results 目录移入回收站，避免上一轮的 XML 被当成这一轮的结果；
           · 跑之后**必须**读到 TEST-*.xml，且里面真的有这个类、至少 1 个用例；
           · 失败 / 错误 / 必需用例被 skip / 零用例 / 无报告 —— 任一命中即抛错（非零）。
     #>
@@ -330,7 +355,7 @@ function Test-Bd2Unit {
 
     foreach ($task in $variant.tasks) {
         $resultsDir = Get-Bd2UnitResultsDir -Task $task
-        if (Test-Path -LiteralPath $resultsDir) { Remove-Item -LiteralPath $resultsDir -Recurse -Force }
+        Move-Bd2UnitResultsToRecycleBin -ResultsDir $resultsDir
         Invoke-Bd2GradleRaw $task --tests $TestClass --console=plain
         $gradleExit = $script:Bd2LastExitCode
         $summary = Read-Bd2UnitXml -ResultsDir $resultsDir
@@ -647,12 +672,21 @@ function Invoke-Bd2Instrumentation {
         [Parameter(Mandatory=$true)][string]$Serial,
         [Parameter(Mandatory=$true)][string]$TestClass,
         [string]$Method,
-        [string]$TestPackage = 'com.bd2toolsbox.test'
+        [string]$TestPackage = 'com.bd2toolsbox.test',
+        [hashtable]$Arguments = @{}
     )
     $target = if ([string]::IsNullOrWhiteSpace($Method)) { $TestClass } else { "$TestClass#$Method" }
-    # -r 保留原始协议：逐条用例的 INSTRUMENTATION_STATUS_CODE 是唯一能区分
-    # 「通过」与「被跳过」的信号（见 Assert-Bd2InstrumentationResult）。
-    $output = (& $Bd2Adb -s $Serial shell am instrument -w -r -e class $target "$TestPackage/$Bd2InstrumentationRunner") -join [Environment]::NewLine
+    $extra = @()
+    foreach ($key in @($Arguments.Keys | Sort-Object)) {
+        $value = [string]$Arguments[$key]
+        # adb shell performs another parse: accept only single, non-shell tokens.
+        if ($key -notmatch '^[a-zA-Z][a-zA-Z0-9_]*$' -or $value -notmatch '^[a-zA-Z0-9_.:-]+$') {
+            throw 'Unsafe instrumentation argument'
+        }
+        $extra += @('-e', [string]$key, $value)
+    }
+    # -r exposes per-test status, including ignored/assumption-skipped tests.
+    $output = (& $Bd2Adb -s $Serial shell am instrument -w -r -e class $target @extra "$TestPackage/$Bd2InstrumentationRunner") -join [Environment]::NewLine
     $adapterExit = $LASTEXITCODE
     Write-Host $output
     return @{ output = $output; adbExit = $adapterExit }
@@ -804,6 +838,134 @@ function Get-Bd2ReleaseArtifact {
     return @{ path = $path; relative = $relative; expectedSha256 = [string]$fixture[0].sha256 }
 }
 
+function Stop-Bd2ReleaseApp {
+    param([Parameter(Mandatory=$true)][string]$Serial)
+    & $Bd2Adb -s $Serial shell am force-stop com.bd2toolsbox | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not stop release app on $Serial" }
+}
+
+function Invoke-Bd2SnapshotPhases {
+    <# Tests the production Store across processes, NOT the full MainActivity/UI cold-start gate. #>
+    param(
+        [Parameter(Mandatory=$true)][string]$Serial,
+        [Parameter(Mandatory=$true)][string]$RunId,
+        [Parameter(Mandatory=$true)][string]$RunDirectory
+    )
+    if ($RunId -cnotmatch '^[a-zA-Z0-9-]{1,80}$') { throw 'Unsafe snapshot run ID' }
+    if (-not (Test-Path -LiteralPath $RunDirectory -PathType Container)) { throw 'Missing snapshot report directory' }
+    $pids = @{}
+    $failure = $null
+    $runPhase = {
+        param($phase)
+        $probe = Invoke-Bd2Instrumentation -Serial $Serial -TestClass 'com.bd2toolsbox.integration.ReleaseSnapshotProbeTest' -Method ($phase + 'Snapshot') -TestPackage 'com.bd2toolsbox.releaseprobe' -Arguments @{ bd2RunId = $RunId }
+        [IO.File]::WriteAllText((Join-Path $RunDirectory ("snapshot-$phase.txt")), $probe.output, (New-Object Text.UTF8Encoding($false)))
+        $count = Assert-Bd2InstrumentationResult -Result $probe -Label "ReleaseSnapshotProbeTest#$phase"
+        if ($count -ne 1) { throw "Snapshot phase $phase must execute exactly one test (got $count)" }
+        $pattern = 'BD2_SNAPSHOT_PROBE phase=' + $phase + ' runId=' + [regex]::Escape($RunId) + ' pid=([1-9][0-9]*) entries=([0-9]+)(?:\s|$)'
+        $marker = [regex]::Match($probe.output, $pattern)
+        if (-not $marker.Success) { throw "Missing snapshot $phase marker" }
+        if ($phase -ne 'cleanup' -and $marker.Groups[2].Value -ne '5') { throw "Snapshot $phase did not restore all five entries" }
+        $pids[$phase] = [int]$marker.Groups[1].Value
+    }
+    try {
+        Stop-Bd2ReleaseApp -Serial $Serial
+        & $runPhase 'prepare'
+        Stop-Bd2ReleaseApp -Serial $Serial
+        & $runPhase 'restore'
+        if ($pids.prepare -eq $pids.restore) { throw 'Snapshot restore reused the prepare PID; restart not proven' }
+    } catch {
+        $failure = $_
+    } finally {
+        # A failed prepare can still have created private test files. Cleanup is mandatory.
+        try { & $runPhase 'cleanup' } catch {
+            if ($null -eq $failure) { $failure = $_ } else { Write-Warning ("Snapshot cleanup also failed: " + $_.Exception.Message) }
+        }
+    }
+    if ($null -ne $failure) { throw $failure }
+    return @{ preparePid = $pids.prepare; restorePid = $pids.restore; entries = 5; scope = 'minified-store-cross-process'; uiColdStartVerified = $false }
+}
+
+function Assert-Bd2UiChrome {
+    param([Parameter(Mandatory=$true)][string]$XmlText, [switch]$AllowIndexPrompt)
+    $reader = $null
+    try {
+        $settings = New-Object System.Xml.XmlReaderSettings
+        $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+        $settings.XmlResolver = $null
+        $reader = [System.Xml.XmlReader]::Create((New-Object IO.StringReader($XmlText)), $settings)
+        $document = New-Object System.Xml.XmlDocument
+        $document.XmlResolver = $null
+        $document.Load($reader)
+    } catch { throw "Invalid UI XML: $($_.Exception.Message)" } finally {
+        if ($null -ne $reader) { $reader.Dispose() }
+    }
+    $nodes = @($document.SelectNodes('/hierarchy//node[@package="com.bd2toolsbox"]'))
+    $labels = @($nodes | ForEach-Object { $_.GetAttribute('text'); $_.GetAttribute('content-desc') })
+    $hasChrome = ($labels -contains '搜索') -and (($labels -contains '筛选') -or ($labels -contains 'mod 文件夹'))
+    $hasIndexPrompt = ($labels -contains '需要建立文件索引') -and ($labels -contains '跳过')
+    if (-not $hasChrome -and -not ($AllowIndexPrompt -and $hasIndexPrompt)) {
+        throw 'Cold-start UI is missing production main chrome'
+    }
+    return $document
+}
+
+function Invoke-Bd2UiColdStart {
+    <# Proves a fresh process and visible production chrome, NOT snapshot list restoration. #>
+    param([Parameter(Mandatory=$true)][string]$Serial, [Parameter(Mandatory=$true)][string]$RunDirectory)
+    Stop-Bd2ReleaseApp -Serial $Serial
+    $launch = (& $Bd2Adb -s $Serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
+    $launchExit = $LASTEXITCODE
+    [IO.File]::WriteAllText((Join-Path $RunDirectory 'launch.txt'), $launch)
+    if ($launchExit -ne 0 -or $launch -notmatch 'Status:\s*ok' -or $launch -notmatch 'Activity:\s*com\.bd2toolsbox/\.MainActivity') {
+        throw "MainActivity launch failed: $launch"
+    }
+    if ($launch -notmatch 'LaunchState:\s*COLD\b') { throw "COLD process launch not proven: $launch" }
+    # Unique remote name prevents failed dumps from reusing an older successful XML.
+    $remote = '/data/local/tmp/bd2-ui-' + [guid]::NewGuid().ToString('N') + '.xml'
+    $capture = {
+        param($name)
+        $local = Join-Path $RunDirectory ($name + '.xml')
+        $output = (& $Bd2Adb -s $Serial shell uiautomator dump $remote) -join [Environment]::NewLine
+        $dumpExit = $LASTEXITCODE
+        [IO.File]::WriteAllText((Join-Path $RunDirectory ($name + '-dump.txt')), $output)
+        if ($dumpExit -ne 0) { throw "UI dump failed: $output" }
+        & $Bd2Adb -s $Serial pull $remote $local | Out-Null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $local -PathType Leaf)) { throw 'UI XML pull failed' }
+        return [IO.File]::ReadAllText($local)
+    }
+    Start-Sleep -Seconds 2
+    $xml = & $capture 'ui-cold-start'
+    $document = Assert-Bd2UiChrome -XmlText $xml -AllowIndexPrompt
+    $skip = $document.SelectSingleNode('/hierarchy//node[@package="com.bd2toolsbox" and @text="跳过"]')
+    if ($null -ne $skip) {
+        $bounds = [regex]::Match($skip.GetAttribute('bounds'), '^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$')
+        if (-not $bounds.Success) { throw 'Index prompt skip has invalid bounds' }
+        $left = [int]$bounds.Groups[1].Value; $top = [int]$bounds.Groups[2].Value
+        $right = [int]$bounds.Groups[3].Value; $bottom = [int]$bounds.Groups[4].Value
+        if ($left -ge $right -or $top -ge $bottom) { throw 'Index prompt skip has empty bounds' }
+        $x = [int](($left + $right) / 2); $y = [int](($top + $bottom) / 2)
+        & $Bd2Adb -s $Serial shell input tap $x $y | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Index prompt skip tap failed' }
+        Start-Sleep -Seconds 2
+        $xml = & $capture 'ui-cold-start-after-skip'
+    }
+    Assert-Bd2UiChrome -XmlText $xml | Out-Null
+    return @{ scope = 'production-ui-chrome-only'; uiChromeColdStartVerified = $true; uiColdStartVerified = $false }
+}
+
+function Get-Bd2CurrentReleaseArtifact {
+    param([Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi)
+    # Do not use the frozen 0.2.16 APK for a test of new production Store code.
+    # Normal release signing remains mandatory; this helper never fabricates credentials.
+    Invoke-Bd2Gradle :app:assembleRelease --console=plain
+    $path = Get-Bd2ApkForAbi -BuildType release -Abi $Abi
+    $mapping = Join-Path $Root 'app/build/outputs/mapping/release/mapping.txt'
+    if (-not (Test-Path -LiteralPath $mapping -PathType Leaf) -or (Get-Item -LiteralPath $mapping).Length -eq 0) {
+        throw 'Current release R8 mapping is missing or empty'
+    }
+    return @{ path = $path; relative = "app/build/outputs/apk/release/app-$Abi-release.apk"; expectedSha256 = (Get-Bd2Sha256 -Path $path); mappingPath = $mapping; mappingSha256 = (Get-Bd2Sha256 -Path $mapping) }
+}
+
 function Test-Bd2ReleaseSmoke {
     <#
       .SYNOPSIS
@@ -813,18 +975,23 @@ function Test-Bd2ReleaseSmoke {
         baseline-startup 只做「原版/同源重建包能装、能起、身份对得上、测试 runner 能跑」，
         不改业务 DTO、不依赖后续修复、不写真实游戏文件。签名与哈希用 apksigner + 清单核验，
         不通过测试专用 keep、替换生产 DTO 或反射引用让 R8 缺陷消失。
-        其余 case（snapshot-compatibility / json-migration / …）本项**未实现**，必须非零失败。
+        snapshot-compatibility 使用当前 minified release 的真实 Store 做跨进程读写；
+        不冒充 MainActivity/UI 完整冷启动验收。其余 case 必须非零失败。
     #>
     param(
         [Parameter(Mandatory=$true)][string]$Case,
         [Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi
     )
     Assert-Bd2AndroidTools
-    if ($Case -ne 'baseline-startup') {
-        throw "release case '$Case' 尚未实现（T04 只落实 baseline-startup；其余归 T44/T57）。拒绝返回空成功。"
+    if ($Case -notin @('baseline-startup', 'snapshot-compatibility')) {
+        throw "release case '$Case' 尚未实现。拒绝返回空成功。"
     }
 
-    $artifact = Get-Bd2ReleaseArtifact -Abi $Abi
+    $artifact = if ($Case -eq 'snapshot-compatibility') {
+        $preflightDevice = Get-Bd2Device -Abi $Abi
+        $null = Assert-Bd2DeviceOnline -Device $preflightDevice
+        Get-Bd2CurrentReleaseArtifact -Abi $Abi
+    } else { Get-Bd2ReleaseArtifact -Abi $Abi }
     $actualSha = Get-Bd2Sha256 -Path $artifact.path
     if ($actualSha -ne $artifact.expectedSha256) {
         throw "release 基线哈希不符：$($artifact.relative) 期望 $($artifact.expectedSha256)，实际 $actualSha"
@@ -857,7 +1024,9 @@ function Test-Bd2ReleaseSmoke {
         serial = $serial
         apk = $artifact.relative
         apkSha256 = $actualSha
-        apkSha256MatchesManifest = $true
+        apkSha256MatchesManifest = ($Case -eq 'baseline-startup')
+        artifactSource = $(if ($Case -eq 'baseline-startup') { 'frozen-baseline' } else { 'current-minified-release-build' })
+        mappingSha256 = $artifact.mappingSha256
         signerCertSha256 = $cert
         apksignerVerified = $true
         instrumentationHost = 'com.bd2toolsbox.releaseprobe'
@@ -865,6 +1034,9 @@ function Test-Bd2ReleaseSmoke {
         result = 'FAIL'
     }
     try {
+        if ($Case -eq 'snapshot-compatibility') {
+            Copy-Item -LiteralPath $artifact.mappingPath -Destination (Join-Path $runDir 'mapping.txt')
+        }
         # 用自足的 :release-probe APK，不用 :app 的 androidTest 包。两条实测过的死路：
         #   1) debug androidTest 包驱动 release app → ClassNotFoundException:
         #      kotlin.jvm.internal.Intrinsics（release 里它已被 R8 改名为 P1.h）；
@@ -873,6 +1045,14 @@ function Test-Bd2ReleaseSmoke {
         # 探针不依赖 :app 的类，故两条都不受影响。详见 T04 证据。
         Invoke-Bd2Gradle :release-probe:assembleDebug --console=plain
         $testApk = Get-Bd2ReleaseProbeApk
+        # Verify the probe signer before modifying either installed package.
+        $probeSigner = (& $Bd2Apksigner verify --print-certs $testApk) -join [Environment]::NewLine
+        if ($LASTEXITCODE -ne 0) { throw 'Release probe signature verification failed' }
+        $probeCertMatch = [regex]::Match($probeSigner, 'certificate SHA-256 digest:\s*([0-9a-fA-F]+)')
+        if (-not $probeCertMatch.Success -or $probeCertMatch.Groups[1].Value.ToLowerInvariant() -ne $cert) {
+            throw 'Release probe and target APK must have the same signing certificate'
+        }
+        $summary.probeApkSha256 = Get-Bd2Sha256 -Path $testApk
         $installApp = (& $Bd2Adb -s $serial install -r -t $artifact.path) -join ' '
         if ($LASTEXITCODE -ne 0 -or $installApp -notmatch 'Success') {
             throw "release 安装失败：$installApp (exit $LASTEXITCODE)"
@@ -894,11 +1074,76 @@ function Test-Bd2ReleaseSmoke {
         $summary.probeTests = $count
         $summary.steps += 'release-contract-probe'
 
-        # 主界面启动：显式指名组件，要求 Status: ok 且组件确实是生产 MainActivity
-        $launch = (& $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
-        [IO.File]::WriteAllText((Join-Path $runDir 'launch.txt'), $launch, (New-Object Text.UTF8Encoding($false)))
-        if ($launch -notmatch 'Status:\s*ok') { throw "主界面启动失败：$launch" }
-        $summary.steps += 'launch-main-activity'
+        if ($Case -eq 'snapshot-compatibility') {
+            $snapshotRunId = 'snapshot-' + [guid]::NewGuid().ToString('N')
+            $summary.snapshot = Invoke-Bd2SnapshotPhases -Serial $serial -RunId $snapshotRunId -RunDirectory $runDir
+            $summary.steps += 'minified-store-cross-process-snapshot'
+            $summary.uiColdStartVerified = $false
+
+            $mappingLines = Get-Content -LiteralPath (Join-Path $runDir 'mapping.txt') -Encoding UTF8
+            $inSnapshotV1 = $false
+            $seenSnapshotV1 = $false
+            $snapshotV1Renamed = $false
+            $fieldsRenamed = @()
+            foreach ($line in $mappingLines) {
+                if ($line -match '^com\.bd2toolsbox\.core\.storage\.ModSnapshotStore\$SnapshotV1 -> (.+?):?\s*$') {
+                    $inSnapshotV1 = $true
+                    $seenSnapshotV1 = $true
+                    $targetClass = $Matches[1].Trim()
+                    if ($targetClass -ne 'com.bd2toolsbox.core.storage.ModSnapshotStore$SnapshotV1') {
+                        $snapshotV1Renamed = $true
+                    }
+                } elseif ($inSnapshotV1) {
+                    if ($line -match '^\s') {
+                        if ($line -match '^\s+(?:int\s+version|long\s+savedAt|java\.util\.List\s+mods|java\.util\.List\s+sourceDirs)\s+->\s+[a-zA-Z]\s*$') {
+                            $fieldsRenamed += $line.Trim()
+                        }
+                    } else {
+                        $inSnapshotV1 = $false
+                    }
+                }
+            }
+            if (-not $seenSnapshotV1) {
+                throw 'SnapshotV1 class is missing from mapping.txt'
+            }
+            if ($snapshotV1Renamed) {
+                throw 'SnapshotV1 class is renamed in mapping.txt'
+            }
+            if ($fieldsRenamed.Count -gt 0) {
+                throw "SnapshotV1 fields are renamed in mapping.txt: $($fieldsRenamed -join '; ')"
+            }
+            [IO.File]::WriteAllText((Join-Path $runDir 'snapshot-v1-mapping.txt'), 'PASS', (New-Object Text.UTF8Encoding($false)))
+            $summary.steps += 'snapshot-v1-mapping-keep'
+            if ($summary.snapshot -is [hashtable]) {
+                $summary.snapshot.snapshotV1FieldsKept = $true
+            }
+        }
+
+        if ($Case -eq 'snapshot-compatibility') {
+            $summary.ui = Invoke-Bd2UiColdStart -Serial $serial -RunDirectory $runDir
+            $summary.steps += 'ui-chrome-cold-start'
+            $summary.uiChromeColdStartVerified = $summary.ui.uiChromeColdStartVerified
+            # Store round-trip + chrome are separate evidence. Neither proves a
+            # production snapshot save/restart/list restore with matching sourceDirs.
+            $summary.uiColdStartVerified = $false
+            $snapHead = (& $Bd2Adb -s $serial shell cat /data/data/com.bd2toolsbox/files/mod_list_snapshot.json) -join ''
+            if ([string]::IsNullOrWhiteSpace($snapHead) -or $snapHead -match 'Permission denied') {
+                $snapHead = (& $Bd2Adb -s $serial shell su -c cat /data/data/com.bd2toolsbox/files/mod_list_snapshot.json) -join ''
+            }
+            if ($snapHead.Length -gt 180) { $snapHead = $snapHead.Substring(0, 180) }
+            [IO.File]::WriteAllText((Join-Path $runDir 'filesdir-snapshot-head.txt'), $snapHead, (New-Object Text.UTF8Encoding($false)))
+            $legacyEnvelope = $snapHead -match '"a"\s*:' -and $snapHead -notmatch '"savedAt"'
+            $canonicalEnvelope = $snapHead -match '"savedAt"' -and $snapHead -match '"mods"'
+            $summary.filesDirSnapshotLegacy = [bool]$legacyEnvelope
+            $summary.filesDirSnapshotCanonical = [bool]$canonicalEnvelope
+            $summary.steps += 'filesdir-snapshot-head'
+        } else {
+            $launch = (& $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
+            $launchExit = $LASTEXITCODE
+            [IO.File]::WriteAllText((Join-Path $runDir 'launch.txt'), $launch)
+            if ($launchExit -ne 0 -or $launch -notmatch 'Status:\s*ok') { throw "MainActivity launch failed: $launch" }
+            $summary.steps += 'launch-main-activity'
+        }
         & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
 
         # 应用身份：包名/版本号/版本名必须与冻结基线一致（0.2.16 / 17）

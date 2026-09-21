@@ -142,8 +142,18 @@ android {
 
 chaquopy {
     defaultConfig {
-        // 构建机上用哪个 Python 来装 pip 包。Chaquopy 15 只支持 3.8–3.11，
-        // 而系统 PATH 上常常是更新的版本（3.13），所以多半要显式指定。
+        // 目标解释器：打进 APK、在设备上真正执行 Python 的那个 CPython。
+        // 显式写死，不吃 Chaquopy 的默认值 —— 默认值会随插件升级而变
+        // （15.0 的默认是 3.8，官方可选 3.8–3.12），显式化之后
+        // 「今天解析到的依赖」才有可复现的目标，升级插件也不会无声改解释器。
+        version = "3.8"
+
+        // 构建机上用哪个 Python 来装 pip 包。这与上面的目标解释器是**两套**版本概念：
+        // 目标解释器是 APK 里的 3.8；构建机 Python 版本要求由当前 Chaquopy 插件决定（参
+        // 官方文档）。但 pyc 编译要求构建机与目标 minor 一致；本批实测的构建机是
+        // 3.11.9，与目标 3.8 minor 不匹配，所以本项目代码与 pip 依赖的 pyc 不生成
+        // （真实构建观察与 IMY 清点见 docs/refactor/python-dependencies.md）。
+        // 系统 PATH 上常常是更新的版本，所以多半要显式指定。
         //
         // 不能写死路径 —— 那是某台机器上的绝对路径，别人克隆下来必然构建失败，
         // 而且会把本机用户名带进公开仓库。改成按这个顺序找：
@@ -159,15 +169,12 @@ chaquopy {
 
         if (!localPython.isNullOrBlank()) buildPython(localPython)
         pip {
-            install("Pillow")
-            install("lz4")
-            install("brotli")
-            install("fsspec")
-            install("attrs")
-            install("requests")
-            install("beautifulsoup4")
-            install("protobuf")
-            install("tqdm")
+            // 依赖清单在 app/requirements-android.txt：9 个直接依赖全部用 == 锁定，
+            // 不用无约束的包名（无约束时一年后的解析结果不保证重现）。
+            // 用 Chaquopy 的 requirements 文件语法；清单变化会被记进任务输入，
+            // 从而正确触发重新解析。版本来源与传递依赖见
+            // docs/refactor/python-dependencies.md。
+            install("-r", "requirements-android.txt")
         }
     }
 }

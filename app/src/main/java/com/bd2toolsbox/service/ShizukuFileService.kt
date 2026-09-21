@@ -21,6 +21,7 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
         val dest = File(destPath)
         dest.parentFile?.mkdirs()
         copyStream(File(sourcePath), dest)
+        makeWorldReadable(dest)
         Log.d(TAG, "Successfully copied $sourcePath to $destPath")
         true
     } catch (e: Exception) {
@@ -141,6 +142,19 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
      *   判定本身仍然**只在这一处**，由调用方声明意图（[copyFile] 用默认的 false、
      *   [copyTree] 显式传 true），不散成多份 `if`。
      */
+    /** shell/root 写入 app 私有目录后，把属主改回父目录的 uid，否则 app 读 EACCES。 */
+    private fun makeWorldReadable(dest: File) {
+        try {
+            val parent = dest.parentFile ?: return
+            val st = android.system.Os.stat(parent.absolutePath)
+            android.system.Os.chown(dest.absolutePath, st.st_uid, st.st_gid)
+            android.system.Os.chmod(dest.absolutePath, 384) // 0600
+        } catch (e: Exception) {
+            Log.w(TAG, "chown/chmod dest failed: ${dest.absolutePath}", e)
+            dest.setReadable(true, false)
+        }
+    }
+
     private fun copyStream(source: File, dest: File, allowEmptySource: Boolean = false) {
         val expectedSize = source.length()
         AtomicFileWriter().write(

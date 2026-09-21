@@ -125,7 +125,8 @@ sealed class SnapshotLoad {
     data class Loaded(
         val entries: List<SnapshotEntry>,
         val savedAt: Long,
-        val droppedEntries: Int
+        val droppedEntries: Int,
+        val wasLegacy: Boolean = false
     ) : SnapshotLoad()
 
     /** 顶层有 `version`，值不是本类认识的 [ModSnapshotStore.SCHEMA_VERSION]。 */
@@ -452,6 +453,7 @@ class ModSnapshotStore(private val snapshotFile: File) {
         val savedAt: Long
         val mods: List<SnapshotEntry>?
         val sourceDirs: List<String>?
+        var wasLegacy = false
 
         if (obj.has(KEY_VERSION)) {
             val snapshot = gson.fromJson(obj, SnapshotV1::class.java)
@@ -471,6 +473,7 @@ class ModSnapshotStore(private val snapshotFile: File) {
             savedAt = legacy.savedAt
             mods = legacy.mods
             sourceDirs = legacy.sourceDirs
+            wasLegacy = true
         } else {
             return SnapshotLoad.Corrupt(
                 "顶层既没有新格式的 $KEY_VERSION，也没有旧格式的 $KEY_LEGACY_MODS"
@@ -491,7 +494,8 @@ class ModSnapshotStore(private val snapshotFile: File) {
         return SnapshotLoad.Loaded(
             entries = valid,
             savedAt = savedAt,
-            droppedEntries = mods.size - valid.size
+            droppedEntries = mods.size - valid.size,
+            wasLegacy = wasLegacy
         )
     }
 

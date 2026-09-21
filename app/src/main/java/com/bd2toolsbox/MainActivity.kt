@@ -717,7 +717,8 @@ class MainActivity : ComponentActivity() {
                 val ledgerNotice by viewModel.ledgerResetNotice.collectAsState()
                 LedgerResetDialog(
                     notice = ledgerNotice,
-                    onDismiss = { viewModel.dismissLedgerResetNotice() }
+                    onDismiss = { viewModel.dismissLedgerResetNotice() },
+                    onReconcile = { viewModel.reconcilePendingInstalls() }
                 )
 
                 val overwritePlan by viewModel.convertedOverwritePlan.collectAsState()

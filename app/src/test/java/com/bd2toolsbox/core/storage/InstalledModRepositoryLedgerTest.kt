@@ -10,6 +10,7 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -52,6 +53,7 @@ class InstalledModRepositoryLedgerTest {
     val temp = TemporaryFolder()
 
     private lateinit var filesDir: File
+    private lateinit var context: Context
     private lateinit var repo: InstalledModRepository
 
     @Before
@@ -62,10 +64,13 @@ class InstalledModRepositoryLedgerTest {
         every { android.util.Log.i(any<String>(), any<String>()) } returns 0
 
         filesDir = temp.newFolder("files")
-        val context = mockk<Context>()
+        context = mockk<Context>()
         every { context.filesDir } returns filesDir
         repo = InstalledModRepository(context)
     }
+
+    /** 同进程重建实例并重读磁盘；不模拟进程死亡，调用方须显式释放旧租约。 */
+    private fun reloadedRepo(): InstalledModRepository = InstalledModRepository(context)
 
     @After
     fun tearDown() {
@@ -473,6 +478,218 @@ class InstalledModRepositoryLedgerTest {
         } finally {
             repo.file().setWritable(true)
         }
+    }
+
+    // ------------------------------- 恢复门禁：pending/unknown/in-flight 不许再次覆写
+    //
+    // 本组是 T08 提交门禁的仓储层回归测试（修复前已验证 RED）。守的契约：
+    //   1. 重启后处于**待核对**（PendingReconciliation）时，再次 beginSubmit 必须被拒绝，
+    //      且 journal 逐字节不变（不许把「文件已换、账本未存」那条 TARGET_REPLACED 覆写掉）。
+    //   2. 账本读坏时 checkRecovery **fail closed**：不许降级成空账本再报 Consistent 放行。
+    //   3. journal 读不出来（Unknown）时同样拒绝再次 beginSubmit，journal 不变。
+    //   4. **一致**（Consistent）时可以正常重新提交（不能过度封锁）。
+    //   5. 同实例**提交进行中**（beginSubmit 未 finish）时，另一次 beginSubmit 不许覆盖
+    //      当前上下文（journal 不变）。
+    //
+    // 拟定生产改动（本轮不写）：beginSubmit 返回 OperationError?（拒绝时非 null，
+    // 用现有 kind：进行中 -> INVALID_INPUT；待核对/未知 -> INVALID_INPUT），
+    // 且在**任何 append 之前**先核对；checkRecovery 改走 readLedger() 分态，
+    // Corrupt/IoError -> RecoveryVerdict.Unknown（不再经 load() 吞成空表）。
+    // 本组用**副作用**（journal 字节不变 + verdict 类型）表达契约，不断言尚不存在的返回值，
+    // 修复前以文件副作用证明失败；实现后同时断言返回错误/放行结果。
+
+    /**
+     * **重启后待核对 → 再次 beginSubmit 被拒、journal 逐字节不变**（防重复提交的核心）。
+     *
+     * 造一个真实磁盘窗口（TARGET_REPLACED 已落、账本里没有对应记录），释放租约后重建实例，
+     * 确认 checkRecovery 报 PendingReconciliation；随后再 beginSubmit 一批新目标 ——
+     * journal 必须原样不动。修复前实现**无条件 append PLANNED**，因此这里会 RED。
+     */
+    @Test
+    fun aPendingReconciliationRejectsANewSubmitAndLeavesTheJournalByteIdentical() {
+        repo.beginSubmit("op-old", listOf(JournalTarget("bundle-a", "hash-a", 10L, listOf(URI_A))))
+        repo.markTargetReplaced()
+        // 不落账本、不 finish；只释放内存租约，保留真实磁盘窗口。
+        repo.releaseSubmit("op-old")
+
+        val restarted = reloadedRepo()
+        assertTrue(
+            "前提：重启后必须先处于待核对",
+            restarted.checkRecovery() is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+
+        val before = restarted.journalFile().readBytes()
+        val gateError = restarted.beginSubmit("op-new", listOf(JournalTarget("bundle-b", "hash-b", 20L, listOf("uri-b"))))
+        val after = restarted.journalFile().readBytes()
+
+        assertNotNull("待核对时 beginSubmit 必须返回错误", gateError)
+        assertEquals(OperationErrorKind.INVALID_INPUT, gateError!!.kind)
+        assertArrayEquals(
+            "待核对时的 beginSubmit 必须在写盘前被拒绝，journal 逐字节不变（不许覆写窗口证据）",
+            before, after
+        )
+        // 窗口证据必须还在：TARGET_REPLACED 没被冲掉，重启仍报待核对。
+        assertTrue(
+            "被拒绝后窗口证据必须仍在，下一次启动还能核对出来",
+            restarted.checkRecovery() is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+    }
+
+    /**
+     * **账本读坏时 checkRecovery fail closed**：不许把损坏账本降级成空表再报 Consistent。
+     *
+     * 造一份损坏账本、**没有** journal。修复前实现 checkRecovery 经 `load()` 把损坏吞成空表，
+     * journal 缺失 → 报 Consistent（放行）。这是 fail-open 的漏洞。这里断言它**不是** Consistent
+     * 且是 Unknown —— 修复前实现会 RED。
+     */
+    @Test
+    fun aCorruptLedgerMakesRecoveryFailClosedInsteadOfLookingConsistent() {
+        repo.file().writeText("""{"uri-old":{"modUri":"uri-old","modName":"OLD","familyKey":"f",""")
+        assertFalse("前提：没有 journal 文件", repo.journalFile().exists())
+
+        val verdict = repo.checkRecovery()
+        assertFalse(
+            "账本读坏绝不能被当空表进而报「一致」放行，实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.Consistent
+        )
+        assertTrue(
+            "账本读坏应 fail closed 到 Unknown（我们确实不知道，不许伪装成正常），实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.Unknown
+        )
+    }
+
+    /**
+     * **Unknown（journal 读不出来）时再次 beginSubmit 被拒、journal 不变**。
+     *
+     * 写一份读不出来的 journal（顶层非对象）。修复前实现 append 会「损坏即从头重写」
+     * （见 OperationRecoveryTest 的 appendingOverACorruptJournalStartsFresh），
+     * 从而改动字节 → RED。门禁应在 append 前拒绝。
+     */
+    @Test
+    fun anUnknownVerdictRejectsANewSubmitAndLeavesTheJournalByteIdentical() {
+        repo.journalFile().writeText("not-an-object")
+        assertTrue(
+            "前提：journal 读不出来时核对应为 Unknown",
+            repo.checkRecovery() is OperationJournalStore.RecoveryVerdict.Unknown
+        )
+
+        val before = repo.journalFile().readBytes()
+        val gateError = repo.beginSubmit("op-new", listOf(JournalTarget("bundle-a", "hash-a", 10L, listOf(URI_A))))
+        val after = repo.journalFile().readBytes()
+
+        assertNotNull("Unknown 时 beginSubmit 必须返回错误", gateError)
+        assertArrayEquals(
+            "Unknown 时的 beginSubmit 必须在写盘前被拒绝，journal 逐字节不变",
+            before, after
+        )
+    }
+
+    /**
+     * **一致时可以正常重新提交**（防止门禁过度封锁）。
+     *
+     * 正常状态（有效空账本、无窗口 journal）下 beginSubmit 必须放行并真的落一条 PLANNED。
+     * 这一条在修复前实现上就是 GREEN —— 它锁的是「解除条件」：核对通过后不许还拦着。
+     * 与上面几条配对，证明拒绝不是恒真的。
+     */
+    @Test
+    fun aConsistentStateStillAllowsAFreshSubmit() {
+        repo.file().writeText("""{"schemaVersion":1,"records":{}}""")
+        assertNull(
+            "一致状态下 beginSubmit 必须放行（返回 null）",
+            repo.beginSubmit("op-1", listOf(JournalTarget("bundle-a", "hash-a", 10L, listOf(URI_A))))
+        )
+
+        val journal = OperationJournalStore(repo.journalFile()).read()
+        assertTrue("一致状态下 beginSubmit 必须放行并落盘", journal is JournalRead.Loaded)
+        assertTrue(
+            "必须真的写下这次提交的 PLANNED",
+            (journal as JournalRead.Loaded).entries.any {
+                it.stageOrNull == JournalStage.PLANNED && it.operationId == "op-1"
+            }
+        )
+    }
+
+    /**
+     * **同实例提交进行中时，另一次 beginSubmit 不许覆盖当前上下文**。
+     *
+     * beginSubmit(op-1) 之后**没有** finish（提交在途）。此刻再 beginSubmit(op-2)
+     * 必须被拒绝：否则 currentOperationId/currentTargets 被 op-2 覆盖，op-1 的收尾
+     * （finishSubmit / markTargetReplaced 沿用的目标）就错乱了。
+     * 用 journal 字节不变来观察——修复前实现会为 op-2 追加一条 PLANNED，故 RED。
+     */
+    @Test
+    fun anInFlightSubmitIsNotOverwrittenByAnotherBegin() {
+        repo.file().writeText("""{"schemaVersion":1,"records":{}}""")
+        assertNull("op-1 开始应放行", repo.beginSubmit("op-1", listOf(JournalTarget("bundle-a", "hash-a", 10L, listOf(URI_A)))))
+        // 不 finish：op-1 仍在途。
+
+        val before = repo.journalFile().readBytes()
+        val gateError = repo.beginSubmit("op-2", listOf(JournalTarget("bundle-b", "hash-b", 20L, listOf("uri-b"))))
+        val after = repo.journalFile().readBytes()
+
+        assertNotNull("在途时第二次 beginSubmit 必须返回错误", gateError)
+        assertEquals(OperationErrorKind.INVALID_INPUT, gateError!!.kind)
+        assertArrayEquals(
+            "在途提交期间的第二次 beginSubmit 必须被拒绝，不许把 op-1 的上下文覆盖掉",
+            before, after
+        )
+        // op-1 的目标必须还在（用它收尾）：markTargetReplaced 沿用的应仍是 bundle-a。
+        repo.markTargetReplaced()
+        val verdict = repo.checkRecovery()
+        assertTrue(
+            "收尾核对应当仍围绕 op-1 的 bundle-a，实际 $verdict",
+            verdict is OperationJournalStore.RecoveryVerdict.PendingReconciliation &&
+                verdict.bundleNames == listOf("bundle-a")
+        )
+    }
+
+    /**
+     * **releaseSubmit 只能释放自己的在途态**（并发缺陷回归）。
+     *
+     * op-1 收尾 → op-2 begin 已占位 → op-1 的 finally 调 releaseSubmit(op-1)
+     * 不能把 op-2 的上下文清掉；因此第三次 begin 仍被拒，journal 不变。
+     */
+    @Test
+    fun releasingOnlyClearsItsOwnInFlightNotAnothersContext() {
+        repo.file().writeText("""{"schemaVersion":1,"records":{}}""")
+        assertNull(repo.beginSubmit("op-1", listOf(JournalTarget("bundle-a", "hash-a", 10L, listOf(URI_A)))))
+        assertNull("op-1 收尾不报错", repo.finishSubmit(null))
+        // op-1 收尾后、其 finally 调到前，op-2 已经开始（模拟调度交错）。
+        assertNull(repo.beginSubmit("op-2", listOf(JournalTarget("bundle-b", "hash-b", 20L, listOf("uri-b")))))
+
+        // op-1 迟到的 finally：传自己的 id，不能清掉 op-2。
+        repo.releaseSubmit("op-1")
+
+        val before = repo.journalFile().readBytes()
+        val gateError = repo.beginSubmit("op-3", listOf(JournalTarget("bundle-c", "hash-c", 30L, listOf("uri-c"))))
+        val after = repo.journalFile().readBytes()
+
+        assertNotNull("op-2 仍在途 → 第三次 begin 必须被拒", gateError)
+        assertEquals(OperationErrorKind.INVALID_INPUT, gateError!!.kind)
+        assertArrayEquals("op-1 的释放不得放行 op-3，journal 不变", before, after)
+    }
+
+    /** 无内容证据的 TARGET_REPLACED：人工 putAll 也不能把窗口判成一致。 */
+    @Test
+    fun legacyReplacedRecordStaysPendingEvenAfterManualLedgerPut() {
+        assertNull(repo.beginSubmit("op-old", listOf(JournalTarget("hash-$URI_A", "hash-a", 10L, listOf(URI_A)))))
+        repo.markTargetReplaced()
+        repo.releaseSubmit("op-old")
+        val restarted = reloadedRepo()
+        assertNotNull(
+            "前提：未补账时应拒绝",
+            restarted.beginSubmit("op-blocked", listOf(JournalTarget("hash-x", "hash-x", 1L, listOf("uri-x"))))
+        )
+
+        assertEquals(LedgerWrite.Written, restarted.putAll(listOf(installed(URI_A))))
+        assertTrue(
+            "缺本次内容证明时不能仅靠账本放行，实际 ${restarted.checkRecovery()}",
+            restarted.checkRecovery() is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        assertNotNull(
+            "未闭合窗口仍须挡住新提交",
+            restarted.beginSubmit("op-after", listOf(JournalTarget("hash-b", "hash-b", 2L, listOf("uri-b"))))
+        )
     }
 
     // ------------------------------------------------------------------ 辅助

@@ -10,7 +10,13 @@
 
 **技术栈：** Kotlin 2.x、Compose/Material 3、Hilt/KSP、Gradle Version Catalog、kotlinx.serialization、AboutLibraries、Chaquopy/Python、Shizuku/AIDL；Coil 为图片层首选验证方案，不强上新导航/存储/网络全家桶。
 
-**状态：** 用户已确认需求边界；本清单共 **62 个主任务、10 个阶段**。截至 2026-09-18，**G1（T05–T10）已收口，G2 已完成 T11**；T12–T62 尚未执行；不把当前基线构建或测试结果等同于重构、设备验收或发布完成。
+**状态：** 用户已确认需求边界；本清单共 **62 个主任务、10 个阶段**。下方 2026-09-18 追加记录保留为历史（当时曾写「G1 已收口、G2 已完成 T11」），但以文首的当前状态更正为准；不把当前基线构建或测试结果等同于重构、设备验收或发布完成。
+
+> **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
+> - **T08 IN_PROGRESS。** 恢复投影、内容补账、move/converted 接线已在源码；本次补齐跨操作冲突拒绝、旧日志 bundleName 判废和一次性恢复租约释放。全量 JVM **404/0/0/0**，三项修复独立复审通过。历史只读观察设备用例保留；真实覆盖中断 / 杀进程补账仍缺（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
+> - **T10 IMPLEMENTED_NOT_VERIFIED。** 当前 x86_64 minified Store 跨进程 **5 条** PASS，主界面 chrome 验证 PASS；明确记录 **uiColdStartVerified=false**，不再把 chrome 当成业务列表恢复。filesDir legacy 快照源目录不匹配，未升格。完整列表保存/重启/恢复及 arm64 未验收（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
+> - **T12 IN_PROGRESS。** 当前 x86_64 Release Python 3.8.18 import、20 个 C 导出和真实 BC1 解码均 PASS；宿主 Python **104/0/0/0**。新增 decoder 固定来源/补丁/构建说明，x86_64 库已解除单文件忽略但未提交。arm64 真机及其他第三方来源缺口仍在。**不推进 T13**。
+> - 覆盖安装白名单 MuMu；未 pm clear、未写真实游戏目录、未正式发布。
 
 ---
 
@@ -25,7 +31,7 @@
 | 预定实施工作区 | [D:/bd2 mod/worktrees/bdroid-android-refactor](<D:/bd2 mod/worktrees/bdroid-android-refactor>)；只在 T01 获准后创建，不让其他窗口另建一个未记录的副本 |
 | 分支 | refactor/android-architecture；本版核对时尚未创建，续跑时必须重新检查 |
 | 核对时起点 | main / b83c1c076e95942b317649273fba559d9d3af5ca，App 0.2.16 / versionCode17；它是历史记录，不代替开工时核对 |
-| 当前进度 | T01–T11 已完成并留有证据（G1 已收口、G2 进行中）；实施 worktree 位于 D:/bd2 mod/worktrees/bdroid-android-refactor，下一任务 T12（G2） |
+| 当前进度 | T01–T07、T09 DONE；T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 本地验收 DONE；T12 IN_PROGRESS（详见文首「当前状态更正」）。实施 worktree 位于 D:/bd2 mod/worktrees/bdroid-android-refactor，HEAD 72420bf（T11 代码提交 53959b3 + 状态登记提交 72420bf），当前补齐 T08/T10 验收缺口，T12（G2）保持进行中，不推进 T13 |
 | 实施范围 | Android 及其必要 Python/JNI 接口；不重写 converter/winui，不清理 MOD 素材、游戏数据、发布归档或其他工作区 |
 
 先阅读第 1–3 节与 G0。新建流程和续跑流程分开：首次按 T01 检查并创建；若目标分支/目录已存在，创建命令应停止。只有核对 worktree 登记、真实仓库根、分支、HEAD、已有变更和任务证据均属于本轮后才能续跑，不能覆盖、删除或换一个目录绕过冲突。不要两个窗口同时修改同一个实施目录。
@@ -516,7 +522,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.GameFileCommitTest' -Abi 'x86
 
 ### T08 — 安装账本原子落盘并记录可恢复的提交事实
 
-- [x] **T08 完成**
+- [ ] **T08 完成** — 状态 **IN_PROGRESS**（2026-09-21 接续验收）：投影/内容补账、move/converted 暂存绑定与 StrictDirectoryCopy 已接线；跨操作不同事实拒绝、旧日志缺 bundleName 判废、一次性恢复租约释放经定向复审。全量 JVM **404/0/0/0**。**真实覆盖中断/杀进程补账仍缺**（需游戏目录写入授权）（[T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。原验收要求不变。
 
 **优先级：** P0　**前置：** T07
 
@@ -528,13 +534,13 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.GameFileCommitTest' -Abi 'x86
 - 新增测试：[app/src/test/java/com/bd2toolsbox/core/storage/OperationRecoveryTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/test/java/com/bd2toolsbox/core/storage/OperationRecoveryTest.kt>)
 
 **落实要求：**
-- [ ] 区分文件不存在、有效空账本、读取失败和损坏；损坏/读失败时保留原件，禁止按空表自动覆盖。写入结果必须传回上层，不能只打印异常。
-- [ ] 使用原子文件写入和统一并发所有者保护 read-modify-write，保留现有锁的作用而不是误判为完全无锁。保存失败时旧账本仍可用。
-- [ ] 为有副作用的操作记录计划、暂存、目标已替换、账本已提交等阶段及目标摘要；在游戏文件提交与账本写入之间崩溃时可核对实际结果，不能自动伪装成全失败或全成功。日志不承担任意步骤断点续跑承诺。
+- [x] 区分文件不存在、有效空账本、读取失败和损坏；损坏/读失败时保留原件，禁止按空表自动覆盖。写入结果必须传回上层，不能只打印异常。（InstalledLedgerStore + JVM）
+- [x] 使用原子文件写入和统一并发所有者保护 read-modify-write，保留现有锁的作用而不是误判为完全无锁。保存失败时旧账本仍可用。
+- [x] 为有副作用的操作记录计划、暂存、目标已替换、账本已提交等阶段及目标摘要（converted submitter + move journal）。**真实游戏目录崩溃注入仍未做**，见下方验收第 2 条。
 
 **验收与回归：**
-- [ ] 并发写入不丢记录；保存中断仍可读取旧账本；损坏账本不会被下一次安装当空表覆盖。
-- [ ] 注入“文件已换、账本未存”故障，重启后进入明确的待核对状态，依据日志和目标内容恢复一致性；不重复叠加安装。
+- [x] 并发写入不丢记录；保存中断仍可读取旧账本；损坏账本不会被下一次安装当空表覆盖。（JVM InstalledModRepositoryLedgerTest）
+- [ ] 注入“文件已换、账本未存”故障，重启后进入明确的待核对状态，依据日志和目标内容恢复一致性；不重复叠加安装。**未在真实 UnityCache 上注入中断**（需游戏目录写入授权）。夹具 Shared 树 / JVM apply 已覆盖语义。
 
 **执行/验证命令：**
 ~~~powershell
@@ -585,7 +591,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.PristineVerifierTest'
 
 ### T10 — 先修现有 release 快照的序列化契约风险
 
-- [x] **T10 完成**
+- [ ] **T10 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-21 接续验收）：当前 x86_64 minified Store 跨进程 5 条 PASS；am start + uiautomator 只证明主界面 chrome，**uiColdStartVerified=false**；mapping keep PASS。filesDir legacy 快照源目录不匹配，未升格。完整业务列表恢复与 arm64 未验收；instrumentation 拉起 Activity 的历史 ClassCast 未另行复测（[T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
 
 **优先级：** P0　**前置：** T03、T05、T08
 
@@ -597,13 +603,13 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.PristineVerifierTest'
 - 新增测试：[app/src/androidTest/java/com/bd2toolsbox/data/repository/ReleaseSnapshotCompatibilityTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/androidTest/java/com/bd2toolsbox/data/repository/ReleaseSnapshotCompatibilityTest.kt>)
 
 **落实要求：**
-- [ ] 在更换 R8/序列化之前，迁出 ModListSnapshot 并固定持久化字段名、schema 和必要保留规则；不能继续依赖会被重命名/删除的 UI 内嵌字段。过渡期可用精确 Gson 注解/规则，最终由 T35–T36 移除。
-- [ ] 覆盖真实 0.2.16 release 中 savedAt/mods/sourceDirs 被改名、version 被移除的事实；能无歧义读取则迁移，否则仅显式失效可重建快照，不猜字段、不清安装账本或配置。
-- [ ] 原文件在安全迁移完成前保留；快照写入顺序、失败回退和 schema 校验集中到 Store。
+- [x] 在更换 R8/序列化之前，迁出 ModListSnapshot 并固定持久化字段名、schema 和必要保留规则；不能继续依赖会被重命名/删除的 UI 内嵌字段。过渡期可用精确 Gson 注解/规则，最终由 T35–T36 移除。
+- [x] 覆盖真实 0.2.16 release 中 savedAt/mods/sourceDirs 被改名、version 被移除的事实；能无歧义读取则迁移，否则仅显式失效可重建快照，不猜字段、不清安装账本或配置。
+- [x] 原文件在安全迁移完成前保留；快照写入顺序、失败回退和 schema 校验集中到 Store。
 
 **验收与回归：**
-- [ ] 测试使用实际 release 样本，而不只有 debug 的明文键；损坏/未知版本快照触发明确重新加载，不制造“用户没有安装过 MOD”的事实。
-- [ ] 混淆发布构建冷启动、保存、再次启动后列表仍可恢复，字段稳定且安装账本保持不变。
+- [x] 测试使用实际 release 样本，而不只有 debug 的明文键；损坏/未知版本快照触发明确重新加载，不制造“用户没有安装过 MOD”的事实。
+- [ ] 混淆发布构建冷启动、保存、再次启动后列表仍可恢复，字段稳定且安装账本保持不变。x86_64：Store 往返 + am start/uiautomator 冷启动 PASS；filesDir leftover 因 sourceDirs 不匹配未升格。arm64 未跑。
 
 **执行/验证命令：**
 ~~~powershell
@@ -622,7 +628,7 @@ Test-Bd2ReleaseSmoke -Case 'snapshot-compatibility' -Abi 'x86_64'
 
 ### T11 — 建立版本目录和独立的 App 发布版本配置
 
-- [x] **T11 完成**
+- [x] **T11 完成** — **本地验收完成**（2026-09-19）：版本目录迁移已提交 `53959b3`；本轮受控 `assembleRelease` 通过（arm64/x86_64/universal 三份 APK、`apksigner verify` 全 exit 0、证书与 T02 冻结基线一致、身份 0.2.16/17、`releaseRuntimeClasspath` 94 条依赖与迁移前相同）。**限制**：仅本地基线签名受控验证，非正式发布签名/设备 smoke；普通 `assembleRelease` 因 `KEYSTORE_*` 未注入仍失败（如实保留）（[T11.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T11.md>) §12）。
 
 **优先级：** P1　**前置：** T04
 
@@ -657,7 +663,7 @@ Invoke-Bd2Gradle :app:assembleDebug :app:assembleRelease --console=plain
 
 ### T12 — 固定 Python 依赖、目标解释器和第三方来源
 
-- [ ] **T12 完成**
+- [ ] **T12 完成** — 状态 **IN_PROGRESS**（2026-09-21 接续验收）：当前 x86_64 minified Python 3.8.18 import、全部 20 个导出及真实 BC1 解码 PASS；包装层成功码修正经独立复验。宿主 Python **104/0/0/0**。decoder 固定来源/补丁/构建说明已保存，单文件 Git 忽略例外已验证但未提交。arm64 真机及其他 JNI/TPK 原始来源仍有缺口（[T12.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T12.md>)）。**不推进 T13**。
 
 **优先级：** P1　**前置：** T03、T11
 
@@ -669,13 +675,13 @@ Invoke-Bd2Gradle :app:assembleDebug :app:assembleRelease --console=plain
 - 读取：[app/src/main/python/vendor/UnityPy](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/main/python/vendor/UnityPy>)
 
 **落实要求：**
-- [ ] 固定当前 9 个直接 pip 依赖，并记录实际传递依赖、Android wheel 来源、ABI、Python minor 与校验信息；不要用 Windows pip freeze 结果假装 Android 依赖锁。
-- [ ] 记录 Chaquopy APK 内 Python、buildPython 和 pyc 生成兼容要求；目标 Python 和 wheel 调整必须成套验证。构建路径通过本地配置/环境变量提供，不提交个人机器绝对路径。
+- [x] 固定当前 9 个直接 pip 依赖，并记录实际传递依赖、Android wheel 来源、ABI、Python minor 与校验信息；不要用 Windows pip freeze 结果假装 Android 依赖锁。
+- [x] 记录 Chaquopy APK 内 Python、buildPython 和 pyc 生成兼容要求；目标 Python 和 wheel 调整必须成套验证。构建路径通过本地配置/环境变量提供，不提交个人机器绝对路径。
 - [ ] 为 vendored UnityPy、生成代码、JNI、压缩 JS 建立上游版本/补丁来源；只治理必要适配和打包，不把生成文件、大段第三方算法按行数重写。
 
 **验收与回归：**
-- [ ] 清理本次专用构建缓存后仍解析到相同已记录依赖；arm64/x86_64 都能取得适配 wheel。
-- [ ] 实际目标解释器能 import 所需包；pyc 是否生成及原因有构建日志，不把 pyc 当必然减包手段。
+- [x] 清理本次专用构建缓存后仍解析到相同已记录依赖；arm64/x86_64 都能取得适配 wheel。（T12.md 冷 pip r2：24 wheel，含两 ABI；不是 arm64 设备 import）
+- [ ] 实际目标解释器能 import 所需包；pyc 是否生成及原因有构建日志，不把 pyc 当必然减包手段。x86_64 minified import + native decoder PASS；arm64 真机未跑。
 
 **执行/验证命令：**
 ~~~powershell

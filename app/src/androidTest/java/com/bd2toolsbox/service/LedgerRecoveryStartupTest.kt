@@ -177,24 +177,16 @@ class LedgerRecoveryStartupTest {
         )
     }
 
-    /**
-     * **还有一半的路也走通**：账本里**已经有**这条记录时，同一个 journal
-     * 必须判「一致」且不提示。
-     *
-     * 与第一条**配对**：同一份 journal（同样的 `targets`），唯一变量是账本内容。
-     * 这证明第一条的「待核对」来自账本真的缺记录，而不是「只要 journal 里有
-     * TARGET_REPLACED 就报」。
-     */
+    /** 无内容证据的 TARGET_REPLACED：账本里已有记录也不能把窗口判成一致。 */
     @Test
-    fun startupWithTheRecordsAlreadyInTheLedgerStaysConsistent() {
+    fun startupWithLegacyReplacedAndLedgerStillPending() {
         val base = InstrumentationRegistry.getInstrumentation().targetContext
         val dir = File(base.cacheDir, "$FIXTURE_PREFIX${UUID.randomUUID()}").apply { mkdirs() }
         fixtureDir = dir
-        // 账本里已经有 uri-a / uri-b —— 那次提交其实落了账，journal 只是没来得及清。
         File(dir, "installed_mods.json").writeText(
             """{"schemaVersion":1,"records":{""" +
-                """"uri-a":{"modUri":"uri-a","modName":"A","familyKey":"f","snapshotTargetHash":"hash-bundle-alpha","quality":"HD","usedAstc":false,"installedAt":1},""" +
-                """"uri-b":{"modUri":"uri-b","modName":"B","familyKey":"f","snapshotTargetHash":"hash-bundle-alpha","quality":"HD","usedAstc":false,"installedAt":1}""" +
+                """"uri-a":{"modUri":"uri-a","modName":"A","familyKey":"f","snapshotTargetHash":"bundle-alpha","quality":"HD","usedAstc":false,"installedAt":1},""" +
+                """"uri-b":{"modUri":"uri-b","modName":"B","familyKey":"f","snapshotTargetHash":"bundle-alpha","quality":"HD","usedAstc":false,"installedAt":1}""" +
                 """}}"""
         )
         val journalStore = OperationJournalStore(File(dir, "install_journal.json"))
@@ -209,12 +201,31 @@ class LedgerRecoveryStartupTest {
         }
         vm.initialize(wrapper)
 
+        assertTrue(
+            "缺本次内容证明时不能仅靠账本放行，实际 ${vm.recoveryVerdict.value}",
+            vm.recoveryVerdict.value is OperationJournalStore.RecoveryVerdict.PendingReconciliation
+        )
+        assertNotNull("待核对必须仍提示用户去核对并修复", vm.ledgerResetNotice.value)
+    }
+
+    @Test
+    fun startupWithOwnLedgerCommitStaysConsistent() {
+        val vm = newViewModelWithFixture(
+            listOf(
+                replacedEntry("bundle-alpha", "uri-a"),
+                JournalEntry(
+                    operationId = "op-t08r2",
+                    stage = JournalStage.LEDGER_COMMITTED.id,
+                    atMillis = 1_700_000_000_001L,
+                    targets = listOf(JournalTarget("bundle-alpha", "hash-bundle-alpha", 4096L, listOf("uri-a")))
+                )
+            )
+        )
         assertEquals(
-            "账本里那两条都在 → 窗口其实已经合上了，不许误报",
             OperationJournalStore.RecoveryVerdict.Consistent,
             vm.recoveryVerdict.value
         )
-        assertNull("误报会让用户去重装本来已经装好的 mod", vm.ledgerResetNotice.value)
+        assertNull(vm.ledgerResetNotice.value)
     }
 
     private companion object {

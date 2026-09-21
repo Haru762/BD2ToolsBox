@@ -28,6 +28,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+# T12: the x86_64 decoder is a required packaged input, not a disposable Python extension.
+# Source/build provenance: docs/refactor/native-texture-decoder.md
+!/app/src/main/jniLibs/x86_64/libtexture2ddecoder.so
 .Python
 env/
 venv/

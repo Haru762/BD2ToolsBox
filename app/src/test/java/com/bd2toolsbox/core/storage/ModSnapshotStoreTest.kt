@@ -39,6 +39,29 @@ class ModSnapshotStoreTest {
 
     private lateinit var filesDir: File
 
+    @Test
+    fun jsonKeysArePreserved() {
+        // T10: Verify that SnapshotV1 serialization keeps standard keys (version, savedAt, mods, sourceDirs)
+        // and doesn't get minified into a/b/c pattern. In unit tests we can't test R8 directly,
+        // but we can ensure that the Gson serialization actually uses the correct @SerializedName.
+        val gson = com.google.gson.Gson()
+        val payload = ModSnapshotStore.SnapshotV1(
+            version = 1,
+            savedAt = 12345L,
+            mods = emptyList(),
+            sourceDirs = listOf("test")
+        )
+        val json = gson.toJson(payload)
+        assertTrue("JSON should contain version key: $json", json.contains("\"version\""))
+        assertTrue("JSON should contain savedAt key: $json", json.contains("\"savedAt\""))
+        assertTrue("JSON should contain mods key: $json", json.contains("\"mods\""))
+        assertTrue("JSON should contain sourceDirs key: $json", json.contains("\"sourceDirs\""))
+        
+        // Negative assertions for obfuscated names
+        assertFalse("JSON should not use 'a' for top level: $json", json.contains("\"a\":"))
+        assertFalse("JSON should not use 'b' for top level: $json", json.contains("\"b\":"))
+    }
+
     /** 每个用例一个全新的临时 files 目录 —— 用例之间不共享任何文件状态。 */
     @Before
     fun setUp() {
@@ -105,9 +128,13 @@ class ModSnapshotStoreTest {
     @Test
     fun legacyObfuscatedReleaseSnapshotLoadsAllEntries() {
         val dirs = installReleaseFixture()
+        val beforeBytes = snapshotFile.readBytes().copyOf()
         val loaded = newStore().load(dirs)
         assertTrue("旧快照必须能读回，实际是 $loaded", loaded is SnapshotLoad.Loaded)
-        val entries = (loaded as SnapshotLoad.Loaded).entries
+        val loadedState = loaded as SnapshotLoad.Loaded
+        assertTrue("读取旧格式应标记 wasLegacy=true", loadedState.wasLegacy)
+        assertArrayEqualsBytes(beforeBytes, snapshotFile.readBytes())
+        val entries = loadedState.entries
 
         assertEquals("夹具里是 5 条 mod", 5, entries.size)
         assertEquals("没有条目被判为结构不完整", 0, loaded.droppedEntries)
@@ -162,9 +189,44 @@ class ModSnapshotStoreTest {
         assertEquals(other, mismatched.to)
     }
 
+    /**
+     * 源目录变化导致的拒收必须是【零副作用】的，不能因为碰巧读了旧格式
+     * 就把它当成“加载成功并需要迁移”，从而向盘上写出规范化的新文件。
+     */
+    @Test
+    fun legacyLoadRejectedBySourceDirsMismatchLeavesFileUntouched() {
+        installReleaseFixture()
+        val beforeBytes = snapshotFile.readBytes().copyOf()
+        val differentDirs = listOf("content://different")
+        val loaded = newStore().load(differentDirs)
+        assertTrue(loaded is SnapshotLoad.SourceDirsChanged)
+        assertArrayEqualsBytes(beforeBytes, snapshotFile.readBytes())
+    }
+
     // ================================================================
     // 2. 新写入格式：规范键名，**绝不**写 a/b/c
     // ================================================================
+
+    @Test
+    fun legacyLoadFollowedByCommitUpgradesToNewFormat() {
+        val dirs = installReleaseFixture()
+        val store = newStore()
+        val loaded = store.load(dirs) as SnapshotLoad.Loaded
+        assertTrue("应为旧格式", loaded.wasLegacy)
+
+        val write = store.capture(loaded.entries, dirs)
+        assertTrue(store.commit(write, dirs) is SnapshotCommit.Written)
+
+        val root = JsonParser.parseString(snapshotFile.readText()).asJsonObject
+        assertEquals(
+            "迁移写入后顶层键必须是新格式",
+            setOf("version", "savedAt", "mods", "sourceDirs"),
+            root.keySet()
+        )
+        for (obfuscated in listOf("a", "b", "c")) {
+            assertFalse("迁移写入后不许有混淆键 '$obfuscated'", root.has(obfuscated))
+        }
+    }
 
     /**
      * 新写出的文件必须用规范键名，而不是把 0.2.16 的混淆产物升格成永久契约。
@@ -271,7 +333,9 @@ class ModSnapshotStoreTest {
         // 换实例 = 换一次「启动」，不复用任何内存状态。
         val loaded = newStore().load(dirs)
         assertTrue("二次启动必须读回，实际是 $loaded", loaded is SnapshotLoad.Loaded)
-        val restored = (loaded as SnapshotLoad.Loaded).entries
+        val loadedState = loaded as SnapshotLoad.Loaded
+        assertFalse("读取新格式不应标记 wasLegacy", loadedState.wasLegacy)
+        val restored = loadedState.entries
         assertEquals(1, restored.size)
         // 整条相等（data class 的 equals）—— 字段逐个写在上面，不经过被测函数计算。
         assertEquals(original, restored.single())

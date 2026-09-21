@@ -7,7 +7,7 @@ Chaquopy 编不了 K0lb3 官方 pip 包的 C 扩展，这里直接 ctypes 调 .s
 绝大多数符号共用一个签名：`(data, width, height, out[, 额外参数...])`，
 由 _make_decoder 统一生成；decode_astc 是例外（out 在最后），单独实现。
 
-.so 懒加载：x86_64 模拟器镜像不带它，导入必须照常成功 —— repack/编码
+.so 懒加载：当设备环境不包含库时，导入必须照常成功 —— repack/编码
 路径不解码纹理，只有真正调用解码函数时才要求库存在。
 """
 import ctypes
@@ -52,7 +52,7 @@ def _make_decoder(symbol):
             ctypes.cast(data, ctypes.c_void_p), width, height,
             ctypes.cast(out, ctypes.c_void_p), *extra
         )
-        if ret != 0:
+        if ret != 1:
             raise RuntimeError(f"{symbol} failed with return code {ret}")
         # 返回前做 BGRA→RGBA 通道交换：C 侧按 uint32 打包输出，小端机器
         # 上字节序是 B,G,R,A，而 PIL/UnityPy 期望 R,G,B,A。所有压缩格式
@@ -126,7 +126,7 @@ def _decode_astc(data, width, height, block_x, block_y):
         ctypes.cast(data, ctypes.c_void_p), width, height,
         block_x, block_y, ctypes.cast(out, ctypes.c_void_p)
     )
-    if ret != 0:
+    if ret != 1:
         raise RuntimeError(f"decode_astc failed with return code {ret}")
     # 同 _make_decoder：BGRA→RGBA 通道交换
     _b = bytearray(out)

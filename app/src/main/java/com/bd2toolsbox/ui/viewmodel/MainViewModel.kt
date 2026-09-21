@@ -20,7 +20,11 @@ import com.chaquo.python.Python
 import com.bd2toolsbox.SpinePreviewActivity
 // 领域结果/计划模型已迁出本类（T05）。它们不依赖 android.* / UI 包，也不持有
 // ViewModel、Context、Composable 或 PyObject，因此可以在 JVM 单测里直接构造。
+import com.bd2toolsbox.core.fileaccess.DirectoryCopyEntry
+import com.bd2toolsbox.core.fileaccess.DirectoryCopySource
+import com.bd2toolsbox.core.fileaccess.FileDirectoryCopySource
 import com.bd2toolsbox.core.fileaccess.SafeArchivePaths
+import com.bd2toolsbox.core.fileaccess.StrictDirectoryCopy
 import com.bd2toolsbox.core.fileaccess.decideBackupGate
 import com.bd2toolsbox.core.model.ConvertedOverwritePlan
 import com.bd2toolsbox.core.model.HashRenameResult
@@ -36,10 +40,19 @@ import com.bd2toolsbox.core.model.UninstallPlan
 import com.bd2toolsbox.core.storage.BackupProvenance
 import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.core.storage.CatalogAnchor
+import com.bd2toolsbox.core.storage.ConvertedInstallPreparation
+import com.bd2toolsbox.core.storage.ConvertedInstallStaging
+import com.bd2toolsbox.core.storage.JournalMoveFacts
 import com.bd2toolsbox.core.storage.JournalTarget
+import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
 import com.bd2toolsbox.core.storage.ModSnapshotStore
 import com.bd2toolsbox.core.storage.OperationJournalStore
+import com.bd2toolsbox.data.repository.RecoveryApplyResult
+import com.bd2toolsbox.core.storage.TargetObservation
+import com.bd2toolsbox.core.storage.TargetObservations
+import com.bd2toolsbox.core.storage.RecoveryObservationLayout
+
 import com.bd2toolsbox.core.storage.PendingWrite
 import com.bd2toolsbox.core.storage.PristineVerifier
 import com.bd2toolsbox.core.storage.SnapshotCommit
@@ -52,7 +65,9 @@ import com.bd2toolsbox.data.repository.BundleBackupRepository
 import com.bd2toolsbox.data.repository.BundleNameResolver
 import com.bd2toolsbox.data.repository.CharacterMetaRepository
 import com.bd2toolsbox.data.repository.CharacterRepository
+import com.bd2toolsbox.data.repository.ConvertedInstallSubmitter
 import com.bd2toolsbox.data.repository.InstalledModRepository
+import com.bd2toolsbox.data.repository.MoveInstallSubmitter
 import com.bd2toolsbox.data.repository.LedgerTake
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
@@ -841,8 +856,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                         "（涉及 ${verdict.bundleNames.size} 个资源包：" +
                         verdict.bundleNames.take(3).joinToString("、") +
                         (if (verdict.bundleNames.size > 3) " 等" else "") +
-                        "）。建议重新扫描一次确认状态；在确认之前请不要把这些 mod 当成" +
-                        "「未安装」重复装入。"
+                        "）。请用「核对并修复记录」按目标内容补账，不要重新安装。"
                 )
             }
             is OperationJournalStore.RecoveryVerdict.Unknown -> {
@@ -2274,16 +2288,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 val bundleName = mod.targetHash!!
                 updateJobStatus(bundleName, JobStatus.Installing("准备装入 ${mod.name}"))
 
-                // 装入前完整校验（外来产物）：扫描期只有头部快检，这里补完整加载
-                // （块解压 + 对象表解析）——「头完好但内部坏」、装进游戏才在特定
-                // 界面崩的文件在这一步拦下，游戏目录一个字节都不动。
-                val verdict = withContext(Dispatchers.IO) { validateConvertedForInstall(context, mod) }
-                if (verdict != null && !verdict.first) {
-                    val msg = "校验未通过，已跳过：${verdict.second}"
-                    failed.add(FailedJobInfo(bundleName, msg))
-                    updateJobStatus(bundleName, JobStatus.Failed(msg, verdict.second))
-                    continue
-                }
+                // 完整校验改到独占暂存 __data 上（与提交同一份字节），见 installOneConverted。
 
                 // 直接装入是覆盖式写游戏目录，写完原版就没了。所以先把原版留一份 ——
                 // 这条路径不下载、不重打包，备份只能在这里做（转换流程那边是在拿到
@@ -2331,9 +2336,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             }
 
             if (ok > 0) {
-                recordConvertedInstalls(targets.filter { m ->
-                    failed.none { it.hashedName == m.targetHash }
-                })
+                // 记账已在 installOneConverted 的 ConvertedInstallSubmitter.commitLedger 完成。
                 withContext(Dispatchers.IO) { refreshBundleCleanStates() }
                 refreshInstallStates()
             }
@@ -2367,128 +2370,137 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         }
     }
 
-    /**
-     * 外来产物装入前的完整校验：SAF 里的 __data 先中转到 cacheDir（python 只认
-     * 文件路径；cacheDir 是 app 私有目录、python 进程可读，不需要 shell 可见的
-     * externalCacheDir），再调 validate_bundle 做头快检 + UnityPy 完整加载。
-     *
-     * 返回 null = 校验的先决条件没就绪（中转读不出来 / python 未启动）——校验是
-     * 防崩溃的纵深防御，缺了它不该反过来拦住装入；放行，让后续真正装文件的
-     * 步骤去报更准确的错。返回非 null 且 first=false 才是真校验失败（截断 /
-     * 结构损坏），调用方据此中止这一个条目。
-     */
-    private fun validateConvertedForInstall(context: Context, mod: ModInfo): Pair<Boolean, String>? {
-        val dataUri = mod.convertedDataUri ?: return null
-        if (!Python.isStarted()) return null
-        val dir = File(context.cacheDir, "install_validate/${mod.targetHash}")
-        val data = File(dir, "__data")
-        return try {
-            dir.deleteRecursively()
-            dir.mkdirs()
-            context.contentResolver.openInputStream(Uri.parse(dataUri))?.use { ins ->
-                data.outputStream().use { ins.copyTo(it) }
-            } ?: return null
-            val (ok, reason) = ModdingService.validateBundle(data.absolutePath)
-            if (ok) Log.d("MainViewModel", "装入前校验通过: ${mod.name}")
-            else Log.w("MainViewModel", "装入前校验未通过: ${mod.name} ($reason)")
-            ok to reason
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        } finally {
-            try { dir.deleteRecursively() } catch (_: Exception) {}
-        }
-    }
-
-    /** 单个产物的装入：优先直接拷，推导不出真实路径或拷贝失败则走 externalCacheDir 中转。 */
+    /** 单个产物：独占暂存绑定 SHA/账本事实，再经 ConvertedInstallSubmitter 写前意图后覆盖。 */
     private suspend fun installOneConverted(
         context: Context,
         mod: ModInfo,
         bundleName: String
     ): Pair<Boolean, String> {
-        val real = resolveRealPath(mod.uri)
-        if (real != null) {
-            val (ok, msg) = ShizukuManager.installConvertedBundle(real, bundleName)
-            if (ok) {
-                Log.d("MainViewModel", "直接装入（1 趟拷贝）: $bundleName <- $real")
-                return true to msg
-            }
-            Log.w("MainViewModel", "直接装入失败，回退中转: $bundleName ($msg)")
+        if (!::installedModRepository.isInitialized) {
+            return false to "装入记录仓储未初始化，拒绝覆盖游戏文件"
         }
-
-        // 中转：SAF 读 -> externalCacheDir -> Shizuku 拷。
-        // 必须用 externalCacheDir 而非 cacheDir —— 后者在 app 私有目录里，shell 读不到。
-        val staging = File(context.externalCacheDir ?: context.cacheDir, "converted_staging/$bundleName")
+        val hashDir = mod.convertedHashDir
+        if (hashDir.isNullOrBlank()) {
+            return false to "缺少 convertedHashDir，拒绝覆盖：$bundleName"
+        }
+        val cache = context.externalCacheDir
+            ?: return false to "没有 externalCacheDir，Shizuku 读不到暂存"
+        val stagingRoot = File(cache, "converted_staging_owned")
+        val now = System.currentTimeMillis()
+        val frozen = listOf(
+            LedgerRecord(
+                modUri = mod.uri.toString(),
+                modName = mod.name,
+                familyKey = mod.resolvedFamilyKey ?: bundleName,
+                snapshotTargetHash = bundleName,
+                quality = _selectedQuality.value,
+                usedAstc = _useAstc.value,
+                installedAt = now
+            )
+        )
+        val preparation = ConvertedInstallStaging(stagingRoot).prepare(bundleName, hashDir, frozen) { dest ->
+            copyConvertedSourceInto(context, mod, dest)
+        }
+        val prepared = when (preparation) {
+            is ConvertedInstallPreparation.Failed -> return false to preparation.error.message
+            is ConvertedInstallPreparation.Ready -> preparation.prepared
+        }
         return try {
-            if (staging.exists()) staging.deleteRecursively()
-            staging.mkdirs()
-            val copied = copyTreeFromSaf(context, mod.uri, staging)
-            if (!copied) return false to "从所选目录读取失败：$bundleName"
-            val (ok, msg) = ShizukuManager.installConvertedBundle(staging.absolutePath, bundleName)
-            if (ok) Log.d("MainViewModel", "中转装入（2 趟拷贝）: $bundleName")
-            ok to msg
-        } catch (e: Exception) {
-            false to (e.message ?: "装入出错：$bundleName")
+            val verdict = try {
+                if (!Python.isStarted()) null
+                else ModdingService.validateBundle(prepared.dataFile.absolutePath)
+            } catch (e: Exception) {
+                Log.w("MainViewModel", "暂存校验异常，不据此拦下装入：${mod.name}", e)
+                null
+            }
+            if (verdict != null && !verdict.first) {
+                return false to "校验未通过，已跳过：${verdict.second}"
+            }
+            val result = ConvertedInstallSubmitter(installedModRepository).submit(
+                operationId = "converted-$now-$bundleName",
+                target = prepared.target,
+                replaceTarget = {
+                    val drift = prepared.verifyUnchanged()
+                    if (drift != null) false to drift.message
+                    else ShizukuManager.installConvertedBundle(prepared.sourceDir.absolutePath, bundleName)
+                },
+                commitLedger = {
+                    when (val write = installedModRepository.putAll(
+                        frozen.map {
+                            InstalledModRecord(
+                                it.modUri, it.modName, it.familyKey, it.snapshotTargetHash,
+                                it.quality, it.usedAstc, it.installedAt
+                            )
+                        }
+                    )) {
+                        is LedgerWrite.Failed -> write.error
+                        else -> null
+                    }
+                }
+            )
+            result.filesReplaced to result.message
         } finally {
             try {
-                if (staging.exists()) staging.deleteRecursively()
-            } catch (_: Exception) {}
+                prepared.close()
+            } catch (e: Exception) {
+                Log.w("MainViewModel", "关闭 converted 暂存失败：$bundleName", e)
+            }
         }
     }
 
-    /** 把 SAF 目录树整体复制到本地目录（产物只有 `<hash>/__data` 两层，深度很浅）。 */
-    private fun copyTreeFromSaf(context: Context, treeUri: Uri, dest: File): Boolean {
-        val doc = DocumentFile.fromTreeUri(context, treeUri) ?: return false
-        if (!doc.isDirectory) return false
+    private fun copyConvertedSourceInto(context: Context, mod: ModInfo, dest: File): Boolean {
         return try {
-            fun walk(src: DocumentFile, out: File) {
-                out.mkdirs()
-                src.listFiles().forEach { child ->
-                    val name = child.name ?: return@forEach
-                    if (child.isDirectory) {
-                        walk(child, File(out, name))
-                    } else {
-                        context.contentResolver.openInputStream(child.uri)?.use { input ->
-                            File(out, name).outputStream().use { input.copyTo(it) }
-                        }
-                    }
-                }
+            val real = resolveRealPath(mod.uri)
+            if (real != null) {
+                val src = File(real)
+                if (!src.isDirectory) return false
+                val source = FileDirectoryCopySource(src)
+                StrictDirectoryCopy.copy(source, source.rootId, dest)
+                return true
             }
-            walk(doc, dest)
+            val doc = DocumentFile.fromTreeUri(context, mod.uri) ?: return false
+            if (!doc.isDirectory) return false
+            val source = DocumentFileCopySource(context, doc)
+            StrictDirectoryCopy.copy(source, source.rootId, dest)
             true
+        } catch (e: java.util.concurrent.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w("MainViewModel", "converted 源复制失败：${mod.name}", e)
             false
         }
     }
 
-    /** 已转换产物的记账。familyKey 用反查到的资源名，与 PC mod 完全一致，从而复用同一套状态管理。 */
-    private fun recordConvertedInstalls(mods: List<ModInfo>) {
-        if (!::installedModRepository.isInitialized || mods.isEmpty()) return
-        val now = System.currentTimeMillis()
-        // T08 已知缺口：这条路径**不经过 journal**（无暂存阶段、直接覆盖式写游戏目录，
-        // 提交语义与 moveFilesToGame 不同）。它的提交点在
-        // ShizukuManager.installConvertedBundle 里的 copyDirectory，
-        // 所以「文件已换、账本未存」的窗口在这条路径上仍然敞着 —— 详见 T08.md 的未覆盖项。
-        // 这里只保证**写失败会被上报**，不假装它有 journal 保护。
-        val result = installedModRepository.putAll(
-            mods.mapNotNull { mod ->
-                val hash = mod.targetHash ?: return@mapNotNull null
-                InstalledModRecord(
-                    modUri = mod.uri.toString(),
-                    modName = mod.name,
-                    familyKey = mod.resolvedFamilyKey ?: hash,
-                    snapshotTargetHash = hash,
-                    quality = _selectedQuality.value,
-                    usedAstc = _useAstc.value,
-                    installedAt = now
-                )
+    /**
+     * SAF 树适配 [DirectoryCopySource]。
+     * 子目录必须沿用 [DocumentFile.listFiles] 拿到的对象：`fromSingleUri` 对 tree 子文档
+     * 常常列不出孩子，嵌套 `hash/__data` 会整树失败。无名条目仍让整层失败。
+     */
+    private class DocumentFileCopySource(
+        private val context: Context,
+        private val root: DocumentFile
+    ) : DirectoryCopySource {
+        val rootId: String get() = root.uri.toString()
+        private val nodes = hashMapOf(rootId to root)
+
+        override fun listChildren(directoryId: String): List<DirectoryCopyEntry>? {
+            val dir = nodes[directoryId] ?: return null
+            if (!dir.isDirectory) return null
+            val children = dir.listFiles()
+            val out = ArrayList<DirectoryCopyEntry>(children.size)
+            for (child in children) {
+                val name = child.name ?: return null
+                val id = child.uri.toString()
+                nodes[id] = child
+                out.add(DirectoryCopyEntry(id, name, child.isDirectory))
             }
-        )
-        when (result) {
-            is LedgerWrite.Written -> Unit
-            is LedgerWrite.Repaired -> reportLedgerWrite(result, "产物装入记账")
-            is LedgerWrite.Failed -> reportLedgerWrite(result, "产物装入记账")
+            return out
+        }
+
+        override fun openFile(fileId: String): java.io.InputStream? {
+            val doc = nodes[fileId]
+            val uri = doc?.uri ?: Uri.parse(fileId)
+            return context.contentResolver.openInputStream(uri)
         }
     }
 
@@ -2998,89 +3010,71 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     fun moveFilesToGame(silent: Boolean = false) {
-        // 跟着装入流程走 installScope：它现在是「转换完自动移入」的收尾一步，
-        // 界面销毁时若被取消，产物就停在 Download/Shared 里没进游戏 —— 用户以为装好了。
-        // silent=true（自动移入）不亮「正在装入」中间态 —— 那一步只是几百毫秒的
-        // 文件搬运，弹出来一闪而过反而像出错了；手动点按钮才需要进度反馈。
         installScope.launch {
             if (!silent) _moveState.value = MoveState.Moving
 
-            // ---- T08 journal：这是「文件已换、账本未存」那个窗口的唯一落点 ----
-            //
-            // 三个阶段各写一条，全部由**真实发生的事**驱动（不是猜）：
-            //   PLANNED         —— 决定要装这一批，游戏文件还没动；
-            //   STAGED          —— 产物已就位（对这条路径而言，产物早在转换流程里
-            //                      写进 Download/Shared 了，所以它与 PLANNED 同一时刻为真）；
-            //   TARGET_REPLACED —— **moveDownloadToGame() 成功返回之后**
-            //                      （它内部的 copyDirectory 已经把 UnityCache/Shared 换掉）。
-            // 第四条 LEDGER_COMMITTED 由 finishSubmit() 在账本落盘成功后落。
-            val tracking = ::installedModRepository.isInitialized
-            val operationId = "move-" + System.currentTimeMillis()
-            val journalTargets = journalTargetsForCurrentJobs()
-            if (tracking) {
-                installedModRepository.beginSubmit(operationId, journalTargets)
-                installedModRepository.markStaged()
+            if (!::installedModRepository.isInitialized) {
+                _moveState.value = MoveState.Failed("装入记录仓储未初始化，无法安全提交")
+                return@launch
             }
 
-            val (success, message) = ShizukuManager.moveDownloadToGame()
-            _moveState.value = if (success) {
-                MoveState.Success(message)
-            } else {
-                MoveState.Failed(message)
+            val operationId = "move-" + System.currentTimeMillis()
+            val journalTargets = journalTargetsForCurrentJobs()
+
+            val submitter = MoveInstallSubmitter(installedModRepository)
+            val result = try {
+                submitter.submit(
+                operationId = operationId,
+                targets = journalTargets,
+                moveFiles = { ShizukuManager.moveDownloadToGame() },
+                commitLedger = {
+                    var ledgerError: OperationError? = null
+                    if (pendingRecordClear) {
+                        ledgerError = withContext(Dispatchers.IO) { installedModRepository.clear() }
+                        ledgerError?.let { reportLedgerWrite(LedgerWrite.Failed(it), "账本清空") }
+                    } else {
+                        ledgerError = recordSuccessfulInstall()
+                        pendingUninstallTargetHash?.let { hash ->
+                            val removal = installedModRepository.removeByTargetHash(hash)
+                            reportLedgerWrite(removal, "卸载后清理账本")
+                            if (removal is LedgerWrite.Failed && ledgerError == null) {
+                                ledgerError = removal.error
+                            }
+                        }
+                    }
+                    ledgerError
+                }
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                _moveState.value = MoveState.Failed("装入已取消，请先核对游戏文件和安装记录")
+                throw cancelled
+            } catch (failure: Exception) {
+                val message = "装入中断，请先核对游戏文件和安装记录：${failure.message.orEmpty()}"
+                _moveState.value = MoveState.Failed(message)
+                notifyLedgerNotice(message)
+                return@launch
             }
-            if (success) {
-                // 装完就把 command 清掉，「一键装入游戏」按钮从此不再出现。
-                //
-                // 这是必需的，不只是收拾门面：moveDownloadToGame 是「移动」语义 ——
-                // 拷进游戏目录后会 deleteRecursively() 删掉 Download/Shared。而 command
-                // 只是个手动命令的文本常量（转换成功就非 null），它被当成了「要不要显示
-                // 装入按钮」的开关，却完全不反映「Download/Shared 里还有没有东西」。
-                // 于是只要 _moveState 被别的操作重置回 Idle（installSingle 等就会这么做），
-                // 按钮又冒出来，一点必然报「未找到 Download/Shared 目录」——
-                // 用户看到的就是「已转换的再点导入到游戏说没在 dl 目录」。
+            if (result.requiresReconciliation) notifyLedgerNotice(result.message)
+
+            if (result.filesReplaced) {
                 _finalInstallResult.value = _finalInstallResult.value?.copy(command = null)
                 (_uninstallState.value as? UninstallState.Finished)?.let {
                     _uninstallState.value = it.copy(command = null)
                 }
 
-                // 游戏文件**已经**被换掉了（copyDirectory 成功）。先把这条事实落盘，
-                // 再去动账本 —— 中间崩掉时，journal 里这条 TARGET_REPLACED 就是
-                // 下次启动能核对出窗口的唯一依据。
-                if (tracking) installedModRepository.markTargetReplaced()
-
-                // 一键卸载的装入完成 —— 记账里不该再留任何「生效中」，否则状态与游戏实际相反。
-                // 必须早于 recordSuccessfulInstall()：卸载任务的 mod 列表是空的，本来不会写账，
-                // 但残留的旧记录得在这里一并清掉。
-                var ledgerError: OperationError? = null
-                if (pendingRecordClear) {
-                    if (tracking) {
-                        ledgerError = withContext(Dispatchers.IO) { installedModRepository.clear() }
-                        ledgerError?.let { reportLedgerWrite(LedgerWrite.Failed(it), "账本清空") }
-                    }
+                if (result.error == null && !result.requiresReconciliation) {
                     pendingRecordClear = false
-                } else {
-                    // 装入游戏成功才算「生效」，此时才记账 —— 转换只是把产物放到 Download/，
-                    // 没进游戏目录的话 mod 并未生效，记了反而会谎报状态。
-                    ledgerError = recordSuccessfulInstall()
-                    pendingUninstallTargetHash?.let { hash ->
-                        installedModRepository.removeByTargetHash(hash)?.let {
-                            reportLedgerWrite(it, "卸载后清理账本")
-                        }
-                    }
                     pendingUninstallTargetHash = null
+                    _moveState.value = MoveState.Success(result.message)
+                } else {
+                    _moveState.value = MoveState.Failed(result.message)
                 }
-                // 账本成功 → 落 LEDGER_COMMITTED 并清 journal（窗口关闭）；
-                // 失败 → journal 原样留着，下次启动核对得出来。
-                if (tracking) installedModRepository.finishSubmit(ledgerError)
 
-                // 游戏目录已变，重新检测并刷新列表状态（顺带让状态徽章立刻更新）
                 withContext(Dispatchers.IO) { refreshBundleCleanStates() }
                 refreshInstallStates()
                 refreshBackupUsage()
             } else {
-                // 提交没成功：游戏文件没被换掉，账本也不需要动。
-                // 清掉这次提交的 journal —— 留着它会让下次启动误报「有待核对」。
-                if (tracking) installedModRepository.finishSubmit(null)
+                _moveState.value = MoveState.Failed(result.message)
             }
         }
     }
@@ -3095,17 +3089,40 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 而不是只取成功的那些：核对要回答的是「账本有没有漏记这次提交」，
      * 范围应当与「这次动了哪些 bundle」对齐。
      */
-    private fun journalTargetsForCurrentJobs(): List<JournalTarget> =
-        _installJobs.value
+    private fun journalTargetsForCurrentJobs(): List<JournalTarget> {
+        val now = System.currentTimeMillis()
+        val quality = _selectedQuality.value
+        val astc = _useAstc.value
+        val downloadShared = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "Shared"
+        )
+        return _installJobs.value
             .filter { it.status is JobStatus.Finished }
             .map { installJob ->
-                JournalTarget(
-                    bundleName = installJob.job.hashedName,
-                    hashDir = null,
-                    dataBytes = 0L,
-                    modUris = installJob.job.modsToInstall.map { it.uri.toString() }
+                val hashedName = installJob.job.hashedName
+                val relative = (installJob.status as JobStatus.Finished).relativePath
+                val uris = installJob.job.modsToInstall.map { it.uri.toString() }
+                val upserts = installJob.job.modsToInstall.map { mod ->
+                    LedgerRecord(
+                        modUri = mod.uri.toString(),
+                        modName = mod.name,
+                        familyKey = mod.resolvedFamilyKey ?: hashedName,
+                        snapshotTargetHash = hashedName,
+                        quality = quality,
+                        usedAstc = astc,
+                        installedAt = now
+                    )
+                }
+                JournalMoveFacts.target(
+                    sharedRoot = downloadShared,
+                    hashedName = hashedName,
+                    relativePath = relative,
+                    uris = uris,
+                    upserts = upserts
                 )
             }
+    }
 
     /**
      * 把本批成功装入的 job 写进账本 —— 一个 mod 一条。
@@ -3807,6 +3824,15 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 if (store == null) return@withContext emptyList()
                 when (val loaded = store.load(sources.map { it.toString() })) {
                     is SnapshotLoad.Loaded -> {
+                        if (loaded.wasLegacy) {
+                            try {
+                                val sourceStrs = sources.map { it.toString() }
+                                val write = store.capture(loaded.entries, sourceStrs)
+                                store.commit(write, sourceStrs)
+                            } catch (e: Exception) {
+                                Log.w("MainViewModel", "旧格式快照顺手迁移失败，忽略", e)
+                            }
+                        }
                         if (loaded.droppedEntries > 0) {
                             // 「表读出来了」与「表读出来了但少了几条」是两件事，必须分开可见。
                             // 旧实现的 mapNotNull 把后者静默吞了。
@@ -5154,5 +5180,74 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             Log.i("MainViewModel", "界面已销毁，但还有 $running 个装入任务在跑，不取消")
         }
         super.onCleared()
+    }
+
+    /**
+     * 核对并修复安装记录：只读拷出游戏 __data、按冻结 SHA 补账，不重新安装。
+     */
+    fun reconcilePendingInstalls() {
+        if (!::installedModRepository.isInitialized) {
+            notifyLedgerNotice("装入记录仓储未初始化，无法核对。")
+            return
+        }
+        installScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val begin = installedModRepository.beginRecovery()
+                if (begin != null) return@withContext RecoveryApplyResult.NotApplied(begin)
+                val ctx = appContext ?: return@withContext RecoveryApplyResult.NotApplied(
+                    OperationError(
+                        kind = OperationErrorKind.INVALID_INPUT,
+                        message = "没有可用的 Context，无法核对。"
+                    )
+                )
+                val destRoot = File(ctx.externalCacheDir ?: ctx.cacheDir, "recovery-obs")
+                destRoot.mkdirs()
+                val observations = installedModRepository.pendingRecoveryTargets().map { ref ->
+                    val target = ref.target
+                    val destFile = try {
+                        RecoveryObservationLayout.destFile(
+                            destRoot = destRoot,
+                            operationId = ref.operationId,
+                            bundleName = target.bundleName,
+                            hashDir = target.hashDir
+                        )
+                    } catch (e: IllegalArgumentException) {
+                        return@map TargetObservation.ReadFailed(
+                            operationId = ref.operationId,
+                            bundleName = target.bundleName,
+                            hashDir = target.hashDir,
+                            reason = "Path validation failed: " + e.message
+                        )
+                    }
+
+                    destFile.parentFile?.mkdirs()
+                    
+                    val copied = try {
+                        ShizukuManager.copyGameDataForRecovery(
+                            target.bundleName, target.hashDir, destFile.absolutePath
+                        )
+                    } catch (e: Exception) {
+                        false
+                    }
+                    if (!copied) {
+                        TargetObservation.ReadFailed(
+                            operationId = ref.operationId,
+                            bundleName = target.bundleName,
+                            hashDir = target.hashDir,
+                            reason = "copyGameDataForRecovery failed"
+                        )
+                    } else {
+                        TargetObservations.observeFile(
+                            ref.operationId, target.bundleName, target.hashDir, destFile
+                        )
+                    }
+                }
+                installedModRepository.applyContentRecovery(observations)
+            }
+            when (result) {
+                is RecoveryApplyResult.Applied -> notifyLedgerNotice("已根据目标内容补齐安装记录。")
+                is RecoveryApplyResult.NotApplied -> notifyLedgerNotice(result.error.message)
+            }
+        }
     }
 }

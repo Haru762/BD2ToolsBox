@@ -4,14 +4,22 @@ import android.content.Context
 import android.util.Log
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
+import com.bd2toolsbox.core.storage.ContentAuditResult
+import com.bd2toolsbox.core.storage.ExpectedTarget
 import com.bd2toolsbox.core.storage.InstalledLedgerStore
 import com.bd2toolsbox.core.storage.JournalEntry
+import com.bd2toolsbox.core.storage.JournalRead
+import com.bd2toolsbox.core.storage.JournalRecoveryProjection
 import com.bd2toolsbox.core.storage.JournalStage
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerRead
 import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
 import com.bd2toolsbox.core.storage.OperationJournalStore
+import com.bd2toolsbox.core.storage.RecoveredTargetCopy
+import com.bd2toolsbox.core.storage.TargetContentAudit
+import com.bd2toolsbox.core.storage.TargetObservation
+import java.security.MessageDigest
 import com.bd2toolsbox.data.model.InstalledModRecord
 import java.io.File
 
@@ -37,17 +45,16 @@ import java.io.File
  * 1. **`Context` 依赖**（[file] 的唯一外部输入是 `context.filesDir`）；
  * 2. **并发所有权** —— 见下。
  *
- * ## 并发所有者：本类是唯一的所有者
+ * ## 并发所有者：同进程共享协调器（T08 统一所有者）
  *
- * 账本的写入是「读全表 → 改一条 → 写回全表」的 read-modify-write。锁必须罩住**整段**，
- * 否则并发的两次写入各自读了旧表、后写的把先写的覆盖掉（丢记录）。
+ * 账本写入是「读全表 → 改一条 → 写回全表」的 read-modify-write，锁必须罩住**整段**。
+ * 锁与在途 owner 不再挂在**实例**上，而是挂在按 canonical `filesDir` 归一的
+ * [LedgerSubmissionCoordinator] 上：同一目录的所有仓储实例共享同一把可重入锁与
+ * 同一份在途租约。于是同进程重复初始化出的两个实例也互斥（RMW 不交错丢记录、
+ * 在途门禁跨实例可见）。**仅同进程互斥** —— 跨 Android 进程不承诺，见协调器类注释。
  *
- * 所以 [InstalledLedgerStore] / [OperationJournalStore] **自己不加锁**，
- * 锁留在这里的 `@Synchronized` 方法上（改动前就有、本轮**原样保留**这层保护）：
- * 它们是同一把实例锁、重入安全，于是 `put()` 里调 [load] 不会自锁，
- * 而 `put()` 的整个「读-改-写」在同一段临界区里。**这仍然只是单实例锁** ——
- * 两个 `MainViewModel` 实例（多进程 / 重复初始化）之间不互斥，与改动前一致，
- * 本轮没有把口径扩大到跨进程。
+ * 租约带**实例 owner token**：只有持有者能 `mark*`/`finish`/`release`，
+ * 跨实例伪 release / 迟到的旧 operationId 都不能解锁已被接任的新 owner。
  *
  * ## 失败必须传回上层
  *
@@ -76,27 +83,23 @@ class InstalledModRepository(private val context: Context) {
     private val journalStore: OperationJournalStore
 
     /**
-     * journal 里当前这次提交的 id。一次 [beginSubmit] 到 [finishSubmit] 之间不变，
-     * 让同一批提交的多个阶段在 journal 里能串起来。
+     * 同进程共享的提交协调器（按 canonical `filesDir` 归一）。
+     * 持有共享可重入锁与在途租约；本实例的所有 RMW / journal 方法都在它的锁内。
      */
-    @Volatile
-    private var currentOperationId: String? = null
+    private val coordinator: LedgerSubmissionCoordinator
 
     /**
-     * 当前这次提交的目标摘要（[beginSubmit] 时记下）。
-     *
-     * 存在理由：`markTargetReplaced()` 默认不带参数，必须能沿用这一批目标 ——
-     * 那条 journal 的 `targets` 是恢复判据唯一的输入，写成空表会让
-     * 「文件已换、账本未存」这个窗口查不出来（第一版就是这么写的，被用例抓红）。
+     * 本实例的身份 token（租约持有者识别）。共享 owner 不等于谁都能推进：
+     * 只有 [coordinator] 的 owner token 等于它的实例才能 `mark*`/`finish`/`release`。
      */
-    @Volatile
-    private var currentTargets: List<JournalTarget> = emptyList()
+    private val instanceToken = Any()
 
     /**
      * 最近一次读/写失败，供上层取用与提示。
      *
      * **是实例状态、不是全局单例**：两个仓储实例各有各的账本文件，
      * 把它们的最新错误混在一个静态变量里会让 A 实例的失败被 B 实例的调用方取走。
+     * 即使现在锁共享了，[lastError] 仍逐实例独立（协调器里不放它）。
      *
      * 由 [consumeLastError] 以 take 语义取走（取过即清），避免同一条错误被反复提示。
      */
@@ -107,6 +110,17 @@ class InstalledModRepository(private val context: Context) {
         val filesDir = context.filesDir
         ledgerStore = InstalledLedgerStore(File(filesDir, FILENAME))
         journalStore = OperationJournalStore(File(filesDir, JOURNAL_FILENAME))
+        coordinator = LedgerSubmissionCoordinator.forDir(filesDir)
+    }
+
+    /** 在共享可重入锁内执行（替代旧的实例级 `@Synchronized`）。 */
+    private inline fun <T> withLock(block: () -> T): T {
+        coordinator.lock.lock()
+        try {
+            return block()
+        } finally {
+            coordinator.lock.unlock()
+        }
     }
 
     /** 账本文件。测试与排查用；唯一的外部依赖就是 `context.filesDir`。 */
@@ -122,13 +136,14 @@ class InstalledModRepository(private val context: Context) {
      * 但不再是「失败看起来像空表」：失败的分类由 [readLedger] 给出，
      * 需要区分的地方（尤其是写入前）应当调它而不是 [load]。
      */
-    @Synchronized
-    fun load(): Map<String, InstalledModRecord> = when (val read = readLedger()) {
-        is LedgerRead.Loaded -> read.records.mapValues { it.value.toModel() }
-        // NotFound / Empty / Corrupt / IoError 在「只想要一张表」的调用点上
-        // 都退化成空表 —— 这正是改动前的行为，保留它以免打乱所有只读调用方。
-        // **写入路径不许走这里**：它必须先看 readLedger() 的分态。
-        else -> emptyMap()
+    fun load(): Map<String, InstalledModRecord> = withLock {
+        when (val read = readLedger()) {
+            is LedgerRead.Loaded -> read.records.mapValues { it.value.toModel() }
+            // NotFound / Empty / Corrupt / IoError 在「只想要一张表」的调用点上
+            // 都退化成空表 —— 这正是改动前的行为，保留它以免打乱所有只读调用方。
+            // **写入路径不许走这里**：它必须先看 readLedger() 的分态。
+            else -> emptyMap()
+        }
     }
 
     /**
@@ -137,19 +152,20 @@ class InstalledModRepository(private val context: Context) {
      * 读失败会把错误留在 [consumeLastError] 里，且**不改动磁盘上的任何东西**
      * （连损坏原件都不改名 —— 改名的决定属于写入路径，见 [put]）。
      */
-    @Synchronized
-    fun readLedger(): LedgerRead = try {
-        ledgerStore.read()
-    } catch (e: Exception) {
-        // Store 自称不抛，这里是纵深防御：真抛了也不能让读账本崩掉调用方。
-        LedgerRead.IoError(
-            OperationError(
-                kind = OperationErrorKind.UNKNOWN,
-                message = "装入记录读取异常：" + e.message.orEmpty(),
-                detail = e.toString(),
-                target = file().path
+    fun readLedger(): LedgerRead = withLock {
+        try {
+            ledgerStore.read()
+        } catch (e: Exception) {
+            // Store 自称不抛，这里是纵深防御：真抛了也不能让读账本崩掉调用方。
+            LedgerRead.IoError(
+                OperationError(
+                    kind = OperationErrorKind.UNKNOWN,
+                    message = "装入记录读取异常：" + e.message.orEmpty(),
+                    detail = e.toString(),
+                    target = file().path
+                )
             )
-        )
+        }
     }
 
     /**
@@ -163,11 +179,10 @@ class InstalledModRepository(private val context: Context) {
      * 让这条字符串包含判断逐渐失去意义，但把它改成版本比较**不是 T08 的范围** ——
      * 退役交给 T25/T35。这里只登记这个接缝。
      */
-    @Synchronized
-    fun needsReset(): Boolean {
+    fun needsReset(): Boolean = withLock {
         val f = file()
-        if (!f.exists()) return false
-        return try {
+        if (!f.exists()) return@withLock false
+        try {
             val text = f.readText()
             if (text.isBlank()) false else text.contains("\"modUris\"")
         } catch (e: Exception) {
@@ -183,34 +198,34 @@ class InstalledModRepository(private val context: Context) {
      * **返回 [LedgerWrite]**（三态，见那个类的说明）。改动前这些方法返回 `Unit`，
      * 失败只打印 —— 调用方以为写成功了。
      */
-    @Synchronized
-    fun put(record: InstalledModRecord): LedgerWrite {
+    fun put(record: InstalledModRecord): LedgerWrite = withLock {
+        requireNoRecoveryLease()?.let { return@withLock LedgerWrite.Failed(it) }
         val read = readForWrite()
-        if (!read.writable) return LedgerWrite.Failed(read.blocked!!)
-        return save(read, read.records!!.toMutableMap().apply { put(record.modUri, record) })
+        if (!read.writable) return@withLock LedgerWrite.Failed(read.blocked!!)
+        save(read, read.records!!.toMutableMap().apply { put(record.modUri, record) })
     }
 
-    @Synchronized
-    fun putAll(records: List<InstalledModRecord>): LedgerWrite {
+    fun putAll(records: List<InstalledModRecord>): LedgerWrite = withLock {
+        requireNoRecoveryLease()?.let { return@withLock LedgerWrite.Failed(it) }
         // 空批次既不是「写成功」也不是「失败」：什么都没发生，报 Written 最贴合事实。
-        if (records.isEmpty()) return LedgerWrite.Written
+        if (records.isEmpty()) return@withLock LedgerWrite.Written
         val read = readForWrite()
-        if (!read.writable) return LedgerWrite.Failed(read.blocked!!)
-        return save(read, read.records!!.toMutableMap().apply { records.forEach { put(it.modUri, it) } })
+        if (!read.writable) return@withLock LedgerWrite.Failed(read.blocked!!)
+        save(read, read.records!!.toMutableMap().apply { records.forEach { put(it.modUri, it) } })
     }
 
     /** 某个 bundle 上当前装着哪些 mod。装入时要把它们一起重新打包，否则会丢。 */
-    @Synchronized
-    fun listByTargetHash(targetHash: String): List<InstalledModRecord> =
+    fun listByTargetHash(targetHash: String): List<InstalledModRecord> = withLock {
         load().values.filter { it.snapshotTargetHash == targetHash }
+    }
 
     /** 移除一个 mod 的记录。调用方需自行判断该 bundle 是否还有剩余（见 [listByTargetHash]）。 */
-    @Synchronized
-    fun remove(modUri: String): LedgerWrite {
+    fun remove(modUri: String): LedgerWrite = withLock {
+        requireNoRecoveryLease()?.let { return@withLock LedgerWrite.Failed(it) }
         val read = readForWrite()
-        if (!read.writable) return LedgerWrite.Failed(read.blocked!!)
-        if (!read.records!!.containsKey(modUri)) return LedgerWrite.Written
-        return save(read, read.records.toMutableMap().apply { remove(modUri) })
+        if (!read.writable) return@withLock LedgerWrite.Failed(read.blocked!!)
+        if (!read.records!!.containsKey(modUri)) return@withLock LedgerWrite.Written
+        save(read, read.records.toMutableMap().apply { remove(modUri) })
     }
 
     /**
@@ -240,10 +255,10 @@ class InstalledModRepository(private val context: Context) {
      * `take.record` 仍然是「拿来放回」的那条记录（销账成功时才非空，
      * 见 [LedgerTake.record] 的说明）。
      */
-    @Synchronized
-    fun removeAndReturn(modUri: String): LedgerTake {
+    fun removeAndReturn(modUri: String): LedgerTake = withLock {
+        requireNoRecoveryLease()?.let { return@withLock LedgerTake.Blocked(it) }
         val read = readForWrite()
-        if (!read.writable) return LedgerTake.Blocked(read.blocked!!)
+        if (!read.writable) return@withLock LedgerTake.Blocked(read.blocked!!)
         val record = read.records!![modUri]
         if (record == null) {
             // 没有这条记录 → 不写盘。但**损坏原件可能已经在 readForWrite() 里被改名搬走**
@@ -251,11 +266,11 @@ class InstalledModRepository(private val context: Context) {
             // 「原件被搬走 + 账本路径消失 + 用户零提示」正是复核抓到的那个静默形态。
             // 修复消息在这里补记到实例上，让只读调用方（consumeLastError）也拿得到 ——
             // save() 那条路是由 save() 自己记的，这条路进不了 save()。
-            val notice = read.repairNotice ?: return LedgerTake.Absent
+            val notice = read.repairNotice ?: return@withLock LedgerTake.Absent
             recordError(notice)
-            return LedgerTake.Repaired(null, notice, read.preservedAs ?: "")
+            return@withLock LedgerTake.Repaired(null, notice, read.preservedAs ?: "")
         }
-        return when (val write = save(read, read.records.toMutableMap().apply { remove(modUri) })) {
+        when (val write = save(read, read.records.toMutableMap().apply { remove(modUri) })) {
             is LedgerWrite.Failed -> LedgerTake.Blocked(write.error)
             is LedgerWrite.Repaired -> LedgerTake.Repaired(record, write.notice, write.preservedAs)
             LedgerWrite.Written -> LedgerTake.Removed(record)
@@ -269,32 +284,34 @@ class InstalledModRepository(private val context: Context) {
      * 注意 targetHash 会随游戏更新变化，因此这里只用于「刚还原了这个 bundle」这种
      * 当下就能对上的场合，不作为长期标识。
      */
-    @Synchronized
-    fun removeByTargetHash(targetHash: String): LedgerWrite {
+    fun removeByTargetHash(targetHash: String): LedgerWrite = withLock {
+        requireNoRecoveryLease()?.let { return@withLock LedgerWrite.Failed(it) }
         val read = readForWrite()
-        if (!read.writable) return LedgerWrite.Failed(read.blocked!!)
+        if (!read.writable) return@withLock LedgerWrite.Failed(read.blocked!!)
         val keys = read.records!!.filterValues { it.snapshotTargetHash == targetHash }.keys
-        if (keys.isEmpty()) return LedgerWrite.Written
-        return save(read, read.records.toMutableMap().apply { keys.forEach { remove(it) } })
+        if (keys.isEmpty()) return@withLock LedgerWrite.Written
+        save(read, read.records.toMutableMap().apply { keys.forEach { remove(it) } })
     }
 
-    @Synchronized
-    fun clear(): OperationError? = try {
-        // 文件本来就不存在不是失败（与「清空一张空表」同结果）。
-        val f = file()
-        if (!f.exists() || f.delete()) null
-        else OperationError(
-            kind = OperationErrorKind.IO,
-            message = "装入记录清空失败：删除 ${f.name} 未成功",
-            target = f.path
-        )
-    } catch (e: Exception) {
-        OperationError(
-            kind = OperationErrorKind.IO,
-            message = "装入记录清空失败：" + e.message.orEmpty(),
-            detail = e.toString(),
-            target = file().path
-        )
+    fun clear(): OperationError? = withLock {
+        requireNoRecoveryLease()?.let { return@withLock it }
+        try {
+            // 文件本来就不存在不是失败（与「清空一张空表」同结果）。
+            val f = file()
+            if (!f.exists() || f.delete()) null
+            else OperationError(
+                kind = OperationErrorKind.IO,
+                message = "装入记录清空失败：删除 ${f.name} 未成功",
+                target = f.path
+            )
+        } catch (e: Exception) {
+            OperationError(
+                kind = OperationErrorKind.IO,
+                message = "装入记录清空失败：" + e.message.orEmpty(),
+                detail = e.toString(),
+                target = file().path
+            )
+        }
     }
 
     // ------------------------------------------------------------------ journal
@@ -302,14 +319,15 @@ class InstalledModRepository(private val context: Context) {
     /**
      * 开始一次有副作用的提交。[targets] 是这一批要动游戏文件的 bundle。
      *
-     * 落 [JournalStage.PLANNED]：此刻游戏文件**一个字节都还没动**。
-     * 写失败不阻断（journal 是诊断证据，见 [OperationJournalStore]）——
-     * 但会记日志，不静默。
+     * **返回 OperationError?（null = 放行）。** 门禁在 append 之前：
+     *   - 已有在途提交（共享 operationId 非空且未 finish）→ 拒绝，不碰 journal；
+     *   - 启动核对为待核对 / 未知 → 拒绝，不碰 journal（防重复叠加提交、防覆盖窗口证据）。
+     * 放行后落 [JournalStage.PLANNED]：此刻游戏文件一个字节都没动。
+     * journal 写失败**不占用** operation（不建立共享租约）并返回该错误，
+     * 让调用方能安全重试，而不是卡在一个没落盘的在途态里。
      */
-    @Synchronized
-    fun beginSubmit(operationId: String, targets: List<JournalTarget>, note: String? = null) {
-        currentOperationId = operationId
-        currentTargets = targets
+    fun beginSubmit(operationId: String, targets: List<JournalTarget>, note: String? = null): OperationError? = withLock {
+        checkSubmitAllowed()?.let { return@withLock it }
         val error = journalStore.append(
             JournalEntry(
                 operationId = operationId,
@@ -319,17 +337,100 @@ class InstalledModRepository(private val context: Context) {
                 note = note
             )
         )
-        if (error != null) Log.w(TAG, "操作日志（PLANNED）写入失败，诊断能力降级：" + error.message)
+        if (error != null) {
+            // 没落盘就不算在途：不占租约，返回错误让调用方安全重试。
+            Log.w(TAG, "操作日志（PLANNED）写入失败，本次提交未开始：" + error.message)
+            recordError(error)
+            return@withLock error
+        }
+        // 占住租约：owner token = 本实例，跨实例可见。
+        coordinator.ownerToken = instanceToken
+        coordinator.operationId = operationId
+        coordinator.targets = targets
+        null
+    }
+
+    /**
+     * 提交门禁（供不走 journal 的直接路径共享，不占位 operation）。
+     *
+     * 返回非 null 表示**此刻不允许开始新的会叠加游戏文件的提交**：
+     *   - 有在途提交未收尾（同一目录的任一实例）；
+     *   - 启动核对是待核对（上次「文件已换、账本未存」还没核对）或未知（读不出来）。
+     * 只读，不改 journal / 账本 / 游戏目录。
+     */
+    fun checkSubmitAllowed(): OperationError? = withLock {
+        requireNoRecoveryLease()?.let { return@withLock it }
+        val inflight = coordinator.operationId
+        if (inflight != null) {
+            return@withLock OperationError(
+                kind = OperationErrorKind.INVALID_INPUT,
+                message = "已有一次装入提交进行中（$inflight），请等它结束再试。",
+                target = journalFile().path
+            )
+        }
+        when (val verdict = checkRecovery()) {
+            OperationJournalStore.RecoveryVerdict.Consistent -> null
+            is OperationJournalStore.RecoveryVerdict.PendingReconciliation ->
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "上次装入还有未核对的记录（" +
+                        verdict.bundleNames.joinToString("、") +
+                        "），请先核对后再装入，以免重复覆盖。",
+                    target = journalFile().path
+                )
+            is OperationJournalStore.RecoveryVerdict.Unknown ->
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "无法确认上次装入是否收尾（账本或操作日志读取失败），暂不允许再次装入：" +
+                        verdict.error.message,
+                    target = journalFile().path
+                )
+        }
+    }
+
+    /**
+     * 释放在途租约（**只清租约状态**，不碰 journal / 账本）。
+     *
+     * 只有**本实例持有租约**（owner token 相等）**且** [operationId] 仍等于当前
+     * 在途 id 时才释放：跨实例伪 release、或迟到的旧 id（本次 finish 后下一次已接任）
+     * 都不能解锁已被接任的新 owner。不抹除 TARGET_REPLACED——那个窗口要留到下次启动核对。
+     */
+    fun releaseSubmit(operationId: String) = withLock {
+        if (coordinator.ownerToken === instanceToken && coordinator.operationId == operationId) {
+            coordinator.clearLease()
+        }
     }
 
     /**
      * 落 [JournalStage.STAGED]：产物已就位，还没写游戏目录。
      *
      * `targets` 传 null 表示沿用 [beginSubmit] 那一批（**默认行为**）。
+     * 非租约持有者（没 begin、或别的实例在途）调用 → 拒绝，不写别人的 journal。
      */
-    @Synchronized
-    fun markStaged(targets: List<JournalTarget>? = null, note: String? = null) {
-        appendStage(JournalStage.STAGED, targets ?: currentTargets, note)
+    fun markStaged(targets: List<JournalTarget>? = null, note: String? = null): OperationError? = withLock {
+        requireLease()?.let { return@withLock it }
+        appendStage(JournalStage.STAGED, targets ?: coordinator.targets, note)
+    }
+
+    /**
+     * 落 [JournalStage.TARGET_REPLACING]：**即将替换游戏文件的写前意图**。
+     *
+     * 必须在真正调用 `copyDirectory` **之前**落盘 —— 它回答的不是「换成功了」，
+     * 而是「已经打算换、接下来那一下崩了磁盘状态就不明」。只要它落下、且同一 op
+     * 后续没有 [JournalStage.LEDGER_COMMITTED]，下次启动核对就判**待核对**。
+     *
+     * `targets` 传 null 表示沿用 [beginSubmit] 那一批（**默认行为**）。
+     * 返回 append 错误（null = 成功）；调用方（submitter）据此决定**意图未持久化就不往下走**。
+     * 非租约持有者调用 → 拒绝。
+     */
+    fun markTargetReplacing(targets: List<JournalTarget>? = null, note: String? = null): OperationError? = withLock {
+        requireLease()?.let { return@withLock it }
+        val effective = targets ?: coordinator.targets
+        if (effective.isEmpty()) {
+            Log.w(TAG, "操作日志（TARGET_REPLACING）落盘时没有目标摘要 —— " +
+                "恢复核对将无法判断该查哪条记录（漏调 beginSubmit？）")
+        }
+        appendStage(JournalStage.TARGET_REPLACING, effective, note)
     }
 
     /**
@@ -347,9 +448,9 @@ class InstalledModRepository(private val context: Context) {
      *
      * 写完这一条之后**下一次落盘才是账本**，两者之间就是窗口。
      */
-    @Synchronized
-    fun markTargetReplaced(targets: List<JournalTarget>? = null, note: String? = null) {
-        val effective = targets ?: currentTargets
+    fun markTargetReplaced(targets: List<JournalTarget>? = null, note: String? = null): OperationError? = withLock {
+        requireLease()?.let { return@withLock it }
+        val effective = targets ?: coordinator.targets
         if (effective.isEmpty()) {
             Log.w(TAG, "操作日志（TARGET_REPLACED）落盘时没有目标摘要 —— " +
                 "恢复核对将无法判断该查哪条记录（漏调 beginSubmit？）")
@@ -360,19 +461,20 @@ class InstalledModRepository(private val context: Context) {
     /**
      * 落 [JournalStage.LEDGER_COMMITTED] 并收尾：账本已落盘，窗口关闭。
      *
-     * 只在**账本写入真的成功**之后调用（见 [finishSubmit]）。
+     * 只在**账本写入真的成功**之后调用（见 [finishSubmit]）。非租约持有者调用 → 拒绝。
      */
-    @Synchronized
-    fun markLedgerCommitted(note: String? = null): OperationError? =
+    fun markLedgerCommitted(note: String? = null): OperationError? = withLock {
+        requireLease()?.let { return@withLock it }
         journalStore.append(
             JournalEntry(
-                operationId = currentOperationId ?: UNKNOWN_OPERATION,
+                operationId = coordinator.operationId ?: UNKNOWN_OPERATION,
                 stage = JournalStage.LEDGER_COMMITTED.id,
                 atMillis = System.currentTimeMillis(),
                 targets = emptyList(),
                 note = note
             )
         )
+    }
 
     /**
      * 一次提交的收尾：账本已成功落盘 → 写 [JournalStage.LEDGER_COMMITTED] 再清掉 journal；
@@ -381,21 +483,164 @@ class InstalledModRepository(private val context: Context) {
      *
      * @param ledgerError 账本写入的结果（null = 成功）。
      */
-    @Synchronized
-    fun finishSubmit(ledgerError: OperationError?): OperationError? {
+    fun finishSubmit(ledgerError: OperationError?): OperationError? = withLock {
+        requireLease()?.let { return@withLock it }
         if (ledgerError != null) {
             // 账本没成功：**不清 journal**，「文件已换、账本未存」的痕迹要留到下次启动。
             Log.w(TAG, "账本未落盘，保留操作日志以便下次启动核对：" + ledgerError.message)
-            currentOperationId = null
-            return ledgerError
+            coordinator.clearLease()
+            return@withLock ledgerError
         }
-        markLedgerCommitted()
-        val error = journalStore.clear()
-        currentOperationId = null
-        if (error != null) {
-            Log.w(TAG, "操作日志清理失败（下次启动会多核对一次，无副作用）：" + error.message)
+        // 账本已成功。先写 LEDGER_COMMITTED marker；若 marker 写失败，**不清 journal**
+        // （意图/TARGET_REPLACED 未被自己的 commit 闭合，下次启动仍能核对出来），
+        // 释放租约并把 marker 错误交回。
+        val markerError = markLedgerCommitted()
+        if (markerError != null) {
+            Log.w(TAG, "LEDGER_COMMITTED 写入失败，保留操作日志以便下次核对：" + markerError.message)
+            coordinator.clearLease()
+            return@withLock markerError
         }
-        return null
+        val clearError = journalStore.clear()
+        coordinator.clearLease()
+        if (clearError != null) {
+            // clear 失败不能假报成功：marker 已落盘，下次启动会因意图已被 commit 闭合
+            // 而判一致（无副作用），但错误仍要上报。
+            Log.w(TAG, "操作日志清理失败（下次启动会多核对一次，无副作用）：" + clearError.message)
+            return@withLock clearError
+        }
+        null
+    }
+
+    /**
+     * 租约校验：只有本实例持有当前租约（owner token 相等）时才能推进阶段/收尾。
+     *
+     * 非 null = 拒绝：没 begin（无租约）或别的实例在途。拒绝时**不写任何 journal**。
+     * 这改变了旧行为：改动前没 begin 直接 `mark*` 会落一条 `unknown` 的 journal；
+     * 现在没 begin 不得用 `unknown` 写，错误传回，不碰别人的 journal。
+     */
+    private fun requireLease(): OperationError? =
+        if (coordinator.ownerToken === instanceToken) null
+        else OperationError(
+            kind = OperationErrorKind.INVALID_INPUT,
+            message = "未持有提交租约（未调 beginSubmit 或已被别的提交占用），拒绝推进操作日志。",
+            target = journalFile().path
+        )
+
+    private fun requireNoRecoveryLease(): OperationError? =
+        if (coordinator.recoveryOwnerToken == null) null
+        else OperationError(
+            kind = OperationErrorKind.INVALID_INPUT,
+            message = "正在核对上次装入，不能改账本或开始新的提交。",
+            target = journalFile().path
+        )
+
+    private fun journalFingerprint(): String = fileFingerprint(journalFile())
+
+    private fun ledgerFingerprint(): String = fileFingerprint(file())
+
+    private fun fileFingerprint(file: File): String {
+        if (!file.exists()) return "ABSENT"
+        val digest = MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+        return digest.joinToString("") { b -> "%02x".format(b) }
+    }
+
+    private fun applyPendingRecovery(
+        projected: JournalRecoveryProjection.Result.Pending,
+        observations: List<TargetObservation>
+    ): RecoveryApplyResult {
+        if (projected.operations.any { !it.hasCompleteFacts }) {
+            return RecoveryApplyResult.NotApplied(
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "日志缺少完整恢复事实，不能自动补账。",
+                    target = journalFile().path
+                )
+            )
+        }
+        // 投影只在单个操作内核对冲突；补账前还须验证所有待恢复操作的 URI 写入一致。
+        // 完全相同的重复事实可以幂等合并，但不能按日志顺序静默覆盖不同事实。
+        val recoveryUpserts = linkedMapOf<String, LedgerRecord>()
+        for (op in projected.operations) {
+            for (target in op.targets) {
+                for (upsert in target.recoveryFacts!!.ledgerUpserts) {
+                    val previous = recoveryUpserts[upsert.modUri]
+                    if (previous != null && previous != upsert) {
+                        return RecoveryApplyResult.NotApplied(
+                            OperationError(
+                                kind = OperationErrorKind.MALFORMED_DATA,
+                                message = "待恢复操作对同一 URI 的账本事实冲突：${upsert.modUri}",
+                                target = journalFile().path
+                            )
+                        )
+                    }
+                    recoveryUpserts[upsert.modUri] = upsert
+                }
+            }
+        }
+        val expected = projected.operations.flatMap { op ->
+            op.targets.map { target ->
+                ExpectedTarget(
+                    operationId = op.operationId,
+                    bundleName = target.bundleName,
+                    hashDir = target.hashDir,
+                    expectedSha256 = target.recoveryFacts!!.expectedContentSha256
+                )
+            }
+        }
+        when (val audit = TargetContentAudit().audit(expected, observations)) {
+            is ContentAuditResult.NotAllMatched -> return RecoveryApplyResult.NotApplied(
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "目标内容未全部核对通过：${audit.reason}",
+                    target = journalFile().path
+                )
+            )
+            is ContentAuditResult.AllMatched -> {
+                val current = when (val read = readLedger()) {
+                    is LedgerRead.Loaded -> read.records.mapValues { it.value.toModel() }
+                    LedgerRead.Empty, LedgerRead.NotFound -> emptyMap()
+                    is LedgerRead.Corrupt -> return RecoveryApplyResult.NotApplied(
+                        OperationError(
+                            kind = OperationErrorKind.MALFORMED_DATA,
+                            message = "装入记录损坏，恢复拒绝把坏账本降级为空表：" + read.reason,
+                            target = file().path
+                        )
+                    )
+                    is LedgerRead.IoError -> return RecoveryApplyResult.NotApplied(read.error)
+                }
+                val merged = current.toMutableMap()
+                for (upsert in recoveryUpserts.values) {
+                    merged[upsert.modUri] = upsert.toModel()
+                }
+                val saveError = ledgerStore.save(merged.mapValues { it.value.toLedgerRecord() })
+                if (saveError != null) {
+                    recordError(saveError)
+                    return RecoveryApplyResult.NotApplied(saveError)
+                }
+                coordinator.recoveryLedgerFingerprint = ledgerFingerprint()
+                for (op in projected.operations) {
+                    val marker = journalStore.append(
+                        JournalEntry(
+                            operationId = op.operationId,
+                            stage = JournalStage.LEDGER_COMMITTED.id,
+                            atMillis = System.currentTimeMillis(),
+                            targets = op.targets,
+                            note = "content-recovery"
+                        )
+                    )
+                    coordinator.recoveryJournalFingerprint = journalFingerprint()
+                    if (marker != null) {
+                        return RecoveryApplyResult.NotApplied(marker)
+                    }
+                }
+                val clearError = journalStore.clear()
+                coordinator.clearRecoveryLease()
+                if (clearError != null) {
+                    return RecoveryApplyResult.NotApplied(clearError)
+                }
+                return RecoveryApplyResult.Applied(projected.operationIds)
+            }
+        }
     }
 
     /**
@@ -405,13 +650,171 @@ class InstalledModRepository(private val context: Context) {
      * 由上层决定怎么提示用户。**不自动补记**：自动补记等于凭一份可能陈旧的日志
      * 往账本里写事实，而日志本身不承担那个权威性（见 [OperationJournalStore] 的类注释）。
      */
-    @Synchronized
-    fun checkRecovery(): OperationJournalStore.RecoveryVerdict =
-        journalStore.recoveryVerdict(load().mapValues { it.value.toLedgerRecord() })
+    fun checkRecovery(): OperationJournalStore.RecoveryVerdict = withLock {
+        // 账本读坏必须 fail closed：不许经 load() 吞成空表、让 recoveryVerdict 误报一致。
+        val records = when (val read = readLedger()) {
+            is LedgerRead.Loaded -> read.records
+            LedgerRead.NotFound, LedgerRead.Empty -> emptyMap()
+            is LedgerRead.Corrupt -> return@withLock OperationJournalStore.RecoveryVerdict.Unknown(
+                OperationError(
+                    kind = OperationErrorKind.MALFORMED_DATA,
+                    message = "装入记录损坏，无法核对上次装入是否收尾：" + read.reason,
+                    target = file().path
+                )
+            )
+            is LedgerRead.IoError -> return@withLock OperationJournalStore.RecoveryVerdict.Unknown(read.error)
+        }
+        journalStore.recoveryVerdict(records)
+    }
 
-    /** 抛掉 journal（例如用户确认「已知悉」之后）。 */
-    @Synchronized
-    fun clearJournal(): OperationError? = journalStore.clear()
+    /**
+     * 仅允许当前租约持有者清理已核对一致的日志。
+     * 「已知悉」不是恢复事实；未闭合的替换意图或读取失败必须保留证据。
+     */
+    fun beginRecovery(): OperationError? = withLock {
+        if (coordinator.ownerToken != null) {
+            return@withLock OperationError(
+                kind = OperationErrorKind.INVALID_INPUT,
+                message = "提交仍在进行中，不能开始恢复。",
+                target = journalFile().path
+            )
+        }
+        if (coordinator.recoveryOwnerToken != null && coordinator.recoveryOwnerToken !== instanceToken) {
+            return@withLock OperationError(
+                kind = OperationErrorKind.INVALID_INPUT,
+                message = "恢复租约已被其它实例持有。",
+                target = journalFile().path
+            )
+        }
+        when (val verdict = checkRecovery()) {
+            OperationJournalStore.RecoveryVerdict.Consistent -> OperationError(
+                kind = OperationErrorKind.INVALID_INPUT,
+                message = "没有待核对的装入窗口。",
+                target = journalFile().path
+            )
+            is OperationJournalStore.RecoveryVerdict.Unknown -> verdict.error
+            is OperationJournalStore.RecoveryVerdict.PendingReconciliation -> {
+                coordinator.recoveryOwnerToken = instanceToken
+                coordinator.recoveryJournalFingerprint = journalFingerprint()
+                coordinator.recoveryLedgerFingerprint = ledgerFingerprint()
+                null
+            }
+        }
+    }
+
+    fun applyContentRecovery(observations: List<TargetObservation>): RecoveryApplyResult = withLock {
+        if (coordinator.recoveryOwnerToken !== instanceToken) {
+            return@withLock RecoveryApplyResult.NotApplied(
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "未持有恢复租约。",
+                    target = journalFile().path
+                )
+            )
+        }
+        if (coordinator.recoveryJournalFingerprint != journalFingerprint() ||
+            coordinator.recoveryLedgerFingerprint != ledgerFingerprint()
+        ) {
+            return@withLock RecoveryApplyResult.NotApplied(
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "操作日志或账本在恢复期间被改动，拒绝补账。",
+                    target = journalFile().path
+                )
+            )
+        }
+        val entries = when (val read = journalStore.read()) {
+            is JournalRead.Loaded -> read.entries
+            JournalRead.Absent -> return@withLock RecoveryApplyResult.NotApplied(
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "没有操作日志可恢复。",
+                    target = journalFile().path
+                )
+            )
+            is JournalRead.Unreadable -> return@withLock RecoveryApplyResult.NotApplied(read.error)
+        }
+        when (val projected = JournalRecoveryProjection.project(entries)) {
+            JournalRecoveryProjection.Result.Clear -> RecoveryApplyResult.NotApplied(
+                OperationError(
+                    kind = OperationErrorKind.INVALID_INPUT,
+                    message = "没有待核对窗口可补账。",
+                    target = journalFile().path
+                )
+            )
+            is JournalRecoveryProjection.Result.Unsafe -> RecoveryApplyResult.NotApplied(
+                OperationError(
+                    kind = OperationErrorKind.MALFORMED_DATA,
+                    message = "操作日志无法安全恢复：${projected.reason}",
+                    target = journalFile().path
+                )
+            )
+            is JournalRecoveryProjection.Result.Pending -> applyPendingRecovery(projected, observations)
+        }
+    }
+
+    fun pendingRecoveryTargets(): List<RecoveryTargetRef> = withLock {
+        when (val read = journalStore.read()) {
+            is JournalRead.Loaded -> when (val projected = JournalRecoveryProjection.project(read.entries)) {
+                is JournalRecoveryProjection.Result.Pending -> projected.operations.flatMap { op ->
+                    op.targets.map { RecoveryTargetRef(op.operationId, it) }
+                }
+                else -> emptyList()
+            }
+            else -> emptyList()
+        }
+    }
+
+    fun recoverFromSharedTree(sharedRoot: File, destRoot: File): RecoveryApplyResult {
+        beginRecovery()?.let { return RecoveryApplyResult.NotApplied(it) }
+        try {
+            val pending = withLock {
+                when (val read = journalStore.read()) {
+                    is JournalRead.Loaded -> JournalRecoveryProjection.project(read.entries)
+                    else -> JournalRecoveryProjection.Result.Clear
+                }
+            }
+            if (pending !is JournalRecoveryProjection.Result.Pending) {
+                return RecoveryApplyResult.NotApplied(
+                    OperationError(
+                        kind = OperationErrorKind.INVALID_INPUT,
+                        message = "没有可观察的待核对目标。",
+                        target = journalFile().path
+                    )
+                )
+            }
+            val observations = pending.operations.flatMap { op ->
+                op.targets.map { target ->
+                    RecoveredTargetCopy.copyThenObserve(
+                        sharedRoot, destRoot, op.operationId, target.bundleName, target.hashDir
+                    )
+                }
+            }
+            return applyContentRecovery(observations)
+        } finally {
+            // 一次性入口拥有本次租约；失败或观察异常也必须允许新实例重试。
+            releaseRecovery()
+        }
+    }
+
+    fun releaseRecovery() = withLock {
+        if (coordinator.recoveryOwnerToken === instanceToken) {
+            coordinator.clearRecoveryLease()
+        }
+    }
+
+    fun clearJournal(): OperationError? = withLock {
+        requireLease()?.let { return@withLock it }
+        when (val verdict = checkRecovery()) {
+            OperationJournalStore.RecoveryVerdict.Consistent -> journalStore.clear()
+            is OperationJournalStore.RecoveryVerdict.Unknown -> verdict.error
+            is OperationJournalStore.RecoveryVerdict.PendingReconciliation -> OperationError(
+                kind = OperationErrorKind.INVALID_INPUT,
+                message = "上次装入仍待核对，不能清除操作日志。",
+                target = journalFile().path
+            )
+        }
+    }
 
     // ------------------------------------------------------------------ 错误取用
 
@@ -519,10 +922,10 @@ class InstalledModRepository(private val context: Context) {
         }
     }
 
-    private fun appendStage(stage: JournalStage, targets: List<JournalTarget>, note: String?) {
+    private fun appendStage(stage: JournalStage, targets: List<JournalTarget>, note: String?): OperationError? {
         val error = journalStore.append(
             JournalEntry(
-                operationId = currentOperationId ?: UNKNOWN_OPERATION,
+                operationId = coordinator.operationId ?: UNKNOWN_OPERATION,
                 stage = stage.id,
                 atMillis = System.currentTimeMillis(),
                 targets = targets,
@@ -532,6 +935,7 @@ class InstalledModRepository(private val context: Context) {
         if (error != null) {
             Log.w(TAG, "操作日志（${stage.id}）写入失败，诊断能力降级：" + error.message)
         }
+        return error
     }
 
     private fun recordError(error: OperationError) {
@@ -648,3 +1052,13 @@ private fun LedgerRecord.toModel() = InstalledModRecord(
 
 /** 没有 [InstalledModRepository.beginSubmit] 就落阶段时的占位 id（不该发生，但不静默）。 */
 private const val UNKNOWN_OPERATION = "unknown"
+
+sealed class RecoveryApplyResult {
+    data class Applied(val operationIds: List<String>) : RecoveryApplyResult()
+    data class NotApplied(val error: OperationError) : RecoveryApplyResult()
+}
+
+data class RecoveryTargetRef(
+    val operationId: String,
+    val target: JournalTarget
+)

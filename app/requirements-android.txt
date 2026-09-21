@@ -1,0 +1,48 @@
+# -*- coding: utf-8 -*-
+# BD2 ToolsBox —— Android 侧（Chaquopy 打包进 APK）的 pip 依赖锁定清单。
+#
+# 上面那行编码声明不是装饰：pip 读 requirements 文件时，若开头没有 UTF-8 BOM，
+# 就回退到 `locale.getpreferredencoding()`（中文 Windows 上是 GBK），
+# 于是本文件的中文注释会以 UnicodeDecodeError 直接炸掉构建。
+# 声明成 utf-8 之后，文件本体保持无 BOM 的 UTF-8 + LF（与本仓其它交付文件一致），
+# 且在任意 locale 下都能被正确解析。改动本文件时**不要把这一行删掉**。
+#
+# 由 app/build.gradle.kts 的 chaquopy.defaultConfig.pip 块通过
+#     install("-r", "requirements-android.txt")
+# 引入；路径相对 :app 模块目录（Chaquopy 走 project.file() 解析）。
+#
+# 为什么是这份文件而不是 Windows 上的 pip freeze：
+#   这里锁的是 **Chaquopy 为 Android 解析出来的** wheel（cp38 + android_21_<abi>），
+#   不是宿主机 Windows 的解析结果。两者是不同的产物，不能互相顶替。
+#
+# 锁定口径（本批 = 9 个直接依赖固定；传递/native 当前未固定）：
+#   · 只锁 **9 个直接依赖**（下方 == 行），版本取当前构建实际解析到的值。
+#   · **6 个普通传递依赖**（certifi / charset_normalizer / idna / urllib3 /
+#     soupsieve / typing_extensions）与 **3 个 native 依赖**（chaquopy_freetype /
+#     chaquopy_libcxx / chaquopy_libjpeg）**当前未在本文件固定**；它们的实际
+#     版本与 24 个 wheel 的 hash 已记录在 docs/refactor/python-dependencies.md，
+#     并经本批冷解析验证与基线逐文件一致（见 T12 证据 §3）。
+#     这是当前快照，不是未来永久的全传递锁；若日后要加 constraints 把传递/
+#     native 也固定，属于新增声明，需另行验收。
+#   · native 三包由 Chaquopy 依 Pillow / Brotli 的 Requires-Dist 自动注入，
+#     目前不写进本文件。
+#   · 本批不改任何包的版本（解析结果与改动前逐条一致）。版本升级或新增
+#     constraints 必须与「纯锁版本」分开做并另行验收，**不能因锁定失败删依赖**。
+#
+# 不要往这里加的东西：
+#   · chaquopy_freetype / chaquopy_libcxx / chaquopy_libjpeg（由 Chaquopy 自动注入）。
+#   · 任何带 `+` / 区间 / `latest` 的动态版本。
+#
+# 已知不一致（登记，本轮不改）：tqdm 在 Python 源码与 vendored UnityPy 里
+# 都没有被 import（全仓零命中），但历史上就在这份依赖列表里。删除依赖属于
+# 「改行为」，超出本任务范围；如需清理请另开任务。
+
+Pillow==9.2.0
+lz4==4.3.2
+brotli==1.0.7
+fsspec==2025.3.0
+attrs==25.3.0
+requests==2.32.4
+beautifulsoup4==4.15.0
+protobuf==5.29.6
+tqdm==4.70.1

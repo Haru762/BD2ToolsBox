@@ -1620,14 +1620,26 @@ fun BundleScanDialog(
  * 看起来就像 app 把记录弄丢了。
  */
 @Composable
-fun LedgerResetDialog(notice: String?, onDismiss: () -> Unit) {
+fun LedgerResetDialog(
+    notice: String?,
+    onDismiss: () -> Unit,
+    onReconcile: (() -> Unit)? = null
+) {
     if (notice == null) return
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = dialogContainerColor(),
         title = { Text("装入记录已重置") },
         text = { Text(notice, style = MaterialTheme.typography.bodyMedium) },
-        confirmButton = { Button(onClick = onDismiss) { Text("知道了") } }
+        confirmButton = { Button(onClick = onDismiss) { Text("知道了") } },
+        dismissButton = if (onReconcile != null) {
+            {
+                TextButton(onClick = {
+                    onReconcile()
+                    onDismiss()
+                }) { Text("核对并修复记录") }
+            }
+        } else null
     )
 }
 
