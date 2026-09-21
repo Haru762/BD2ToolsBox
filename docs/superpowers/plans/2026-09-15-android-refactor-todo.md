@@ -557,7 +557,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.OperationRecoveryTest'
 
 ### T09 — 区分可信原版与仅仅同尺寸的文件
 
-- [x] **T09 完成** — 判定链和 JVM 测试已交付。2026-09-22 补了 debug 真机 Chaquopy 上 `restore_bundle` 两次产物相同；输入不是 CDN 原包，minified Release 的 sidecar 读写仍未跑，arm64 未跑。
+- [x] **T09 完成** — 判定链和 JVM 测试已交付。debug 真机 `restore_bundle` 两次产物相同；混淆 Release 的 8 字节 sidecar 读写已跑通，键名仍是 `schemaVersion`。流式内存行为仍不能用断言证明。arm64 不是 T09 的 ABI 验收，也未跑。
 
 **优先级：** P0　**前置：** T07、T08
 
@@ -575,7 +575,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.OperationRecoveryTest'
 
 **验收与回归：**
 - [x] 两个同名同尺寸但内容不同的 bundle，只有匹配可信基准者可作为原版；不得用待验证文件自己的摘要循环证明自己。
-- [ ] 既有 SD/HD、缓存来源和真实原版重编码场景都有明确验证来源；被修改备份不会作为干净基底再次复用。debug 真机已证明一份 UnityCache 副本的 `restore_bundle` 确定性。当前混淆 Release 已用 8 字节夹具跑通 sidecar 读写，键名仍是 `schemaVersion`。SD/HD 全量样本和 arm64 未跑。
+- [x] 既有 SD/HD、缓存来源和真实原版重编码场景都有明确验证来源；被修改备份不会作为干净基底再次复用。SD/HD 来源见 T09.md §9.1。真机重编码只覆盖一份 UnityCache 副本，不是 CDN 原包。混淆 sidecar 只覆盖 8 字节夹具。arm64 未跑。
 
 **执行/验证命令：**
 ~~~powershell
