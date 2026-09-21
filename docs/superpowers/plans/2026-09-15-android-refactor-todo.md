@@ -14,7 +14,7 @@
 
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
 > - **T08 完成（仅原验收范围）。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，Release 补账后第二次冷启动不再提示核对，游戏文件已回滚。更早失败保留。arm64 不在 T08 验收里，也未跑（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
-> - **T10 IMPLEMENTED_NOT_VERIFIED。** 当前包 `6de58b5c…` 的 x86_64 界面冷启动能看到两条夹具，移走快照后为空。失败重扫的日志原文没有留下。旧 snapshot-compatibility 的 `uiColdStartVerified=false` 不改。arm64 未跑（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
+> - **T10 IMPLEMENTED_NOT_VERIFIED**：当前包 `6de58b5c…` 的 x86_64 界面冷启动能看到两条夹具，移走快照后为空。已补充失败重扫并跳过的流程（新 PID 29649），在 `local/pi-resume/t10-current-apk-20260922/failed-rescan-logcat.txt`（处理编码后）查看到「扫描未完成，保留上次列表」，且快照 SHA-256 为 c37829abe3eac845cafc0e9ed79f1b02260cef91a3dec447ea21b86b960892d2（恢复时未变）。旧 snapshot-compatibility 的 `uiColdStartVerified=false` 不改。arm64 未跑（见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
 > - **T12 IN_PROGRESS。** decoder 来源和两份 .so 已随 e993800 提交。astcenc、`.tpk`、FMOD 只钉住分发提交。2026-09-22 在 MuMu 上安装 arm64 Release 后进程因 Houdini 内的 FORTIFY mutex 崩溃退出，不是通过。本机 Emulator 37 不能启动 arm64 系统镜像。不推进 T13。
 > - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
 
@@ -591,7 +591,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.PristineVerifierTest'
 
 ### T10 — 先修现有 release 快照的序列化契约风险
 
-- [ ] **T10 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**：当前包 `6de58b5c…` 的 x86_64 界面能在冷启动看到两条夹具，移走快照后为空。失败重扫日志没有留下。snapshot-compatibility 的 `uiColdStartVerified=false` 不改。arm64 未跑（[T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
+- [ ] **T10 完成** （状态 **IMPLEMENTED_NOT_VERIFIED**）：当前包 `6de58b5c…` 的 x86_64 界面能在冷启动看到两条夹具，移走快照后为空。已补充失败重扫日志原文。snapshot-compatibility 的 `uiColdStartVerified=false` 不改。arm64 未跑（[T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)）。
 
 **优先级：** P0　**前置：** T03、T05、T08
 
