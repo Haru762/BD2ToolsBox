@@ -67,7 +67,7 @@ class ReleasePythonStartupProbeTest {
             report("PID=$pid $msg")
         }
 
-        val pyClass1 = trace.stage("python.class.load") {
+        trace.stage("python.class.load") {
             Class.forName(PY_CLASS, false, loader(context))
         }
 

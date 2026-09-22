@@ -20,16 +20,20 @@ class StartupStageTraceTest {
     fun testStageError() {
         val events = mutableListOf<String>()
         val trace = StartupStageTrace { events += it }
+        val expectedException = RuntimeException("test error")
         var thrown: Throwable? = null
         try {
             trace.stage("sample") {
                 events += "work"
-                throw RuntimeException("test error")
+                throw expectedException
+            }
+            trace.stage("never") {
+                events += "should not run"
             }
         } catch (t: Throwable) {
             thrown = t
         }
-        assertEquals("test error", thrown?.message)
+        org.junit.Assert.assertSame(expectedException, thrown)
         assertEquals(listOf("before sample", "work", "error sample"), events)
     }
 }
