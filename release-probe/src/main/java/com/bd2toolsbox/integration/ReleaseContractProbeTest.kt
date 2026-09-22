@@ -126,9 +126,10 @@ class ReleaseContractProbeTest {
         // android.jar 里没有，一引用就编不过（本项第一次真跑就撞上这个编译错误）。
         val nativeDir = appInfo.nativeLibraryDir
         assertNotNull("带 native 库的 release 包必须解析出 native 库目录", nativeDir)
-        val payloadAbi = nativeDir!!.trimEnd('/').substringAfterLast('/')
+        val payloadAbi = payloadAbiFromNativeLibraryDir(nativeDir)
+        assertNotNull("载荷 ABI 目录 $nativeDir 无法识别为受支持的 ABI", payloadAbi)
         assertTrue(
-            "载荷 ABI 目录 $payloadAbi 不在设备支持的 ABI 列表中：${Build.SUPPORTED_ABIS.joinToString()}",
+            "载荷 ABI $payloadAbi (来自目录 $nativeDir) 不在设备支持的 ABI 列表中：${Build.SUPPORTED_ABIS.joinToString()}",
             Build.SUPPORTED_ABIS.contains(payloadAbi)
         )
 
@@ -146,7 +147,7 @@ class ReleaseContractProbeTest {
         println(
             "$TAG identity package=${context.packageName} version=${pkg.versionName}" +
                 " versionCode=${pkg.longVersionCode} application=$runningApp" +
-                " payloadAbi=$payloadAbi runner=${instrumentation.javaClass.name}" +
+                " payloadAbi=$payloadAbi nativeLibraryDir=$nativeDir runner=${instrumentation.javaClass.name}" +
                 " targetCertSha256=${targetCerts.joinToString(",")}"
         )
     }
