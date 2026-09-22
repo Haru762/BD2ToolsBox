@@ -57,8 +57,17 @@ class ReleasePythonStartupProbeTest {
         report("control: PID=${Process.myPid()}")
     }
 
-    @Test
-    fun tracedPythonStartup() {
+    private class SetupResult(
+        val context: Context,
+        val pid: Int,
+        val trace: StartupStageTrace,
+        val pyClass: Class<*>,
+        val platformBase: Class<*>,
+        val platformClass: Class<*>,
+        val platform: Any
+    )
+
+    private fun prepareStartup(): SetupResult {
         val context = instrumentation.targetContext
         assertHostIsTarget(context)
         val pid = Process.myPid()
@@ -92,6 +101,19 @@ class ReleasePythonStartupProbeTest {
             platformClass.getConstructor(Context::class.java).newInstance(context)
         }
 
+        return SetupResult(context, pid, trace, pyClass, platformBase, platformClass, platform)
+    }
+
+    @Test
+    fun tracedPythonStartup() {
+        val setup = prepareStartup()
+        val trace = setup.trace
+        val pyClass = setup.pyClass
+        val platformBase = setup.platformBase
+        val platform = setup.platform
+        val context = setup.context
+        val pid = setup.pid
+
         trace.stage("python.start") {
             pyClass.getMethod("start", platformBase).invoke(null, platform)
         }
@@ -118,5 +140,30 @@ class ReleasePythonStartupProbeTest {
         }
 
         report("DONE PID=$pid")
+    }
+
+    @Test
+    fun tracedNativeStartOnly() {
+        val setup = prepareStartup()
+        val trace = setup.trace
+        val pyClass = setup.pyClass
+        val platformBase = setup.platformBase
+        val platform = setup.platform
+        val pid = setup.pid
+
+        synchronized(pyClass) {
+            val path = trace.stage("platform.getPath") {
+                platformBase.getMethod("getPath").invoke(platform) as String
+            }
+            val nativeStart = trace.stage("python.startNative.lookup") {
+                pyClass.getDeclaredMethod("startNative", platformBase, String::class.java)
+                    .apply { isAccessible = true }
+            }
+            trace.stage("python.startNative") {
+                nativeStart.invoke(null, platform, path)
+            }
+        }
+
+        report("NATIVE_ONLY_RETURNED scope=partial-native-init PID=$pid")
     }
 }
