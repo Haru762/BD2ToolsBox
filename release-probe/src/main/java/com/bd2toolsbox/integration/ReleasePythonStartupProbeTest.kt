@@ -15,6 +15,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
+/**
+ * Diagnostic test probe for staged Python/Chaquopy initialization in release builds.
+ *
+ * IMPORTANT EXECUTION REQUIREMENT:
+ * Each diagnostic test in this class MUST be executed in an isolated, fresh OS process
+ * using an explicit method filter (`-e class com.bd2toolsbox.integration.ReleasePythonStartupProbeTest#<methodName>`),
+ * preceded by `am force-stop com.bd2toolsbox`. NEVER run the whole test class or package in a single invocation,
+ * as static/native runtime state will contaminate subsequent tests.
+ */
 @RunWith(AndroidJUnit4::class)
 class ReleasePythonStartupProbeTest {
 
@@ -50,6 +59,12 @@ class ReleasePythonStartupProbeTest {
             app.flags and ApplicationInfo.FLAG_DEBUGGABLE)
     }
 
+    /**
+     * Control test verifying host process identity, non-debuggable flag, and instrumentation harness
+     * without loading any Python classes or native libraries.
+     *
+     * MUST run in a fresh process via explicit method filter (`#controlWithoutPython`) after `am force-stop`.
+     */
     @Test
     fun controlWithoutPython() {
         val context = instrumentation.targetContext
@@ -104,6 +119,14 @@ class ReleasePythonStartupProbeTest {
         return SetupResult(context, pid, trace, pyClass, platformBase, platformClass, platform)
     }
 
+    /**
+     * Traces the staged Python initialization sequence up through version assertion.
+     *
+     * IMPORTANT:
+     * MUST be executed in an isolated, fresh process via explicit method filter
+     * (`#tracedPythonStartup`), preceded by `am force-stop`. NEVER run in the same process
+     * as other test methods.
+     */
     @Test
     fun tracedPythonStartup() {
         val setup = prepareStartup()
@@ -142,6 +165,21 @@ class ReleasePythonStartupProbeTest {
         report("DONE PID=$pid")
     }
 
+    /**
+     * Isolates native JNI initialization by directly invoking Chaquopy's private `startNative` method,
+     * bypassing `Python.start(Platform)` and avoiding `getInstance()` reentrancy.
+     *
+     * WARNING / USAGE CONSTRAINTS:
+     * - Each init test MUST run in a fresh process by explicit method filter (`#tracedNativeStartOnly`),
+     *   preceded by `am force-stop`. NEVER run the whole test class or package together.
+     * - `tracedNativeStartOnly` may leave partial native initialization if it returns:
+     *   native libraries are loaded and initialized, but Java-level lifecycle completion
+     *   (`platform.onStart(instance)` and assignment to static `Python.platform`, leaving `isStarted() == false`)
+     *   is not completed (note: static singleton `Python.instance` is already constructed during `python.class.init`).
+     * - Do NOT call other Python methods in this process if this test completes or returns.
+     * - Do NOT interpret its completion marker (`NATIVE_ONLY_RETURNED`) as full runtime readiness or
+     *   as a substitute for full Python startup.
+     */
     @Test
     fun tracedNativeStartOnly() {
         val setup = prepareStartup()
