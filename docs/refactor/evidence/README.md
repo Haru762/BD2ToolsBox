@@ -8,14 +8,14 @@
 
 | 项 | 值 |
 |---|---|
-| 阶段 | **G2 构建与依赖治理进行中**（当前状态更正 2026-09-21：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 本地验收完成、T12 IN_PROGRESS；不推进 T13） |
-| 权威状态依据 | [进度核查快照 2026-09-19](<D:/bd2 mod/worktrees/bdroid-android-refactor/local/refactor-artifacts/audit-20260919-112022/progress-audit.md>)；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
+| 阶段 | **G2 构建与依赖治理进行中**（2026-09-24 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 IN_PROGRESS；T12 的 ABI 启动修复已完成，原生 ARM64 仍待设备；不推进 T13） |
+| 权威状态依据 | 本文件与各任务证据的最新追加章节；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
 | 最近已验收任务 | T11（本地验收完成 2026-09-19，受控 Release 构建；非正式发布/设备 smoke）。T09 为上一个完整 DONE；T10 代码已提交但指定验收未完成 |
-| 下一任务 | T08 真实覆盖中断/杀进程补账（需游戏目录写入授权）；T10 完整业务列表保存/重启/恢复；T10/T12 arm64 真机及 T12 其余来源缺口；不推进 T13 |
-| 最后核对的代码提交 | HEAD `72420bf`（T11 代码提交 `53959b3` + 状态登记提交 `72420bf`）。T11.md 的六个交付文件逐个复算一致（工作区 sha256 + `git hash-object`；23 行哈希表全部匹配）。T10 为 `f08fa27`、T09 为 `6529e81` |
+| 下一任务 | T08 真实覆盖中断/杀进程补账；T10 完整业务列表及 arm64 边界；T12 原生 ARM64 smoke 与剩余第三方来源；无 ARM 设备时使用转译证据推进代码，不把它升级为原生验收；不推进 T13 |
+| 最后核对的代码提交 | HEAD `cf8e87a`（PythonRuntime ABI 选择修复提交 `0032886`，计划/证据状态提交 `cf8e87a`）；T11 为 `53959b3`，T10 为 `f08fa27`，T09 为 `6529e81` |
 | 工作区脏文件 | 历史 T12 requirements/build.gradle 改动继续保留；2026-09-19–20 另有 T08 提交/恢复实现、JVM 回归、独立 release-probe、host runner 与证据文档未提交改动。不是只有两处脏文件；准确清单以当前 git status 为准。/local/、本地配置与构建产物保持忽略；未动只读 bdroid_src。 |
 | 环境/输入清单 | local/refactor-artifacts/historical-0.2.16（2 APK + mapping）、rebuilt-original（3 APK + mapping + metadata）；local/refactor-inputs（catalog-alpha.json、wiki-v2-detail-2238.source.json）。冻结记录见 artifact-manifest.json 的 t03Freeze；旧数据样本与缺口见 fixture-manifest.json |
-| 命令结果 | 2026-09-21 接续验收：当前 JVM 404/0/0/0，Python 104 通过且无失败/错误/跳过；host snapshot 16 项、UI chrome 14 项；当前 x86_64 minified Python/native 两项与 Store 5 条跨进程往返通过。详细哈希和边界见 T08/T10/T12 最新章节。 |
+| 命令结果 | 2026-09-24：app JVM 429/0/0/0，release-probe JVM 6/0/0/0，Python 124/124/0/0/0；x86_64 split 与 universal minified Release 的生产 PythonRuntime probe 均通过。详细哈希和边界见 T08/T10/T12 及 `docs/refactor/python-runtime-abi-selection.md`。 |
 | 设备覆盖 | MuMu 127.0.0.1:16384（x86_64 / API 32）：T03 做**只读**包身份与占用测量（T03.md §6）；T04 在其上实跑 release `baseline-startup` 5 次与 6 个 androidTest 类的 35 条用例（T04.md §5）。**T05 与 T06 全程没有碰设备**（T05 的 runId 皆为 `…-unit-…`；T06 的 runId 皆为 `-unit-` / `-python-`）。**T07 在其上实跑两个设备套件**（`GameFileCommitTest` 13 条、`BackupFailureSummaryTest` 5 条，skip 全 0，三轮共跑了几十次），并且在**真实游戏目录**上做了一次端到端补充验证（T07.md §11.0：用 T07 的提交序列改写一个 30 KB `__data` —— mode/属组不变、属主变为写入者、内容哈希逐字节相同，游戏随后启动无 bundle/cache/CRC 报错且未重下载）。该设备上此时已装好真实 BD2（18 GB / 1830 个 `__data`）；**除 T07 那次已登记的单次 `__data` 写入外，T03/T04 与 2026-09-19 审计均为只读**（`ls`/`stat`/`sha256sum`）；不可用「全程只读」概括整个项目。arm64-v8a 真机仍**未覆盖**，该 ABI 的 smoke 每次运行都按白名单为空而拒绝安装（T04.md §5.2、§16.1） |
 
 ## 任务登记
@@ -33,7 +33,7 @@
 | T09 | DONE | [T09.md](T09.md) | 2026-09-18 | 用可信基准区分原版与同尺寸文件：新建 `core/storage/PristineVerifier.kt`（纯 JVM、摘要可注入、流式）+ 备份 sidecar 来源元数据，**删掉「与备份大小一致即 PRISTINE」的循环自证**，换成「CDN 输入锚定 + 确定性转换 + byteAnchoredBaseline」的派生锚定链。**两条实证**：① `m_Hash` **不是** `__data` 字节摘要（63 个真实样本命中 0；Addressables 源码确认是构建期 Hash128/SpookyHash V2 内容版本号；`m_Crc` 98% 为 0）；② **CDN `.bundle` 与 `__data` 逐字节相同**（三轮独立抽样 5/5、7/7、5/5）→ 这才让 CDN 成为字节级外部锚点。**独立复核判定 `no-go`、3 条真缺陷**：①（P0）`BackupMeta` 在 release 下被 R8 改名、sidecar 读不回来；② T09 改签名打坏 T07 已交付的设备用例；③ `tryUseBackup` 用错判据、同尺寸 mod 备份可当干净基底复用。二轮整改后**定点验证者亲自重建 release dex + 三条注入全部真红**，判定 `go`。最终态：JVM `28/14`、设备 `5+2`、全量 JVM **197**。未覆盖：两处调用点仅人工核对、真机 release 运行态 NOT_RUN（本机签不出）、真机 Chaquopy 确定性未验、一条阴性证伪（流式摘要断言证明不了）。提交 `6529e81` |
 | T10 | IMPLEMENTED_NOT_VERIFIED | [T10.md](T10.md) | — | 当前 minified x86_64 Store 5 条往返 PASS；主界面 chrome PASS，明确 uiColdStartVerified=false。legacy 源目录不匹配未升格；完整业务列表恢复及 arm64 未验收。 |
 | T11 | LOCAL_VERIFIED | [T11.md](T11.md) | 2026-09-18 | 建立版本目录与独立的 App 发布版本配置：新建 `gradle/libs.versions.toml`（versions/libraries/plugins 三段，alias 命名成体系）与 `gradle/version.properties`（`appVersionName`/`appVersionCode`），根工程 / `:app` / `:release-probe` 改用 `libs.*` 引用（release-probe 的 5 条字面版本一并迁入）。**主判据**：依赖解析坐标前后**逐字节一致**（94 条，两份清单 sha256 均为 `1590732d…`；499 行依赖树里 300 条顺序一致、177 条 `(c)` 约束行多重集相同）；**次判据**：`aapt2 dump badging` 读出 `versionCode='17' versionName='0.2.16'` 未变。**一轮曾声称「`classes.dex` 逐字节不变」被实测推翻**：全量构建两侧各自确定（迁移前 44,544,060/`36b957ce…`、迁移后 44,544,064/`963ebf88…`，各两次全同），差异是 1/122,700 条字符串（协程调试元数据 blob，内里 50/17,891 条目变化、全部 AndroidX `$$ExternalSyntheticLambda`，+4 B，字节码全同、该 blob 零指令引用）；根因已隔离到「构建配置输入字节的函数」、机制未定位。另如实登记 `classes4/7/8.dex` 同配置三次构建三次不同（`class_data` 逐类 0 差异）。证伪：`appVersionCode 17→18` → APK 真的读出 18；`gson` 改版 → 坐标 94→93 条（复核者另换 `documentfile` 独立复现）。全量 JVM **222**。未覆盖：`assembleRelease` 未跑、blob 算法未定位、alias 独立探针未跑成（已有 accessor 直接证据）。提交 `53959b3`。**当前状态更正（2026-09-19）：本地验收完成** — 受控 `assembleRelease` 通过（arm64/x86_64/universal 三份 APK、`apksigner verify` 全 exit 0、证书与 T02 冻结基线一致、身份 0.2.16/17、`releaseRuntimeClasspath` 94 条依赖与迁移前相同）；仅本地基线签名受控验证，非正式发布/设备 smoke（[T11.md](T11.md) §12） |
-| T12 | IN_PROGRESS | [T12.md](T12.md)、[native 来源](../native-texture-decoder.md) | — | 当前 x86_64 minified import、20 个导出、真实 BC1 解码 PASS。包装层返回码修正已验收；固定源码/patch/构建说明及单文件忽略例外已保存，未提交。arm64 真机及其他来源缺口仍在。 |
+| T12 | IN_PROGRESS | [T12.md](T12.md)、[native 来源](../native-texture-decoder.md)、[PythonRuntime ABI 证据](../python-runtime-abi-selection.md) | — | PythonRuntime 已按实际 `nativeLibraryDir` 选择 bootstrap；x86_64 split/universal minified Release 的生产入口、Python 3.8、依赖 import、20 个 decoder 导出和 BC1 smoke 均 PASS。转译环境证据可推进实现，但原生 ARM64 设备仍未覆盖；其他第三方来源缺口仍在。 |
 | T13–T62 | NOT_STARTED | （未创建） | — | **G2 还剩 T13–T15**（工具链探针 / 构建链升级 / SDK 与更新安装行为）。简报已全部写好（gitignored）；prep-notes 里「本机无外网」的结论已被推翻（Maven/Google 可达，只有 `developer.android.com` 被拦） |
 
 
