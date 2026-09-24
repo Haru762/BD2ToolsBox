@@ -16,6 +16,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bd2toolsbox.core.python.PythonRuntime
 import com.chaquo.python.Python
 import com.bd2toolsbox.SpinePreviewActivity
 // 领域结果/计划模型已迁出本类（T05）。它们不依赖 android.* / UI 包，也不持有
@@ -532,7 +533,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      *   1. 刷新角色表（顺带拉起 Python 运行时）
      *   2. Shizuku 在线时对照缓存检查游戏 bundle，要重扫就弹确认框
      *
-     * 第 2 步必须排在第 1 步后：两边都要用 Python，而 Python.start() 不是线程安全的。
+     * 第 2 步排在第 1 步后，沿用角色表刷新后再检查游戏资源的业务顺序；PythonRuntime 统一同步初始化。
      * 角色表刚换版本、游戏 bundle 却没变化时，多半是游戏还没更新 —— 提醒用户去更新。
      * 需要用户确认扫描的话，初始化收尾推迟到确认之后（finishInitialization）。
      */
@@ -1525,10 +1526,8 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             val svcCtx = appContext ?: context
             InstallService.start(svcCtx, total)
             try {
-                if (!Python.isStarted()) {
-                    withContext(Dispatchers.IO) {
-                        Python.start(com.chaquo.python.android.AndroidPlatform(context))
-                    }
+                withContext(Dispatchers.IO) {
+                    PythonRuntime.ensureStarted(context)
                 }
 
                 // 每次转换前重新做一遍干净检测。
@@ -3280,9 +3279,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         viewModelScope.launch {
             _unpackState.value = UnpackState.Unpacking("Starting unpack...")
             val (success, message) = withContext(Dispatchers.IO) {
-                if (!Python.isStarted()) {
-                    Python.start(com.chaquo.python.android.AndroidPlatform(context))
-                }
+                PythonRuntime.ensureStarted(context)
                 val tempInput = File(context.cacheDir, "temp_unpack_input.bundle")
                 context.contentResolver.openInputStream(inputFile)?.use { input ->
                     tempInput.outputStream().use { input.copyTo(it) }
@@ -4797,9 +4794,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             bundleFile.outputStream().use { input.copyTo(it) }
         } ?: return null
 
-        if (!Python.isStarted()) {
-            Python.start(com.chaquo.python.android.AndroidPlatform(context))
-        }
+        PythonRuntime.ensureStarted(context)
         // 直接解到缓存位置，省掉「解到临时目录再整体拷进缓存」那一趟
         val outDir = previewCacheRepository.prepareDir(bundleName, hashDir, srcSize)
         val (ok, msg) = ModdingService.unpackBundle(

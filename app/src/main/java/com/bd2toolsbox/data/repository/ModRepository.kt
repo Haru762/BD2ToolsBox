@@ -5,7 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
 import com.bd2toolsbox.core.fileaccess.SafeArchivePaths
-import com.chaquo.python.Python
+import com.bd2toolsbox.core.python.PythonRuntime
 import com.bd2toolsbox.data.model.MatchStrategy
 import com.bd2toolsbox.data.model.ModCacheInfo
 import com.bd2toolsbox.data.model.ModDetails
@@ -453,9 +453,7 @@ class ModRepository(
         intoCache: MutableMap<String, ModCacheInfo>,
         intoResults: MutableList<ModInfo>
     ) {
-        if (!Python.isStarted()) {
-            Python.start(com.chaquo.python.android.AndroidPlatform(context))
-        }
+        PythonRuntime.ensureStarted(context)
 
         val payload = JSONArray().apply {
             pending.forEachIndexed { index, candidate ->

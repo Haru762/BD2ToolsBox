@@ -4,6 +4,12 @@
 -keep class com.chaquo.python.** { *; }
 -keep class com.chaquo.python.runtime.** { *; }
 
+# Standalone release-probe reflects this production entry through the target app classloader.
+# Preserve only the facade class name and its public static Unit/void entry, not the package.
+-keep class com.bd2toolsbox.core.python.PythonRuntime {
+    public static void ensureStarted(android.content.Context);
+}
+
 # Shizuku
 -keep class com.bd2toolsbox.service.ShizukuFileService { *; }
 

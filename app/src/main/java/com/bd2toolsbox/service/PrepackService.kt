@@ -13,7 +13,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
-import com.chaquo.python.Python
+import com.bd2toolsbox.core.python.PythonRuntime
 import com.bd2toolsbox.MainActivity
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import kotlinx.coroutines.CoroutineScope
@@ -193,9 +193,7 @@ class PrepackService : Service() {
         cancelRequested = false
         val ctx = applicationContext
         try {
-            if (!Python.isStarted()) {
-                Python.start(com.chaquo.python.android.AndroidPlatform(ctx))
-            }
+            PythonRuntime.ensureStarted(ctx)
 
             var done = 0
             for (t in targets) {

@@ -2,8 +2,8 @@ package com.bd2toolsbox.service
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.bd2toolsbox.core.python.PythonRuntime
 import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,9 +21,7 @@ class RestoreBundleDeterminismDeviceTest {
     @Test
     fun restoreBundleTwiceIsByteIdentical() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(context))
-        }
+        PythonRuntime.ensureStarted(context)
         val cache = requireNotNull(context.externalCacheDir)
         val root = File(cache, "restore-probe").canonicalFile
         val input = File(root, "input").canonicalFile

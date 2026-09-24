@@ -15,13 +15,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Modifier
 
 /**
  * release Python 依赖 import 验收探针（T12）。
  *
  * 在**真实 minified、non-debuggable 的 com.bd2toolsbox 进程**里，通过
- * targetContext.classLoader **反射** Chaquopy 的 com.chaquo.python.Python /
- * com.chaquo.python.android.AndroidPlatform，证明打进 APK 的目标 CPython 3.8
+ * targetContext.classLoader **反射**生产的 PythonRuntime 入口和 Chaquopy Python，证明打进 APK
+ * 的目标 CPython 3.8
  * 能真正把 9 个直接依赖与 3 个 bridge 模块 import 起来 —— 而不是拿 buildPython、
  * 拿 debug 包、或拿「wheel 已解析」冒充「设备内 import 已通过」。
  *
@@ -48,8 +49,7 @@ class ReleasePythonDependencyProbeTest {
         const val STREAM_PREFIX = "BD2_PYTHON_PROBE"
 
         const val PY_CLASS = "com.chaquo.python.Python"
-        const val PLATFORM_CLASS = "com.chaquo.python.android.AndroidPlatform"
-        const val PLATFORM_BASE = "com.chaquo.python.Python\$Platform"
+        const val RUNTIME_CLASS = "com.bd2toolsbox.core.python.PythonRuntime"
         const val PYOBJECT_CLASS = "com.chaquo.python.PyObject"
 
         // 9 个直接依赖：pip 名 -> 实际 import 名（Pillow->PIL、beautifulsoup4->bs4、
@@ -92,18 +92,26 @@ class ReleasePythonDependencyProbeTest {
     }
 
     /**
-     * 保证目标解释器已启动。仅在尚未启动时用生产同款
-     * AndroidPlatform(targetContext) 反射拉起（Python.start 不是线程安全的，
-     * 但仪器测试单线程串行，且这里只在真需要时启动一次）。返回 Python 实例。
+     * 保证目标解释器已启动。独立 probe 也必须走生产的 ABI 选择入口，
+     * 否则在 universal/转译环境下会重新引入默认 ABI 误选。
      */
     private fun ensurePython(context: Context): Any {
-        val pyClass = Class.forName(PY_CLASS, true, loader(context))
+        val classLoader = loader(context)
+        val pyClass = Class.forName(PY_CLASS, true, classLoader)
         val isStarted = pyClass.getMethod("isStarted").invoke(null) as Boolean
         if (!isStarted) {
-            val platformBase = Class.forName(PLATFORM_BASE, true, loader(context))
-            val platform = Class.forName(PLATFORM_CLASS, true, loader(context))
-                .getConstructor(Context::class.java).newInstance(context)
-            pyClass.getMethod("start", platformBase).invoke(null, platform)
+            val runtimeClass = Class.forName(RUNTIME_CLASS, false, classLoader)
+            val ensureStarted = runtimeClass.getMethod("ensureStarted", Context::class.java)
+            check(Modifier.isPublic(runtimeClass.modifiers) && Modifier.isPublic(ensureStarted.modifiers)) {
+                "Production PythonRuntime entry must remain public for release probes"
+            }
+            check(Modifier.isStatic(ensureStarted.modifiers)) {
+                "Production PythonRuntime entry must remain @JvmStatic"
+            }
+            check(ensureStarted.returnType == java.lang.Void.TYPE) {
+                "Production PythonRuntime entry must return Unit/void"
+            }
+            ensureStarted.invoke(null, context)
         }
         return pyClass.getMethod("getInstance").invoke(null)
             ?: error("Python.getInstance() 返回 null")

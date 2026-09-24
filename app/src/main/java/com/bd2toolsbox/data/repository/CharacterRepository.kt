@@ -2,6 +2,7 @@ package com.bd2toolsbox.data.repository
 
 import android.content.Context
 import com.bd2toolsbox.data.model.CharacterInfo
+import com.bd2toolsbox.core.python.PythonRuntime
 import com.chaquo.python.Python
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,9 +54,7 @@ class CharacterRepository(private val context: Context) {
     suspend fun updateCharacterData(quality: String): String = withContext(Dispatchers.IO) {
         var status = "FAILED"
         try {
-            if (!Python.isStarted()) {
-                Python.start(com.chaquo.python.android.AndroidPlatform(context))
-            }
+            PythonRuntime.ensureStarted(context)
             val mainScript = Python.getInstance().getModule("main_script")
             val result = mainScript
                 .callAttr("update_character_data", context.filesDir.absolutePath, quality)
