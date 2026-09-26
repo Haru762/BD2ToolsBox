@@ -698,7 +698,7 @@ Invoke-Bd2Gradle :app:assembleDebug --console=plain
 
 ### T13 — 用兼容探针确定稳定工具链组合
 
-- [ ] **T13 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-26）：探针 x86_64 debug/minified release 均 5/5 PASS，清理后重建复现；原生 arm64 未运行（手机已断开，安装前需再次获准）。见 [T13.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T13.md>)、[compatibility-matrix.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/compatibility-matrix.md>)。
+- [x] **T13 完成** — 状态 **DONE**（2026-09-26）：探针在 x86_64 AVD 与原生 arm64 真机（Xiaomi 2509FPN0BC / API 36）上 debug 与 minified release 均 5/5 PASS，清理后重建复现；arm64 上 Activity 用例的 instrumentation 因 MIUI 拦截挂起，改由 shell 启动的 selfCheck 覆盖（已登记）。见 [T13.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T13.md>)、[compatibility-matrix.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/compatibility-matrix.md>)。
 
 **优先级：** P0　**前置：** T10、T11、T12
 
