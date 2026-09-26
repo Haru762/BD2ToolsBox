@@ -663,7 +663,7 @@ Invoke-Bd2Gradle :app:assembleDebug :app:assembleRelease --console=plain
 
 ### T12 — 固定 Python 依赖、目标解释器和第三方来源
 
-- [ ] **T12 完成** — 状态 **IN_PROGRESS**：x86_64 minified Python 3.8.18 import、20 个导出及真实 BC1 解码 PASS。decoder 来源和两份 `.so` 已随 `e993800` 提交。astcenc、`.tpk`、FMOD 原始构建来源仍未闭合。MuMu 的 Houdini 不能把 arm64 包装起来，Emulator 37 也不能启动 arm64 镜像。**不推进 T13**。
+- [ ] **T12 完成** — 状态 **IN_PROGRESS**：x86_64 minified Python 3.8.18 import、20 个导出及真实 BC1 解码 PASS。decoder 来源和两份 `.so` 已随 `e993800` 提交。astcenc、`.tpk`、FMOD 原始构建来源仍未闭合。原生 arm64 真机 import/decoder 已于 2026-09-26 PASS（隔离包名）。剩余缺口只有第三方原始构建来源。**不推进 T13**。
 
 **优先级：** P1　**前置：** T03、T11
 
@@ -681,7 +681,7 @@ Invoke-Bd2Gradle :app:assembleDebug :app:assembleRelease --console=plain
 
 **验收与回归：**
 - [x] 清理本次专用构建缓存后仍解析到相同已记录依赖；arm64/x86_64 都能取得适配 wheel。（T12.md 冷 pip r2：24 wheel，含两 ABI；不是 arm64 设备 import）
-- [ ] 实际目标解释器能 import 所需包；pyc 是否生成及原因有构建日志，不把 pyc 当必然减包手段。x86_64 minified import + native decoder PASS。arm64 包在现有 MuMu/Houdini 上启动即崩溃，没有 import 结果。
+- [x] 实际目标解释器能 import 所需包；pyc 是否生成及原因有构建日志，不把 pyc 当必然减包手段。x86_64 minified import + native decoder PASS；2026-09-26 原生 arm64 真机（Xiaomi 2509FPN0BC / API 36）经生产 PythonRuntime 入口 import、20 导出与 BC1 PASS（隔离包名 `com.bd2toolsbox.verify`，见 T12.md）。
 
 **执行/验证命令：**
 ~~~powershell
