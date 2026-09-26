@@ -698,7 +698,7 @@ Invoke-Bd2Gradle :app:assembleDebug --console=plain
 
 ### T13 — 用兼容探针确定稳定工具链组合
 
-- [ ] **T13 完成**
+- [ ] **T13 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-26）：探针 x86_64 debug/minified release 均 5/5 PASS，清理后重建复现；原生 arm64 未运行（手机已断开，安装前需再次获准）。见 [T13.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T13.md>)、[compatibility-matrix.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/compatibility-matrix.md>)。
 
 **优先级：** P0　**前置：** T10、T11、T12
 
@@ -709,14 +709,14 @@ Invoke-Bd2Gradle :app:assembleDebug --console=plain
 - 新增验证：[tools/compat-probe/app/src/androidTest/java/com/bd2toolsbox/compat/CompatibilitySmokeTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/tools/compat-probe/app/src/androidTest/java/com/bd2toolsbox/compat/CompatibilitySmokeTest.kt>)
 
 **落实要求：**
-- [ ] 核对 AGP/Gradle/JDK、Kotlin/Compose compiler、KSP/Hilt、Chaquopy/Python/wheels、Compose BOM、AboutLibraries/serialization 的官方支持矩阵及 AAR 元数据，输出一套完整固定版本，不能把历史候选当已验证结果。
-- [ ] 在独立的最小验证工程验证 Compose + Hilt/KSP 生成代码 + serialization + Python 调用；每个 probe App 仍只在一个模块实际应用 Chaquopy。将 tools/compat-probe 的 wrapper、settings、插件/依赖配置、最小源码和测试纳入版本控制，记录固定版本；它是独立 Gradle 根，不 include 进生产 settings。探针使用候选自己的 wrapper，不误用旧 wrapper；其 build/.gradle 仅为可清理输出。
-- [ ] 保持 minSdk29、不增删 ABI、不为追 latest 扩大业务范围。显式记录 Hilt 2.59+ 的 AGP9 约束、Dagger/KSP 稳定支持条件、AboutLibraries 的 compileSdk 门槛，以及 AGP8.12 起的新资源收缩管线；任何不满足之处必须说明，不能假称全链路稳定。
+- [x] 核对 AGP/Gradle/JDK、Kotlin/Compose compiler、KSP/Hilt、Chaquopy/Python/wheels、Compose BOM、AboutLibraries/serialization 的官方支持矩阵及 AAR 元数据，输出一套完整固定版本，不能把历史候选当已验证结果。
+- [x] 在独立的最小验证工程验证 Compose + Hilt/KSP 生成代码 + serialization + Python 调用；每个 probe App 仍只在一个模块实际应用 Chaquopy。将 tools/compat-probe 的 wrapper、settings、插件/依赖配置、最小源码和测试纳入版本控制，记录固定版本；它是独立 Gradle 根，不 include 进生产 settings。探针使用候选自己的 wrapper，不误用旧 wrapper；其 build/.gradle 仅为可清理输出。
+- [x] 保持 minSdk29、不增删 ABI、不为追 latest 扩大业务范围。显式记录 Hilt 2.59+ 的 AGP9 约束、Dagger/KSP 稳定支持条件、AboutLibraries 的 compileSdk 门槛，以及 AGP8.12 起的新资源收缩管线；任何不满足之处必须说明，不能假称全链路稳定。
 
 **验收与回归：**
-- [ ] 探针在目标 JDK 下完成 debug/release 构建，生成 Hilt/KSP 代码且序列化往返、Python 调用可运行。
-- [ ] 矩阵包含实际解析版本、SDK 要求、证据链接、命令及退出码；不兼容组合被排除，不偷偷提高最低 Android 版本。
-- [ ] 只清理探针生成输出后，可以仅从已提交源码和记录环境重建并运行同一测试；git status 不包含探针构建缓存。不能只有一次性的成功日志而丢掉探针本身。
+- [x] 探针在目标 JDK 下完成 debug/release 构建，生成 Hilt/KSP 代码且序列化往返、Python 调用可运行。（x86_64 AVD：debug instrument 5/5，minified release selfCheck 5/5）
+- [x] 矩阵包含实际解析版本、SDK 要求、证据链接、命令及退出码；不兼容组合被排除，不偷偷提高最低 Android 版本。
+- [x] 只清理探针生成输出后，可以仅从已提交源码和记录环境重建并运行同一测试；git status 不包含探针构建缓存。（147/147 任务重跑，设备结果一致；arm64 另见 T13 完成项）不能只有一次性的成功日志而丢掉探针本身。
 
 **执行/验证命令：**
 ~~~powershell

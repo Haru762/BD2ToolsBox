@@ -1,0 +1,54 @@
+# T13 兼容探针的候选组合（独立 Gradle 根，不被生产 settings include）。
+#
+# 这里的每个版本都是「待本探针验证的候选」，验证结论只在
+# docs/refactor/compatibility-matrix.md 与 docs/refactor/evidence/T13.md 里登记。
+# 生产 gradle/libs.versions.toml 不因本文件而改变；升级只在 T14 按已验证组合执行。
+#
+# 禁止动态版本（+ / latest / 区间 / SNAPSHOT），与生产目录同一纪律。
+
+[versions]
+agp = "8.11.1"
+kotlin = "2.2.20"                 # KGP / Compose compiler 插件 / serialization 插件共用
+ksp = "2.2.20-2.0.3"
+hilt = "2.58"                     # 插件 / runtime / compiler 同版本
+androidxHilt = "1.3.0"            # hilt-lifecycle-viewmodel-compose
+chaquopy = "16.1.0"
+aboutLibraries = "13.1.0"         # 插件与 UI 同版本
+serializationJson = "1.9.0"       # JSON runtime，独立于 Kotlin 版本
+composeBom = "2025.08.00"         # ui/runtime/foundation 1.9.0，与 AboutLibraries 13.1.0 的 Compose 1.9.0 同代
+activityCompose = "1.10.1"
+coreKtx = "1.17.0"                # AboutLibraries 13.1.0 的传递版本；显式声明以免被静默抬升
+
+compileSdk = "36"
+minSdk = "29"
+targetSdk = "34"
+javaVersion = "11"
+
+junit = "4.13.2"
+androidxTestRunner = "1.6.2"
+androidxTestJunit = "1.2.1"
+
+[libraries]
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
+hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt" }
+androidx-hilt-lifecycle-viewmodel-compose = { module = "androidx.hilt:hilt-lifecycle-viewmodel-compose", version.ref = "androidxHilt" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serializationJson" }
+aboutlibraries-compose-m3 = { module = "com.mikepenz:aboutlibraries-compose-m3", version.ref = "aboutLibraries" }
+junit = { module = "junit:junit", version.ref = "junit" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestJunit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }
+aboutlibraries-android = { id = "com.mikepenz.aboutlibraries.plugin.android", version.ref = "aboutLibraries" }

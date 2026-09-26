@@ -8,10 +8,10 @@
 
 | 项 | 值 |
 |---|---|
-| 阶段 | **G2 构建与依赖治理进行中**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 IN_PROGRESS） |
+| 阶段 | **G2 构建与依赖治理进行中**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 IMPLEMENTED_NOT_VERIFIED（缺原生 arm64 探针运行）） |
 | 权威状态依据 | 本文件与各任务证据的最新追加章节；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
 | 最近已验收任务 | T11（本地验收完成 2026-09-19，受控 Release 构建；非正式发布/设备 smoke）。T09 为上一个完整 DONE；T10 代码已提交但指定验收未完成 |
-| 下一任务 | T13 工具链兼容探针（`tools/compat-probe`、`docs/refactor/compatibility-matrix.md`）；T08/T10 遗留验收缺口另行补齐（T10 arm64 需正式包名，涉及用户设备数据风险，暂缓） |
+| 下一任务 | T13 原生 arm64 探针运行（需用户手机，隔离包名 `com.bd2toolsbox.compat`）；之后 T14 按 `docs/refactor/compatibility-matrix.md` 升级生产构建链。T08/T10 遗留缺口另行补齐 |
 | 最后核对的代码提交 | HEAD `cf8e87a`（PythonRuntime ABI 选择修复提交 `0032886`，计划/证据状态提交 `cf8e87a`）；T11 为 `53959b3`，T10 为 `f08fa27`，T09 为 `6529e81` |
 | 工作区脏文件 | 历史 T12 requirements/build.gradle 改动继续保留；2026-09-19–20 另有 T08 提交/恢复实现、JVM 回归、独立 release-probe、host runner 与证据文档未提交改动。不是只有两处脏文件；准确清单以当前 git status 为准。/local/、本地配置与构建产物保持忽略；未动只读 bdroid_src。 |
 | 环境/输入清单 | local/refactor-artifacts/historical-0.2.16（2 APK + mapping）、rebuilt-original（3 APK + mapping + metadata）；local/refactor-inputs（catalog-alpha.json、wiki-v2-detail-2238.source.json）。冻结记录见 artifact-manifest.json 的 t03Freeze；旧数据样本与缺口见 fixture-manifest.json |
@@ -34,7 +34,8 @@
 | T10 | IMPLEMENTED_NOT_VERIFIED | [T10.md](T10.md) | — | 当前 minified x86_64 Store 5 条往返 PASS；主界面 chrome PASS，明确 uiColdStartVerified=false。legacy 源目录不匹配未升格；完整业务列表恢复及 arm64 未验收。 |
 | T11 | LOCAL_VERIFIED | [T11.md](T11.md) | 2026-09-18 | 建立版本目录与独立的 App 发布版本配置：新建 `gradle/libs.versions.toml`（versions/libraries/plugins 三段，alias 命名成体系）与 `gradle/version.properties`（`appVersionName`/`appVersionCode`），根工程 / `:app` / `:release-probe` 改用 `libs.*` 引用（release-probe 的 5 条字面版本一并迁入）。**主判据**：依赖解析坐标前后**逐字节一致**（94 条，两份清单 sha256 均为 `1590732d…`；499 行依赖树里 300 条顺序一致、177 条 `(c)` 约束行多重集相同）；**次判据**：`aapt2 dump badging` 读出 `versionCode='17' versionName='0.2.16'` 未变。**一轮曾声称「`classes.dex` 逐字节不变」被实测推翻**：全量构建两侧各自确定（迁移前 44,544,060/`36b957ce…`、迁移后 44,544,064/`963ebf88…`，各两次全同），差异是 1/122,700 条字符串（协程调试元数据 blob，内里 50/17,891 条目变化、全部 AndroidX `$$ExternalSyntheticLambda`，+4 B，字节码全同、该 blob 零指令引用）；根因已隔离到「构建配置输入字节的函数」、机制未定位。另如实登记 `classes4/7/8.dex` 同配置三次构建三次不同（`class_data` 逐类 0 差异）。证伪：`appVersionCode 17→18` → APK 真的读出 18；`gson` 改版 → 坐标 94→93 条（复核者另换 `documentfile` 独立复现）。全量 JVM **222**。未覆盖：`assembleRelease` 未跑、blob 算法未定位、alias 独立探针未跑成（已有 accessor 直接证据）。提交 `53959b3`。**当前状态更正（2026-09-19）：本地验收完成** — 受控 `assembleRelease` 通过（arm64/x86_64/universal 三份 APK、`apksigner verify` 全 exit 0、证书与 T02 冻结基线一致、身份 0.2.16/17、`releaseRuntimeClasspath` 94 条依赖与迁移前相同）；仅本地基线签名受控验证，非正式发布/设备 smoke（[T11.md](T11.md) §12） |
 | T12 | DONE | [T12.md](T12.md)、[native 来源](../native-texture-decoder.md)、[PythonRuntime ABI 证据](../python-runtime-abi-selection.md) | 2026-09-26 | 生产 PythonRuntime 入口在 x86_64 split/universal minified Release 与**原生 arm64 真机**（2026-09-26，Xiaomi 2509FPN0BC / API 36，隔离包名 `com.bd2toolsbox.verify`）均 PASS：Python 3.8.18、依赖 import、20 个 decoder 导出与 BC1 smoke。astcenc 原始构建 commit、`.tpk` 生成输入、FMOD 编译 commit 经用户 2026-09-26 授权放宽为已接受的 UNKNOWN（分发字节已钉住；FMOD 授权留待 T37/T38）。 |
-| T13–T62 | NOT_STARTED | （未创建） | — | **G2 还剩 T13–T15**（工具链探针 / 构建链升级 / SDK 与更新安装行为）。简报已全部写好（gitignored）；prep-notes 里「本机无外网」的结论已被推翻（Maven/Google 可达，只有 `developer.android.com` 被拦） |
+| T13 | IMPLEMENTED_NOT_VERIFIED | [T13.md](T13.md)、[兼容矩阵](../compatibility-matrix.md) | — | 探针 `tools/compat-probe`（AGP 8.11.1 / Gradle 8.13 / Kotlin 2.2.20 / KSP 2.2.20-2.0.3 / Hilt 2.58 / Chaquopy 16.1.0 / BOM 2025.08.00 / AboutLibraries 13.1.0 / serialization 1.9.0 / compileSdk 36）。x86_64 AVD debug 5/5、minified release selfCheck 5/5，清理重建复现。原生 arm64 未运行。Dagger KSP 官方 stable 门槛（2.60+/KSP 2.3.9+）不满足，已登记。 |
+| T14–T62 | NOT_STARTED | （未创建） | — | G2 还剩 T14（按兼容矩阵升级生产构建链）、T15 |
 
 
 ### 2026-09-20 最新增量（更新上表，历史结果不外推到新源树）
