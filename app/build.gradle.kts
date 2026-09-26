@@ -1,8 +1,10 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.chaquopy)
 }
 
@@ -120,17 +122,9 @@ android {
         targetCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
     }
 
-    kotlinOptions {
-        jvmTarget = libs.versions.javaVersion.get()
-    }
-
     buildFeatures {
         compose = true
         aidl = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 
     packaging {
@@ -138,6 +132,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+// T14：Kotlin 2.x 起 kotlinOptions 已废弃，改用 compilerOptions。字节码目标仍为 11（运行 Gradle 的 JDK 17 不强制改它）。
+kotlin {
+    compilerOptions { jvmTarget.set(JvmTarget.fromTarget(libs.versions.javaVersion.get())) }
 }
 
 chaquopy {

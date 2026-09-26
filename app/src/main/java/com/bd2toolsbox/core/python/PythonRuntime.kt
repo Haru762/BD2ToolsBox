@@ -7,7 +7,7 @@ import com.chaquo.python.android.AndroidPlatform
 /** The only production entry point for initializing the process-wide Python interpreter. */
 object PythonRuntime {
     @JvmStatic
-    @Suppress("DEPRECATION") // AndroidPlatform.ABI is internal to pinned Chaquopy 15.0.1.
+    @Suppress("DEPRECATION") // AndroidPlatform.ABI is internal to pinned Chaquopy 16.1.0.
     fun ensureStarted(context: Context) {
         PythonStartup(
             // Python.start/isStarted/getInstance also synchronize on Python.class.
@@ -18,7 +18,8 @@ object PythonRuntime {
                 // Fail before entering native initialization if packaging is inconsistent.
                 // Close each stream: AndroidPlatform's own ABI scan doesn't close its stream.
                 appContext.assets.open("chaquopy/stdlib-$abi.imy").use { }
-                appContext.assets.open("chaquopy/bootstrap-native/$abi/zlib.so").use { }
+                // Chaquopy 16 names bootstrap extensions with the CPython tag (15.x: zlib.so).
+                appContext.assets.open("chaquopy/bootstrap-native/$abi/zlib.cpython-38.so").use { }
                 val platform = AndroidPlatform(appContext)
                 // MUST be after construction: the constructor selects from device ABIs,
                 // which may prefer x86_64 even when this process loads ARM64 via translation.

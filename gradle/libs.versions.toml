@@ -5,6 +5,8 @@
 #      不在这里 —— 见该文件的说明。
 #   2. 禁止动态版本：不得出现 "+"、"latest.release"、区间（"1.0,)"）或 "-SNAPSHOT"。
 #   3. 升级只在 T14 做；T11 是**纯搬迁**，任何一行的值都必须与搬迁前逐字相同。
+#      T14（2026-09-26）按 docs/refactor/compatibility-matrix.md 的已验证组合升级；
+#      只升级既有依赖与工具链，Hilt / serialization / AboutLibraries 分别在 T16 / T35 / T38 引入。
 #
 # alias 命名方案（T12/T14 沿用同一套，详见 docs/refactor/evidence/T11.md §3）：
 #   · [versions] 键用 camelCase，按「它给什么定版本」命名，不按构件名。
@@ -22,25 +24,23 @@
 
 [versions]
 # ---- 构建插件（根脚本 build.gradle.kts 声明，各模块只 alias 引用）----
-agp = "8.4.1"                     # com.android.application
-kotlin = "1.9.0"                  # org.jetbrains.kotlin.android（同时是 kotlin-stdlib / kotlin-test 的版本）
-chaquopy = "15.0.1"               # com.chaquo.python
+agp = "8.11.1"                    # com.android.application（T13 已验证）
+kotlin = "2.2.20"                 # KGP / Compose compiler 插件 / kotlin-stdlib / kotlin-test 共用
+chaquopy = "16.1.0"               # com.chaquo.python（T13 已验证；应用内 Python 仍为 3.8）
 
 # ---- 构建参数 ----
 # 这几项不是依赖，但同样在两个模块里各写了一份（改了 :app 忘了改 :release-probe
 # 就会分叉）。T15 要动 SDK 等级，届时只需要改这里一处。
-compileSdk = "34"
+compileSdk = "36"                 # T14：core-ktx 1.17 等 AAR 要求；targetSdk 另由 T15 决定
 minSdk = "29"
 targetSdk = "34"
 javaVersion = "11"                # Java source/target compatibility 与 Kotlin jvmTarget 共用
 
 # ---- 依赖版本 ----
-composeBom = "2024.06.00"
-# Compose 编译器扩展**独立于 Kotlin**：当前 1.5.1 ≠ Kotlin 1.9.0。
-# 刻意不写成 version.ref = "kotlin" —— 那会在 T11 当场改值（违反「只搬迁不升级」）。
-# T14 才把它对齐 Kotlin 并换成 org.jetbrains.kotlin.plugin.compose 插件。
-composeCompiler = "1.5.1"
-coreKtx = "1.13.1"
+composeBom = "2025.08.00"         # ui/runtime/foundation 1.9.0、material3 1.3.2（T13 已验证）
+# Compose compiler 自 Kotlin 2.0 起由 org.jetbrains.kotlin.plugin.compose 提供，版本即 kotlin；
+# 原 composeCompiler = "1.5.1"（kotlinCompilerExtensionVersion）已随 T14 移除。
+coreKtx = "1.17.0"
 lifecycle = "2.8.6"
 activityCompose = "1.9.2"
 documentfile = "1.1.0"
@@ -95,4 +95,5 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }

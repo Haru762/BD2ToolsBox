@@ -74,9 +74,10 @@ class AuditNativeAbiTest(unittest.TestCase):
 
     def test_unresolved_needed_detected(self):
         dst = os.path.join(self.tmp, "missing-dep.apk")
-        rewrite(APK["arm64-v8a"], dst, drop={"lib/arm64-v8a/libcrypto_chaquopy.so"})
+        # Chaquopy 16：libcrypto_chaquopy.so 只是 stub，真正被 DT_NEEDED 的是 libcrypto_python.so。
+        rewrite(APK["arm64-v8a"], dst, drop={"lib/arm64-v8a/libcrypto_python.so"})
         r = self.run_audit(dst, "arm64-v8a")
-        self.assertTrue(any("DT_NEEDED libcrypto_chaquopy.so" in f for f in r["failures"]), r["failures"])
+        self.assertTrue(any("DT_NEEDED libcrypto_python.so" in f for f in r["failures"]), r["failures"])
 
     def test_missing_chaquopy_asset(self):
         dst = os.path.join(self.tmp, "missing-stdlib.apk")

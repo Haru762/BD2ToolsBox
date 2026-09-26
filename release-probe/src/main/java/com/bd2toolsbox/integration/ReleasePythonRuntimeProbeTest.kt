@@ -164,7 +164,7 @@ class ReleasePythonRuntimeProbeTest {
             val zlib = getModule.invoke(py, "zlib") ?: error("zlib module missing")
             val path = getAttr.invoke(zlib, "__file__")?.toString() ?: error("zlib.__file__ missing")
             assertTrue("zlib must come from the installed payload bootstrap: $path",
-                path.contains("/bootstrap-native/$payloadAbi/") && path.endsWith("/zlib.so"))
+                path.contains("/bootstrap-native/$payloadAbi/") && path.endsWith("/zlib.cpython-38.so"))
             report("zlib=$path selectedAbi=$selectedAbi")
             path
         }

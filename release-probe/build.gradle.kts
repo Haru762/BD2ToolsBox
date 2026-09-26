@@ -16,6 +16,8 @@
 // 生产包完全不被触碰：不加 keep 规则、不改 DTO、不放松任何断言。
 //
 // 这个模块不是产品的一部分，不参与发布；它只在 Test-Bd2ReleaseSmoke 里被构建和使用。
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -53,10 +55,10 @@ android {
         sourceCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
         targetCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
     }
+}
 
-    kotlinOptions {
-        jvmTarget = libs.versions.javaVersion.get()
-    }
+kotlin {
+    compilerOptions { jvmTarget.set(JvmTarget.fromTarget(libs.versions.javaVersion.get())) }
 }
 
 dependencies {

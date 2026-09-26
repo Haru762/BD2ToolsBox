@@ -18,7 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.state.ToggleableState
@@ -163,25 +163,26 @@ fun ModScreen(
     val selectedQuality by viewModel.selectedQuality.collectAsState()
 
 
+    // M3 1.3 起「是否在刷新」由调用方持有（旧 state.isRefreshing/endRefresh 已移除）。
     val pullToRefreshState = rememberPullToRefreshState()
-    // M3 容器 rest 态的圆停在锚点上方一个身位处，锚点要贴窗口顶端才出得了屏。
-    // 量出本屏内容 Box 距窗口顶端的距离存进来，容器用它做负偏移补偿（见下方
-    // PullToRefreshContainer）；初值取一个必在屏外的量，首帧量测完成前先藏住。
+    var pullRefreshing by remember { mutableStateOf(false) }
+    // M3 指示器 rest 态的圆停在锚点上方一个身位处，锚点要贴窗口顶端才出得了屏。
+    // 量出本屏内容 Box 距窗口顶端的距离存进来，指示器用它做负偏移补偿（见下方
+    // PullToRefreshDefaults.Indicator）；初值取一个必在屏外的量，首帧量测完成前先藏住。
     var boxTopInWindow by remember { mutableFloatStateOf(10_000f) }
-    if (pullToRefreshState.isRefreshing) {
-        LaunchedEffect(true) {
-            // 下拉刷新重扫的是「记住的所有目录」，不是当前第一个 ——
-            // 多目录合并之后，只扫一个会让另外几个目录的 mod 凭空消失。
-            viewModel.rescanAllModSources()
-            // 死角：一个目录都没记住时 rescanAllModSources 直接 break、isLoading 根本
-            // 不翻，下面的 endRefresh 等不到触发，转圈会卡死 —— 这里手动收掉。
-            if (viewModel.modSourceDirs.value.isEmpty()) pullToRefreshState.endRefresh()
-        }
+    val onPullRefresh: () -> Unit = {
+        pullRefreshing = true
+        // 下拉刷新重扫的是「记住的所有目录」，不是当前第一个 ——
+        // 多目录合并之后，只扫一个会让另外几个目录的 mod 凭空消失。
+        viewModel.rescanAllModSources()
+        // 死角：一个目录都没记住时 rescanAllModSources 直接 break、isLoading 根本
+        // 不翻，下面的收起等不到触发，转圈会卡死 —— 这里手动收掉。
+        if (viewModel.modSourceDirs.value.isEmpty()) pullRefreshing = false
     }
 
     LaunchedEffect(isLoading) {
         if (!isLoading) {
-            pullToRefreshState.endRefresh()
+            pullRefreshing = false
         }
     }
 
@@ -245,7 +246,11 @@ fun ModScreen(
             // 现在骨架照常渲染，引导只占列表区域（见下方 needsFolder 分支）。
             Box(
                 modifier = Modifier
-                    .nestedScroll(pullToRefreshState.nestedScrollConnection)
+                    .pullToRefresh(
+                        isRefreshing = pullRefreshing,
+                        state = pullToRefreshState,
+                        onRefresh = onPullRefresh
+                    )
                     .onGloballyPositioned { boxTopInWindow = it.positionInWindow().y }
             ) {
                     Column {
@@ -506,11 +511,12 @@ fun ModScreen(
                     // 顶栏上（edge-to-edge 前靠窗口裁剪遮住，透明系统栏后现形）。用
                     // boxTopInWindow 做负偏移把锚点补偿回窗口顶端：rest 圆正好滑出
                     // 屏幕外，下拉时按 M3 原生曲线从屏幕顶边连续滑入，松手回弹/转圈。
-                    PullToRefreshContainer(
+                    PullToRefreshDefaults.Indicator(
+                        state = pullToRefreshState,
+                        isRefreshing = pullRefreshing,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .graphicsLayer { translationY = -boxTopInWindow },
-                        state = pullToRefreshState,
                     )
             }
         }

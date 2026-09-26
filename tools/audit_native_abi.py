@@ -197,7 +197,7 @@ def audit(apk_path: str, abi: str, require_16k: bool) -> dict:
 
     cq = report["chaquopy"]
     for req in (f"assets/chaquopy/stdlib-{abi}.imy", f"assets/chaquopy/requirements-{abi}.imy",
-                f"assets/chaquopy/bootstrap-native/{abi}/zlib.so", "assets/chaquopy/bootstrap.imy",
+                f"assets/chaquopy/bootstrap-native/{abi}/zlib.cpython-38.so", "assets/chaquopy/bootstrap.imy",
                 "assets/chaquopy/build.json"):
         cq[req] = req in names
         if req not in names:

@@ -31,7 +31,8 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,7 +41,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -92,14 +92,14 @@ fun GuideScreen(viewModel: GuideViewModel) {
     val detail by viewModel.detail.collectAsState()
 
     // 下拉刷新：重拉分类树（树每次进入也会自动拉新，这是即时的手动入口）
+    // M3 1.3 起「是否在刷新」由调用方持有（旧 state.isRefreshing/endRefresh 已移除）：
+    // 下拉触发后置 true，分类树加载结束（treeLoading 回落）时收起。
     val pullToRefreshState = rememberPullToRefreshState()
+    var pullRefreshing by remember { mutableStateOf(false) }
     // 与 ModScreen 同款：量出内容 Box 距窗口顶端的距离，给容器做锚点补偿。
     var boxTopInWindow by remember { mutableFloatStateOf(10_000f) }
-    if (pullToRefreshState.isRefreshing) {
-        LaunchedEffect(true) { viewModel.refreshTree() }
-    }
     LaunchedEffect(treeLoading) {
-        if (!treeLoading) pullToRefreshState.endRefresh()
+        if (!treeLoading) pullRefreshing = false
     }
 
     // 竖屏（手机）走单栏导航：分类树与文章列表各占全屏、来回切换；横屏保留
@@ -150,7 +150,14 @@ fun GuideScreen(viewModel: GuideViewModel) {
     Box(
         Modifier
             .fillMaxSize()
-            .nestedScroll(pullToRefreshState.nestedScrollConnection)
+            .pullToRefresh(
+                isRefreshing = pullRefreshing,
+                state = pullToRefreshState,
+                onRefresh = {
+                    pullRefreshing = true
+                    viewModel.refreshTree()
+                }
+            )
             .onGloballyPositioned { boxTopInWindow = it.positionInWindow().y }
     ) {
     if (narrow && treePane) {
@@ -271,11 +278,12 @@ fun GuideScreen(viewModel: GuideViewModel) {
     }
         // 与 ModScreen 同款：boxTopInWindow 负偏移把锚点补偿到窗口顶端，rest 圆
         // 藏在屏幕外，下拉时从屏幕顶边连续滑入（M3 原生曲线），松手回弹/转圈。
-        PullToRefreshContainer(
+        PullToRefreshDefaults.Indicator(
+            state = pullToRefreshState,
+            isRefreshing = pullRefreshing,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .graphicsLayer { translationY = -boxTopInWindow },
-            state = pullToRefreshState,
         )
     }
 
