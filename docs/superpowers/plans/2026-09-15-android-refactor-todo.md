@@ -17,6 +17,7 @@
 > - **T10 IMPLEMENTED_NOT_VERIFIED**：当前包 6de58b5c 的 x86_64 已补齐日志缺失（PID 30218，包含 扫描未完成，保留上次列表），grant-while-renamed.txt 和 grant-held-ui.xml 证明改名时授权保持且 UI 两名称同在。复算快照 SHA-256 6942e6e0aef8d2ad02c51fc443bf7e59504e8537b31241c247a1567c7a061a08。snapshot-compatibility 的 uiColdStartVerified=false 不改。arm64 未跑。见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)。
 > - **T12 DONE（2026-09-26，更正）。** 原生 arm64 真机（Xiaomi 2509FPN0BC / API 36，隔离包名）生产 PythonRuntime 入口 PASS。第三方原始构建来源（astcenc、`.tpk`、FMOD）经用户授权放宽为已接受的已知限制，见 T12.md。进入 T13。
 > - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
+> - **T14 DONE（2026-09-27）。** 生产构建链已按 T13 矩阵升级；Chaquopy 16 的 bootstrap 改名回归已修复；x86_64 AVD 与原生 arm64 真机（Xiaomi 2509FPN0BC，隔离包名 `com.bd2toolsbox.verify`）生产 PythonRuntime 入口 PASS，APK 内 Python 3.8.20。见 [T14.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T14.md>)。下一任务 T15。
 > - **arm64 验证策略变更（2026-09-26，用户授权）：** 只有 T14、T18、T49、T50、T51、T54、T57 保留原生 arm64 真机验收；其余任务命令中的 `-Abi 'arm64-v8a'` 改为「x86_64 执行原命令 + `tools/audit_native_abi.py` 对 arm64 release 静态审计 PASS」，证据须写「未在原生 arm64 运行」。T57 发布前的原生 arm64 全量 smoke 不放宽。详见 [arm64-verification-policy.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/arm64-verification-policy.md>)。
 
 ---
@@ -736,7 +737,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.compat.CompatibilitySmokeTest' -Abi '
 
 ### T14 — 升级 Kotlin、Compose 编译和 Android/Python 构建链
 
-- [ ] **T14 完成**
+- [x] **T14 完成** — 状态 **DONE**（2026-09-27）：按 T13 组合升级（AGP 8.11.1 / Gradle 8.13 / Kotlin 2.2.20 + Compose 插件 / Chaquopy 16.1.0 / BOM 2025.08.00 / compileSdk 36）。发现并修复 Chaquopy 16 bootstrap 改名回归（`zlib.cpython-38.so`）。JVM 429/0/0/0、Python 122/122；x86_64 AVD 与原生 arm64 真机（隔离包名）生产 PythonRuntime 入口 PASS。见 [T14.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T14.md>)。
 
 **优先级：** P1　**前置：** T13
 
@@ -748,14 +749,14 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.compat.CompatibilitySmokeTest' -Abi '
 - 修改：[app/build.gradle.kts](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/build.gradle.kts>)
 
 **落实要求：**
-- [ ] 按 T13 的已验证组合升级，Kotlin 2.x 使用匹配的 Compose compiler Gradle 插件，移除旧 kotlinCompilerExtensionVersion 管理方式；serialization 编译插件随 Kotlin，JSON runtime 独立管理。
-- [ ] 处理选定 AGP 下的 Kotlin 插件/内置 Kotlin 模式，避免重复应用；迁移废弃 DSL。KSP/Hilt 处理链只保留必要的一套，不同时留 kapt/KSP 双重生成。
-- [ ] Gradle 运行 JDK 与应用 Java/JVM 字节码目标分开。提高运行 JDK 不自动要求把应用字节码从11改17；任何变更记录理由。保留 AIDL、签名、Python 懒启动与应用身份。
-- [ ] 若最终组合改变目标 Python minor 或 wheel 版本，同步更新 T12 的解析/来源记录并重跑相关回归；不能沿用旧 lock 却声称新解释器可复现。
+- [x] 按 T13 的已验证组合升级，Kotlin 2.x 使用匹配的 Compose compiler Gradle 插件，移除旧 kotlinCompilerExtensionVersion 管理方式；serialization 编译插件随 Kotlin，JSON runtime 独立管理。
+- [x] 处理选定 AGP 下的 Kotlin 插件/内置 Kotlin 模式，避免重复应用；迁移废弃 DSL。KSP/Hilt 处理链只保留必要的一套，不同时留 kapt/KSP 双重生成。
+- [x] Gradle 运行 JDK 与应用 Java/JVM 字节码目标分开。提高运行 JDK 不自动要求把应用字节码从11改17；任何变更记录理由。保留 AIDL、签名、Python 懒启动与应用身份。
+- [x] 若最终组合改变目标 Python minor 或 wheel 版本，同步更新 T12 的解析/来源记录并重跑相关回归；不能沿用旧 lock 却声称新解释器可复现。
 
 **验收与回归：**
-- [ ] 全量单元测试和 Python 回归通过，两 ABI debug/release 均可构建；新版本不是只通过 Gradle sync。
-- [ ] 依赖图无意外版本抬升/重复 Compose 族，Hilt/KSP 编译日志与 pyc/wheel 产物可核对。
+- [x] 全量单元测试和 Python 回归通过，两 ABI debug/release 均可构建；新版本不是只通过 Gradle sync。
+- [x] 依赖图无意外版本抬升/重复 Compose 族，Hilt/KSP 编译日志与 pyc/wheel 产物可核对。
 
 **执行/验证命令：**
 ~~~powershell

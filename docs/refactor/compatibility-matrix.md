@@ -4,6 +4,7 @@
 - **探针：** [`tools/compat-probe`](../../tools/compat-probe)，独立 Gradle 根，生产 `settings.gradle.kts` 不 include 它。
 - **结论范围：** 下表是**经本探针实际构建并在设备上运行**的组合。它是 T14 升级生产配置的依据，但 T13 本身不修改生产配置（生产仍为 AGP 8.4.1 / Kotlin 1.9.0 / Chaquopy 15.0.1）。
 - 设备覆盖、命令与退出码见 [T13 证据](evidence/T13.md)。
+- **2026-09-27 更新：** T14 已按本表升级生产构建链（Hilt/KSP、serialization、AboutLibraries 留给 T16/T35/T38）。「当前生产」一列是 T13 时的状态。升级中发现 Chaquopy 16 把 bootstrap 扩展改名为 `*.cpython-38.so`，APK 内 Python 补丁号变为 3.8.20，见 [T14 证据](evidence/T14.md)。
 
 ## 1. 已验证组合
 

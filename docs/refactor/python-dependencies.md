@@ -249,3 +249,11 @@ arm64 仍未运行。详见 `evidence/T12.md` §7，T12 仍 **IN_PROGRESS**。
 4. arm64 真机 import / LoadLibrary 仍未执行。T12 保持 IN_PROGRESS。
 5. 2026-09-22 用 NDK 26.3 的 `llvm-readelf` / `llvm-strings` 复核当前两份 `libastcenc.so`：SONAME 分别是 `libastcenc-neon-shared.so` 和 `libastcenc-sse4.1-shared.so`，NEEDED 只有 libm/libdl/libc。两份都嵌入 `/workspaces/Ark/astc-encoder-src` 与 NDK `26.1.10909125`、Clang 17。仓库内没有对应源码，不能把这些字符串当成上游 commit。结论仍是 UNKNOWN。
 6. 同日复核 FMOD 与 `.tpk`，细节见 `unitypy-upstream-audit.md`。README 的 2.00.10 没有出现在任何一个 FMOD 二进制里；Windows x86/x64 另有 UTF-16 `2.0.22 (build 122614)`，不能外推到 Linux/Darwin。`.tpk` 能解析出版本表，但 `update_tpk.py` 的 nightly master URL 不能钉住生成 commit。两项都仍是 UNKNOWN。
+
+## 9. 2026-09-27 T14：Chaquopy 15.0.1 → 16.1.0
+
+- 目标解释器声明仍是 `version = "3.8"`；APK 内实际运行时由 **3.8.18 变为 3.8.20**（x86_64 AVD 与原生 arm64 真机 `sys.version` 实测）。§1 表中的 3.8.18 是 T12 时的记录。
+- pip 依赖：两 ABI 的 APK 里仍是同样的 19 个 dist-info、版本逐一相同；`requirements-common.imy`（448）、`requirements-arm64-v8a.imy`（12）、`requirements-x86_64.imy`（12）逐文件 SHA-256 与 15.0.1 构建 **0 差异**。§3–§5 的锁定与来源记录继续有效，不需要重新锁定。
+- Chaquopy 自带的 `stdlib-*.imy`/`bootstrap.imy` 内容随运行时补丁号变化；`bootstrap-native/<abi>/` 扩展改名为 `*.cpython-38.so`（例如 `zlib.cpython-38.so`）；`lib<x>_chaquopy.so` 变成 stub，真实库改名为 `lib<x>_python.so`。
+- pyc 情况不变（buildPython 3.11.9 ≠ 3.8）。
+- 证据：[T14.md](evidence/T14.md) §3、§4、§6。
