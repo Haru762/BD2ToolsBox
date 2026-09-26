@@ -17,6 +17,7 @@
 > - **T10 IMPLEMENTED_NOT_VERIFIED**：当前包 6de58b5c 的 x86_64 已补齐日志缺失（PID 30218，包含 扫描未完成，保留上次列表），grant-while-renamed.txt 和 grant-held-ui.xml 证明改名时授权保持且 UI 两名称同在。复算快照 SHA-256 6942e6e0aef8d2ad02c51fc443bf7e59504e8537b31241c247a1567c7a061a08。snapshot-compatibility 的 uiColdStartVerified=false 不改。arm64 未跑。见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)。
 > - **T12 DONE（2026-09-26，更正）。** 原生 arm64 真机（Xiaomi 2509FPN0BC / API 36，隔离包名）生产 PythonRuntime 入口 PASS。第三方原始构建来源（astcenc、`.tpk`、FMOD）经用户授权放宽为已接受的已知限制，见 T12.md。进入 T13。
 > - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
+> - **arm64 验证策略变更（2026-09-26，用户授权）：** 只有 T14、T18、T49、T50、T51、T54、T57 保留原生 arm64 真机验收；其余任务命令中的 `-Abi 'arm64-v8a'` 改为「x86_64 执行原命令 + `tools/audit_native_abi.py` 对 arm64 release 静态审计 PASS」，证据须写「未在原生 arm64 运行」。T57 发布前的原生 arm64 全量 smoke 不放宽。详见 [arm64-verification-policy.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/arm64-verification-policy.md>)。
 
 ---
 

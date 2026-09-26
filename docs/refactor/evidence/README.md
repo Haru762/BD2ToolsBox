@@ -9,6 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 阶段 | **G2 构建与依赖治理进行中**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 DONE） |
+| arm64 验证策略 | 2026-09-26 起按 [arm64-verification-policy.md](../arm64-verification-policy.md)：原生 arm64 只要求 T14/T18/T49/T50/T51/T54/T57；其余任务为 x86_64 设备验收 + arm64 静态审计（`tools/audit_native_abi.py`） |
 | 权威状态依据 | 本文件与各任务证据的最新追加章节；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
 | 最近已验收任务 | T13（2026-09-26，兼容探针两 ABI 通过）；T12（2026-09-26，含用户授权的已接受限制） |
 | 下一任务 | T14 按 `docs/refactor/compatibility-matrix.md` 升级生产构建链；T08/T10 遗留缺口另行补齐 |
