@@ -15,7 +15,7 @@
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
 > - **T08 完成（仅原验收范围）。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，Release 补账后第二次冷启动不再提示核对，游戏文件已回滚。更早失败保留。arm64 不在 T08 验收里，也未跑（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
 > - **T10 IMPLEMENTED_NOT_VERIFIED**：当前包 6de58b5c 的 x86_64 已补齐日志缺失（PID 30218，包含 扫描未完成，保留上次列表），grant-while-renamed.txt 和 grant-held-ui.xml 证明改名时授权保持且 UI 两名称同在。复算快照 SHA-256 6942e6e0aef8d2ad02c51fc443bf7e59504e8537b31241c247a1567c7a061a08。snapshot-compatibility 的 uiColdStartVerified=false 不改。arm64 未跑。见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)。
-> - **T12 IN_PROGRESS。** decoder 来源和两份 .so 已随 e993800 提交。astcenc、`.tpk`、FMOD 只钉住分发提交。2026-09-22 在 MuMu 上安装 arm64 Release 后进程因 Houdini 内的 FORTIFY mutex 崩溃退出，不是通过。本机 Emulator 37 不能启动 arm64 系统镜像。不推进 T13。
+> - **T12 DONE（2026-09-26，更正）。** 原生 arm64 真机（Xiaomi 2509FPN0BC / API 36，隔离包名）生产 PythonRuntime 入口 PASS。第三方原始构建来源（astcenc、`.tpk`、FMOD）经用户授权放宽为已接受的已知限制，见 T12.md。进入 T13。
 > - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
 
 ---
@@ -31,7 +31,7 @@
 | 预定实施工作区 | [D:/bd2 mod/worktrees/bdroid-android-refactor](<D:/bd2 mod/worktrees/bdroid-android-refactor>)；只在 T01 获准后创建，不让其他窗口另建一个未记录的副本 |
 | 分支 | refactor/android-architecture；本版核对时尚未创建，续跑时必须重新检查 |
 | 核对时起点 | main / b83c1c076e95942b317649273fba559d9d3af5ca，App 0.2.16 / versionCode17；它是历史记录，不代替开工时核对 |
-| 当前进度 | T01–T07、T09 DONE；T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 本地验收 DONE；T12 IN_PROGRESS（详见文首「当前状态更正」）。实施 worktree 位于 D:/bd2 mod/worktrees/bdroid-android-refactor，HEAD 72420bf（T11 代码提交 53959b3 + 状态登记提交 72420bf），当前补齐 T08/T10 验收缺口，T12（G2）保持进行中，不推进 T13 |
+| 当前进度 | T01–T07、T09 DONE；T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 本地验收 DONE；T12 DONE（2026-09-26，含已接受限制）；T13 IN_PROGRESS（详见文首「当前状态更正」）。实施 worktree 位于 D:/bd2 mod/worktrees/bdroid-android-refactor，HEAD 72420bf（T11 代码提交 53959b3 + 状态登记提交 72420bf），当前补齐 T08/T10 验收缺口，T12（G2）保持进行中，不推进 T13 |
 | 实施范围 | Android 及其必要 Python/JNI 接口；不重写 converter/winui，不清理 MOD 素材、游戏数据、发布归档或其他工作区 |
 
 先阅读第 1–3 节与 G0。新建流程和续跑流程分开：首次按 T01 检查并创建；若目标分支/目录已存在，创建命令应停止。只有核对 worktree 登记、真实仓库根、分支、HEAD、已有变更和任务证据均属于本轮后才能续跑，不能覆盖、删除或换一个目录绕过冲突。不要两个窗口同时修改同一个实施目录。
@@ -663,7 +663,7 @@ Invoke-Bd2Gradle :app:assembleDebug :app:assembleRelease --console=plain
 
 ### T12 — 固定 Python 依赖、目标解释器和第三方来源
 
-- [ ] **T12 完成** — 状态 **IN_PROGRESS**：x86_64 minified Python 3.8.18 import、20 个导出及真实 BC1 解码 PASS。decoder 来源和两份 `.so` 已随 `e993800` 提交。astcenc、`.tpk`、FMOD 原始构建来源仍未闭合。原生 arm64 真机 import/decoder 已于 2026-09-26 PASS（隔离包名）。剩余缺口只有第三方原始构建来源。**不推进 T13**。
+- [x] **T12 完成** — 状态 **DONE（2026-09-26，含用户授权的已接受限制）**：x86_64 minified 与原生 arm64 真机的 Python 3.8.18 import、20 个导出及 BC1 解码 PASS。astcenc 原始构建、`.tpk` 生成输入、FMOD 编译 commit 按用户 2026-09-26 授权记为已接受的 UNKNOWN（分发字节来源已钉住），理由与不放宽事项见 T12.md「验收门槛放宽」节。
 
 **优先级：** P1　**前置：** T03、T11
 
@@ -677,7 +677,7 @@ Invoke-Bd2Gradle :app:assembleDebug :app:assembleRelease --console=plain
 **落实要求：**
 - [x] 固定当前 9 个直接 pip 依赖，并记录实际传递依赖、Android wheel 来源、ABI、Python minor 与校验信息；不要用 Windows pip freeze 结果假装 Android 依赖锁。
 - [x] 记录 Chaquopy APK 内 Python、buildPython 和 pyc 生成兼容要求；目标 Python 和 wheel 调整必须成套验证。构建路径通过本地配置/环境变量提供，不提交个人机器绝对路径。
-- [ ] 为 vendored UnityPy、生成代码、JNI、压缩 JS 建立上游版本/补丁来源；只治理必要适配和打包，不把生成文件、大段第三方算法按行数重写。
+- [x] 为 vendored UnityPy、生成代码、JNI、压缩 JS 建立上游版本/补丁来源；只治理必要适配和打包，不把生成文件、大段第三方算法按行数重写。（2026-09-26 **门槛放宽，用户授权**：astcenc / `.tpk` / FMOD 只钉住分发字节，原始来源 UNKNOWN 为已接受限制；FMOD 授权留待 T37/T38。）
 
 **验收与回归：**
 - [x] 清理本次专用构建缓存后仍解析到相同已记录依赖；arm64/x86_64 都能取得适配 wheel。（T12.md 冷 pip r2：24 wheel，含两 ABI；不是 arm64 设备 import）
