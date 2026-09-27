@@ -3,14 +3,15 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <!-- 不声明 READ_EXTERNAL_STORAGE / MANAGE_EXTERNAL_STORAGE（T15 删除）：mod 目录走 SAF
+         持久授权，游戏目录走 Shizuku，产物写 Download 走 MediaStore。两者从未被请求，
+         声明只会让权限列表多出一项「全部文件访问」。 -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
     <!-- 批量预解包用前台服务承载：十几分钟的 CPU 密集任务，不然息屏久了进程会被回收。
          dataSync 是这类「批量处理本地数据」的标准类型；DATA_SYNC 子权限是 API 34 起
          的要求，声明在低版本上无副作用。POST_NOTIFICATIONS 是 API 33 起通知的运行时
-         权限 —— 拒绝只会让进度看不见，前台服务的保活效果不受影响。 -->
+         权限 —— 拒绝只会让进度看不见；前台服务照常启动、保活（T15 在 API 34/36 实测）。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- 应用内自更新：拉起系统安装器装下载好的 APK（Android 8+ 还需用户在
@@ -18,6 +19,10 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- pageSizeCompat（T15）：16 KB 页设备（Android 15+）上显式要求页大小兼容模式。
+         自带的 libastcenc.so 来源不明、无法重编，Chaquopy wheel 里的 PIL/lz4/brotli/freetype
+         也只有 4 KB 链接对齐，没有兼容模式它们在 16 KB 页上加载不了。低于 API 36 的系统
+         不认识这个属性，直接忽略。全部 native 换成 16 KB 对齐后改成 disabled（见 T15.md）。 -->
     <application
         android:largeHeap="true"
         android:allowBackup="false"
@@ -26,6 +31,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BD2ModManager"
+        android:pageSizeCompat="enabled"
         tools:targetApi="31"
         tools:ignore="DataExtractionRules">
 

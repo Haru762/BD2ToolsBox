@@ -50,9 +50,13 @@ class InstallService : Service() {
         /** notify 调太密会被系统限流丢弃。调用方已经节流过一层，这里再兜一次。 */
         private const val NOTIFY_INTERVAL_MS = 700L
 
-        fun start(context: Context, total: Int) {
+        /**
+         * 返回 false 表示系统拒绝启动前台服务（T15）：Android 12+ 从后台调用会抛
+         * `ForegroundServiceStartNotAllowedException`。调用方必须据此停下、告诉用户，
+         * 不能照常开跑 —— 没有前台服务，切后台后进程随时可能被回收。
+         */
+        fun start(context: Context, total: Int): Boolean =
             send(context, ACTION_START) { putExtra(EXTRA_TOTAL, total) }
-        }
 
         fun update(context: Context, done: Int, total: Int, text: String) {
             send(context, ACTION_UPDATE) {
@@ -62,14 +66,16 @@ class InstallService : Service() {
             }
         }
 
-        fun stop(context: Context) = send(context, ACTION_STOP) {}
+        fun stop(context: Context) {
+            send(context, ACTION_STOP) {}
+        }
 
-        private inline fun send(context: Context, action: String, fill: Intent.() -> Unit) {
+        private inline fun send(context: Context, action: String, fill: Intent.() -> Unit): Boolean {
             val intent = Intent(context, InstallService::class.java).apply {
                 this.action = action
                 fill()
             }
-            try {
+            return try {
                 // 启动那一下必须用 startForegroundService（API 26+）：服务要在 5 秒内
                 // 调 startForeground。后续的 UPDATE/STOP 走普通 startService 就够了 ——
                 // 服务已经在前台，再走 startForegroundService 反而会在某些机型上
@@ -79,10 +85,12 @@ class InstallService : Service() {
                 } else {
                     context.startService(intent)
                 }
+                true
             } catch (e: Exception) {
-                // 进程正在退出、或服务已经停了。通知没了不影响装入本身的结果，
-                // 所以只记一行，不往上抛。
+                // START 失败由调用方处理（见 start）；UPDATE/STOP 失败多半是进程正在
+                // 退出或服务已经停了，通知没了不影响装入本身的结果，只记一行。
                 Log.w(TAG, "发送 $action 失败: ${e.message}")
+                false
             }
         }
     }

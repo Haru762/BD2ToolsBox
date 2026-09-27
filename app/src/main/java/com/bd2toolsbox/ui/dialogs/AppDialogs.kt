@@ -1800,6 +1800,46 @@ fun ModSourceDirsDialog(
 }
 
 /**
+ * 「这些 mod 文件夹的访问授权已失效」（T15）。
+ *
+ * 系统或用户撤销了持久授权后，这些目录已经读不出任何东西，启动时被移出了列表。
+ * 不说一句的话，全部失效时界面直接变成空列表 / 欢迎页，用户会以为 mod 全丢了。
+ */
+@Composable
+fun LostSourceDirsDialog(
+    dirs: List<String>?,
+    onDismiss: () -> Unit,
+    onReselect: () -> Unit
+) {
+    if (dirs.isNullOrEmpty()) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = dialogContainerColor(),
+        title = { Text("文件夹访问授权已失效") },
+        text = {
+            Column {
+                Text(
+                    "下面的 mod 文件夹不能再读取（授权被系统或你撤销了），已从列表移除。" +
+                        "文件本身没有被删除，重新选择一次文件夹即可恢复。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                dirs.forEach {
+                    Text("• " + dirLabel(Uri.parse(it)), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                onReselect()
+                onDismiss()
+            }) { Text("重新选择文件夹") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("知道了") } }
+    )
+}
+
+/**
  * 把 SAF 的 tree URI 翻成人能读的路径。
  *
  * `content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fmods`

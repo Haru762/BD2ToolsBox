@@ -127,6 +127,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
          * （`Directory not empty`），一个文件都不会被装入。`cp -rf src/. dst/`
          * 才是把内容逐个合并进去。
          */
+        /** 系统拒绝启动前台服务时给用户的话（T15）。任务没开跑，所以只需让用户回到前台重试。 */
+        const val FGS_REFUSED_MESSAGE = "系统不允许在后台启动任务，请回到应用界面后重试"
+
         const val MANUAL_INSTALL_COMMAND =
             "cp -rf /storage/emulated/0/Download/Shared/. " +
             "/storage/emulated/0/Android/data/com.neowizgames.game.browndust2/files/UnityCache/Shared/ " +
@@ -459,7 +462,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     /** 恢复上次的 mod 文件夹们，避免每次启动都回到欢迎页。
      *  只保留持久权限还在的 —— 权限被回收的目录读不出任何东西，留在列表里
-     *  只会让人以为 mod 丢了。v9.3 及以前存的是单目录键，这里一并迁移。 */
+     *  只会让人以为 mod 丢了。v9.3 及以前存的是单目录键，这里一并迁移。
+     *
+     *  T15：去掉的目录要告诉用户（[lostSourceDirsNotice]）。之前是静默去掉，
+     *  全部目录都被撤销时界面直接回到欢迎页 / 空列表，看起来像「mod 全没了」，
+     *  用户无从知道其实是授权没了、重新选一次目录就好。 */
     private fun restoreModSourceDirs(prefs: android.content.SharedPreferences) {
         val saved = prefs.getString("mod_source_dirs", null)
         val legacy = prefs.getString("mod_source_dir_uri", null)
@@ -478,6 +485,11 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             }
         }
         _modSourceDirs.value = alive
+        val lost = raw.filter { s -> alive.none { it.toString() == s } }
+        if (lost.isNotEmpty()) {
+            Log.w("MainViewModel", "${lost.size} 个 mod 文件夹的访问授权已失效，已移出列表")
+            _lostSourceDirsNotice.value = lost
+        }
         if (alive.size != raw.size || saved == null) {
             // 顺手清掉旧的单目录键，并落一次新格式
             prefs.edit().remove("mod_source_dir_uri").apply()
@@ -791,6 +803,14 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         _ledgerResetNotice.value = null
     }
 
+    /** 启动时因授权失效被移出列表的 mod 文件夹（tree URI 字符串）；null = 没有要说的。 */
+    private val _lostSourceDirsNotice = MutableStateFlow<List<String>?>(null)
+    val lostSourceDirsNotice: StateFlow<List<String>?> = _lostSourceDirsNotice.asStateFlow()
+
+    fun dismissLostSourceDirsNotice() {
+        _lostSourceDirsNotice.value = null
+    }
+
     /**
      * 启动核对结论：上次那次装入提交有没有留下「文件已换、账本未存」的窗口
      * （T08 二轮整改，复核真缺陷 2）。
@@ -967,7 +987,9 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 }
                 if (targets.isEmpty()) return@launch
                 Log.d("MainViewModel", "交给前台服务预解包 ${targets.size} 个")
-                PrepackService.start(context, targets)
+                if (!PrepackService.start(context, targets)) {
+                    withContext(Dispatchers.Main) { toast(context, FGS_REFUSED_MESSAGE) }
+                }
             } catch (e: Exception) {
                 // 这里抛过的最真实事故：大批量目标走 Intent 顶爆 Binder 上限
                 // （TransactionTooLargeException）。目标已改进程内直传，但兜底要留 ——
@@ -1177,7 +1199,15 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             // 用 appContext：这条流程刻意要活过界面销毁（同 processInstallJobs）
             val svcCtx = appContext ?: context
             val total = checkResult.needsScanCount
-            ScanService.start(svcCtx, total)
+            if (!ScanService.start(svcCtx, total)) {
+                // 系统拒绝前台服务（T15）：不开跑。没有前台服务的扫描一切后台就可能被杀，
+                // 索引写到一半；留在确认态让用户回到前台后再点一次。
+                pendingCheckResult = checkResult
+                ShizukuManager.markScanRunning(false)
+                _bundleScanState.value = BundleScanState.Confirmation(checkResult.needsScanCount)
+                withContext(Dispatchers.Main) { toast(context, FGS_REFUSED_MESSAGE) }
+                return@launch
+            }
             try {
                 // Shizuku 服务跑在 shell UID，写不了 app 的内部 cacheDir（/data/data/…），
                 // 扫描临时文件得放 externalCacheDir
@@ -1524,7 +1554,12 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
             // 销毁，而用已销毁的 Activity context 发 Intent 会失败 —— 通知就更新不了、
             // 也停不掉，恰好毁在这个功能最该起作用的场景上。
             val svcCtx = appContext ?: context
-            InstallService.start(svcCtx, total)
+            if (!InstallService.start(svcCtx, total)) {
+                // 系统拒绝前台服务（T15）：一个 job 都不开跑，全部如实记失败。
+                // 没动游戏文件、没写账本；结果框照常由 summarizeResults 弹出。
+                failAllJobsForRefusedForegroundService()
+                return@launch
+            }
             try {
                 withContext(Dispatchers.IO) {
                     PythonRuntime.ensureStarted(context)
@@ -2274,7 +2309,10 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         installScope.launch {
             // 同上：服务的生命周期挂在进程上，不能用 Activity context 去驱动
             val svcCtx = appContext ?: context
-            InstallService.start(svcCtx, targets.size)
+            if (!InstallService.start(svcCtx, targets.size)) {
+                failAllJobsForRefusedForegroundService()
+                return@launch
+            }
             try {
             var ok = 0
             val failed = mutableListOf<FailedJobInfo>()
@@ -2960,6 +2998,13 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     @Synchronized
+    /** 前台服务被拒时把本批全部 job 标成失败（尚未开跑，目标未改动）。 */
+    private fun failAllJobsForRefusedForegroundService() {
+        _installJobs.value.forEach {
+            updateJobStatus(it.job.hashedName, JobStatus.Failed(FGS_REFUSED_MESSAGE, "$FGS_REFUSED_MESSAGE；目标未改动"))
+        }
+    }
+
     private fun updateJobStatus(hashedName: String, newStatus: JobStatus) {
         installScope.launch(Dispatchers.Main) {
             val currentJobs = _installJobs.value.toMutableList()

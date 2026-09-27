@@ -714,6 +714,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                val lostDirs by viewModel.lostSourceDirsNotice.collectAsState()
+                LostSourceDirsDialog(
+                    dirs = lostDirs,
+                    onDismiss = { viewModel.dismissLostSourceDirsNotice() },
+                    onReselect = { modSourceDirLauncher.launch(Unit) }
+                )
+
                 val ledgerNotice by viewModel.ledgerResetNotice.collectAsState()
                 LedgerResetDialog(
                     notice = ledgerNotice,

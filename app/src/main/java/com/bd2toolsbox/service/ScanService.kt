@@ -51,9 +51,13 @@ class ScanService : Service() {
         /** notify 调太密会被系统限流丢弃，这里兜一层。 */
         private const val NOTIFY_INTERVAL_MS = 700L
 
-        fun start(context: Context, total: Int) {
+        /**
+         * 返回 false 表示系统拒绝启动前台服务（T15）：Android 12+ 从后台调用会抛
+         * `ForegroundServiceStartNotAllowedException`。调用方必须据此停下、告诉用户，
+         * 不能照常开跑 —— 没有前台服务，切后台后进程随时可能被回收。
+         */
+        fun start(context: Context, total: Int): Boolean =
             send(context, ACTION_START) { putExtra(EXTRA_TOTAL, total) }
-        }
 
         fun update(context: Context, done: Int, total: Int, bundleName: String, text: String) {
             send(context, ACTION_UPDATE) {
@@ -72,14 +76,16 @@ class ScanService : Service() {
             }
         }
 
-        fun stop(context: Context) = send(context, ACTION_STOP) {}
+        fun stop(context: Context) {
+            send(context, ACTION_STOP) {}
+        }
 
-        private inline fun send(context: Context, action: String, fill: Intent.() -> Unit) {
+        private inline fun send(context: Context, action: String, fill: Intent.() -> Unit): Boolean {
             val intent = Intent(context, ScanService::class.java).apply {
                 this.action = action
                 fill()
             }
-            try {
+            return try {
                 // 与 InstallService 同理：只有 START 需要 startForegroundService（5 秒内
                 // 必须调 startForeground），后续走普通 startService。
                 if (action == ACTION_START) {
@@ -87,9 +93,12 @@ class ScanService : Service() {
                 } else {
                     context.startService(intent)
                 }
+                true
             } catch (e: Exception) {
-                // 通知没了不影响扫描本身的结果，只记一行。
+                // START 失败由调用方处理（见 start）；UPDATE/STOP 失败只影响通知，
+                // 不影响扫描本身的结果，只记一行。
                 Log.w(TAG, "发送 $action 失败: ${e.message}")
+                false
             }
         }
     }

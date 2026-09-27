@@ -16,8 +16,9 @@
     "androidNdk": "26.3.11579264",
     "host": "windows-x86_64",
     "targetApi": 24,
-    "commonFlags": ["-shared", "-fPIC", "-O2", "-std=c++17", "-static-libstdc++"],
-    "x86_64ExtraFlags": ["-fms-extensions", "-Wl,-soname,libtexture2ddecoder.so"]
+    "commonFlags": ["-shared", "-fPIC", "-O2", "-std=c++17", "-static-libstdc++", "-Wl,-z,max-page-size=16384"],
+    "x86_64ExtraFlags": ["-fms-extensions", "-Wl,-soname,libtexture2ddecoder.so"],
+    "pageAlignment": "16 KB (T15): every PT_LOAD p_align = 0x4000"
   },
   "sourceDirectory": "src/Texture2DDecoder",
   "translationUnits": ["astc.cpp", "atc.cpp", "bcn.cpp", "crunch.cpp", "etc.cpp", "pvrtc.cpp", "unitycrunch.cpp"],
@@ -31,15 +32,15 @@
     "x86_64": {
       "path": "app/src/main/jniLibs/x86_64/libtexture2ddecoder.so",
       "bytes": 563768,
-      "sha256": "4c7c806476c6f041ba489478d4d638d8b572199bdc66d87b00e7eb17512a07c5"
+      "sha256": "50e695b811e5ada33ceef564df0c4a174711cd718454f8309d115835125231c9"
     },
     "arm64-v8a": {
       "path": "app/src/main/jniLibs/arm64-v8a/libtexture2ddecoder.so",
-      "bytes": 603248,
-      "sha256": "1e6fc051a1ff83835593d53c4b2ba587bd7b2ae2554c59db474297372fdb68d2"
+      "bytes": 603056,
+      "sha256": "cd75798a50a6750c1292202c3f3c42341ea751574c5e6a85eaed4ff6f3dd6e91"
     }
   },
-  "hashScope": "Packaged input hashes identify the existing audited binaries. Native __FILE__ strings make historical arm64 byte identity dependent on original compiler path spelling; relocatable rebuilds must be validated separately, not substituted silently.",
+  "hashScope": "Packaged input hashes identify the T15 16 KB-aligned rebuilds made with the documented relative-path command (byte-identical on repeat). They supersede the pre-T15 4 KB binaries (x86_64 4c7c8064...07c5, arm64 1e6fc051...68d2); see docs/refactor/evidence/T15.md.",
   "documentation": "docs/refactor/native-texture-decoder.md",
-  "evidence": "docs/refactor/evidence/T12-native-contract-20260921.md"
+  "evidence": ["docs/refactor/evidence/T12-native-contract-20260921.md", "docs/refactor/evidence/T15.md"]
 }

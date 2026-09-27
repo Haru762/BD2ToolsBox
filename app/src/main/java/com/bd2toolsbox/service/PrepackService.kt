@@ -105,14 +105,23 @@ class PrepackService : Service() {
         @Volatile
         private var pendingTargets: List<Target>? = null
 
-        fun start(context: Context, targets: List<Target>) {
-            if (targets.isEmpty()) return
+        /** 返回 false 表示系统拒绝启动前台服务（与 InstallService.start 同口径，T15）。 */
+        fun start(context: Context, targets: List<Target>): Boolean {
+            if (targets.isEmpty()) return true
             pendingTargets = targets
             val intent = Intent(context, PrepackService::class.java).apply { action = ACTION_START }
             // API 26+ 起后台启动的服务必须用 startForegroundService，且服务要在 5 秒内
-            // 调 startForeground。这里由用户点击触发，app 在前台，不受 Android 12 的
-            // 「后台不得启动前台服务」限制。
-            context.startForegroundService(intent)
+            // 调 startForeground。正常由用户点击触发、app 在前台；但点完立刻切走时
+            // Android 12+ 仍会抛 ForegroundServiceStartNotAllowedException。
+            return try {
+                context.startForegroundService(intent)
+                true
+            } catch (e: Exception) {
+                // 目标没被服务取走，清掉，免得下一次 start 带上这批旧目标
+                pendingTargets = null
+                Log.w(TAG, "前台服务启动被拒: ${e.message}")
+                false
+            }
         }
 
         fun cancel(context: Context) {
