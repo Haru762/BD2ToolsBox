@@ -27,7 +27,7 @@
 | APK 内 Python | 3.8 | **3.8**（不变） | 设备上 `sys.version_info` = 3.8 |
 | buildPython | 3.11.9 | 3.11.9（不变） | pyc 不生成（minor 不匹配，与 T12 相同的已知警告） |
 | compileSdk | 34 | **36** | 由 core-ktx 1.17.0 的 AAR 门槛驱动 |
-| targetSdk | 34 | **34**（不变） | 行为变更留给 T15 |
+| targetSdk | 34 | **34**（不变） | T15 裁定保持：升 35+ 需另做 dataSync 6h 超时与 edge-to-edge 验证；API 36 设备实测兼容（[T15.md](evidence/T15.md)） |
 | minSdk | 29 | **29**（不变） | 未提高 |
 | ABI | arm64-v8a、x86_64 | **arm64-v8a、x86_64**（不变） | APK `native-code: 'arm64-v8a' 'x86_64'` |
 | Java/JVM 字节码目标 | 11 | **11**（不变） | 运行 JDK 17 不强制改字节码目标 |

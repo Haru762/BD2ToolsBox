@@ -18,6 +18,7 @@
 > - **T12 DONE（2026-09-26，更正）。** 原生 arm64 真机（Xiaomi 2509FPN0BC / API 36，隔离包名）生产 PythonRuntime 入口 PASS。第三方原始构建来源（astcenc、`.tpk`、FMOD）经用户授权放宽为已接受的已知限制，见 T12.md。进入 T13。
 > - 授权测试写过一个已备份的游戏目标并已恢复；未 pm clear，未正式发布。
 > - **T14 DONE（2026-09-27）。** 生产构建链已按 T13 矩阵升级；Chaquopy 16 的 bootstrap 改名回归已修复；x86_64 AVD 与原生 arm64 真机（Xiaomi 2509FPN0BC，隔离包名 `com.bd2toolsbox.verify`）生产 PythonRuntime 入口 PASS，APK 内 Python 3.8.20。见 [T14.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T14.md>)。下一任务 T15。
+> - **T15 IMPLEMENTED_NOT_VERIFIED（2026-09-27）。** targetSdk 保持 34；前台服务被拒安全停止并提示；SAF 授权失效弹窗告知；删除两个未用存储权限；`libtexture2ddecoder.so` 16 KB 重编 + `pageSizeCompat="enabled"`。x86_64 四台设备 `PlatformBehaviorTest` 13/13；arm64 静态审计 PASS、原生 arm64 未跑（A 类缺口）。见 [T15.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T15.md>)。
 > - **arm64 验证策略变更（2026-09-26，用户授权）：** 只有 T14、T18、T49、T50、T51、T54、T57 保留原生 arm64 真机验收；其余任务命令中的 `-Abi 'arm64-v8a'` 改为「x86_64 执行原命令 + `tools/audit_native_abi.py` 对 arm64 release 静态审计 PASS」，证据须写「未在原生 arm64 运行」。T57 发布前的原生 arm64 全量 smoke 不放宽。详见 [arm64-verification-policy.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/arm64-verification-policy.md>)。
 
 ---
@@ -775,7 +776,7 @@ Test-Bd2Python -Pattern 'test_*.py'
 
 ### T15 — 验证 SDK、权限、前台服务和更新安装行为
 
-- [ ] **T15 完成**
+- [ ] **T15 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-27）：x86_64 全部验收项通过（MuMu API 32 `Test-Bd2Device` 13/13，AVD API 29/34/36-16KB 13/13）；本任务替换了 arm64 `libtexture2ddecoder.so`，按 arm64 验证策略升格 A 类，**缺原生 arm64 release probe**。见 [T15.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T15.md>)。
 
 **优先级：** P0　**前置：** T14
 

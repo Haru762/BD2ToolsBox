@@ -8,11 +8,11 @@
 
 | 项 | 值 |
 |---|---|
-| 阶段 | **G2 构建与依赖治理进行中**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 DONE、T14 DONE（2026-09-27）） |
+| 阶段 | **G2 构建与依赖治理进行中**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 DONE、T14 DONE（2026-09-27）、T15 IMPLEMENTED_NOT_VERIFIED（2026-09-27，缺原生 arm64）） |
 | arm64 验证策略 | 2026-09-26 起按 [arm64-verification-policy.md](../arm64-verification-policy.md)：原生 arm64 只要求 T14/T18/T49/T50/T51/T54/T57；其余任务为 x86_64 设备验收 + arm64 静态审计（`tools/audit_native_abi.py`） |
 | 权威状态依据 | 本文件与各任务证据的最新追加章节；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
 | 最近已验收任务 | T14（2026-09-27，生产构建链升级，两 ABI 生产 PythonRuntime 入口 PASS）；T13（2026-09-26，兼容探针两 ABI 通过）；T12（2026-09-26，含用户授权的已接受限制） |
-| 下一任务 | T15（SDK、权限、前台服务与更新安装行为）；T08/T10 遗留缺口另行补齐 |
+| 下一任务 | T15 补原生 arm64 release probe（隔离包名，可与 T18/T49 的真机连接合并）；G3 从 T16 开始；T08/T10 遗留缺口另行补齐 |
 | 最后核对的代码提交 | HEAD `cf8e87a`（PythonRuntime ABI 选择修复提交 `0032886`，计划/证据状态提交 `cf8e87a`）；T11 为 `53959b3`，T10 为 `f08fa27`，T09 为 `6529e81` |
 | 工作区脏文件 | 历史 T12 requirements/build.gradle 改动继续保留；2026-09-19–20 另有 T08 提交/恢复实现、JVM 回归、独立 release-probe、host runner 与证据文档未提交改动。不是只有两处脏文件；准确清单以当前 git status 为准。/local/、本地配置与构建产物保持忽略；未动只读 bdroid_src。 |
 | 环境/输入清单 | local/refactor-artifacts/historical-0.2.16（2 APK + mapping）、rebuilt-original（3 APK + mapping + metadata）；local/refactor-inputs（catalog-alpha.json、wiki-v2-detail-2238.source.json）。冻结记录见 artifact-manifest.json 的 t03Freeze；旧数据样本与缺口见 fixture-manifest.json |
@@ -37,7 +37,8 @@
 | T12 | DONE | [T12.md](T12.md)、[native 来源](../native-texture-decoder.md)、[PythonRuntime ABI 证据](../python-runtime-abi-selection.md) | 2026-09-26 | 生产 PythonRuntime 入口在 x86_64 split/universal minified Release 与**原生 arm64 真机**（2026-09-26，Xiaomi 2509FPN0BC / API 36，隔离包名 `com.bd2toolsbox.verify`）均 PASS：Python 3.8.18、依赖 import、20 个 decoder 导出与 BC1 smoke。astcenc 原始构建 commit、`.tpk` 生成输入、FMOD 编译 commit 经用户 2026-09-26 授权放宽为已接受的 UNKNOWN（分发字节已钉住；FMOD 授权留待 T37/T38）。 |
 | T13 | DONE | [T13.md](T13.md)、[兼容矩阵](../compatibility-matrix.md) | 2026-09-26 | 探针 `tools/compat-probe`（AGP 8.11.1 / Gradle 8.13 / Kotlin 2.2.20 / KSP 2.2.20-2.0.3 / Hilt 2.58 / Chaquopy 16.1.0 / BOM 2025.08.00 / AboutLibraries 13.1.0 / serialization 1.9.0 / compileSdk 36）。x86_64 AVD debug 5/5、minified release selfCheck 5/5，清理重建复现。原生 arm64 真机 debug/minified release selfCheck 5/5（instrumentation Activity 用例被 MIUI 拦截，已登记）。Dagger KSP 官方 stable 门槛（2.60+/KSP 2.3.9+）不满足，已登记。 |
 | T14 | DONE | [T14.md](T14.md) | 2026-09-27 | AGP 8.11.1 / Gradle 8.13 / Kotlin 2.2.20 + `kotlin.plugin.compose` / Chaquopy 16.1.0 / BOM 2025.08.00 / core-ktx 1.17.0 / compileSdk 36；targetSdk 34、minSdk 29、字节码 11 不变。M3 1.3 下拉刷新 API 迁移（ModScreen/GuideScreen）。**发现并修复真实回归**：Chaquopy 16 把 bootstrap 扩展改名为 `*.cpython-38.so`，`PythonRuntime` 预检 `zlib.so` 会让 Python 起不来（构建/单测/宿主回归都发现不了）。JVM 429/0/0/0、release-probe 6/0/0/0、Python 122/122；静态审计两 ABI PASS、证伪 8/8。x86_64 AVD 与原生 arm64 真机（隔离包名）Runtime/Dependency probe 均 OK，Python 3.8.20，pip 产物逐字节不变。未覆盖：有目录时下拉重扫、攻略页下拉。release 为受控 debug signer，非正式发布。 |
-| T15–T62 | NOT_STARTED | （未创建） | — | G2 还剩 T15 |
+| T15 | IMPLEMENTED_NOT_VERIFIED | [T15.md](T15.md) | — | minSdk 29 / compileSdk 36 / targetSdk 34（用户裁定保持）。前台服务被拒时三服务 `start()` 如实返回 false，装入批次全部 Failed 且未动文件/账本；SAF 授权失效改为弹窗告知；删除两个未用存储权限；`libtexture2ddecoder.so` 重编为 16 KB 对齐（两次构建逐字节相同），manifest `pageSizeCompat="enabled"` 消除 Android 16 启动警告（反证：disabled 时 lz4/brotli/UnityPy dlopen 失败）。`PlatformBehaviorTest` 13 条：MuMu API 32（`Test-Bd2Device`）与 AVD API 29/34/36-16KB 全过，三处证伪真红。JVM 435/0/0/0、Python 122/122、release probe 三台 AVD OK。**arm64 native 被替换 → 升格 A 类，原生 arm64 未跑**；arm64 静态审计 PASS。 |
+| T16–T62 | NOT_STARTED | （未创建） | — | |
 
 
 ### 2026-09-20 最新增量（更新上表，历史结果不外推到新源树）
