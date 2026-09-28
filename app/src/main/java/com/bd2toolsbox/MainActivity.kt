@@ -149,9 +149,9 @@ class MainActivity : ComponentActivity() {
         // 避让交给各自的 statusBarsPadding / NavigationBar / Scaffold）
         enableEdgeToEdge()
 
-        viewModel.initialize(applicationContext)
-        // 攻略板块的仓库是懒加载单例，这里顺手把分类树拉起来（进 tab 前就绪）
-        guideViewModel.initialize(applicationContext)
+        viewModel.initialize()
+        // 攻略板块的仓库现已构造注入（T17），这里顺手把分类树拉起来（进 tab 前就绪）
+        guideViewModel.initialize()
 
         try {
             Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)

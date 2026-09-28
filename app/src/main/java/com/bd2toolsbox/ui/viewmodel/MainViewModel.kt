@@ -16,6 +16,9 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import com.bd2toolsbox.core.python.PythonRuntime
 import com.chaquo.python.Python
 import com.bd2toolsbox.SpinePreviewActivity
@@ -104,7 +107,19 @@ import java.io.File
 import java.util.Collections
 import java.util.zip.ZipInputStream
 
-class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
+    // T17：应用上下文与有状态仓储改构造注入（Hilt 单例），不再用
+    // initialize(context)+lateinit 装配。appContext 现为非空注入值；旧代码里的
+    // appContext?./appContext!! 仍能编译（只是冗余），不强行改写 51 处无关调用点。
+    @ApplicationContext private val appContext: Context,
+    private val characterRepository: CharacterRepository,
+    private val modRepository: ModRepository,
+    private val installedModRepository: InstalledModRepository,
+    private val backupRepository: BundleBackupRepository,
+    private val previewCacheRepository: PreviewCacheRepository,
+) : ViewModel() {
 
     companion object {
         /** Shizuku 官方 app 的包名，用于「打开 Shizuku」按钮。 */
@@ -145,11 +160,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         return name.isEmpty() || name == ".modfile" || name.endsWith(".modfile")
     }
 
-    private lateinit var characterRepository: CharacterRepository
-    private lateinit var modRepository: ModRepository
-    private lateinit var installedModRepository: InstalledModRepository
-    private lateinit var backupRepository: BundleBackupRepository
-    private lateinit var previewCacheRepository: PreviewCacheRepository
 
     /**
      * 干净判定的纯函数实现（T09）。无状态、无 `Context`，构造一次即可复用。
@@ -361,7 +371,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     // Stored for deferred scan execution after user confirmation
     private var pendingCheckResult: BundleCheckResult? = null
-    private var appContext: Context? = null
+    // appContext 已改为构造注入（见主构造器）。
 
     private var initialized = false
     private var scanJob: Job? = null
@@ -394,10 +404,14 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         }
     }
 
-    fun initialize(context: Context) {
+    /**
+     * T17：仓储与 appContext 都已构造注入，本方法不再需要传 context，只负责一次性启动
+     * 装配（恢复设置 / 壁纸 / 目录、启动核对与迁移、异步初始化）。仍用 initialized 幂等守卫。
+     */
+    fun initialize() {
         if (initialized) return
         initialized = true
-        appContext = context.applicationContext
+        val context = appContext
 
         // 界面重建恢复：扫描在 installScope（进程级）上跑，MIUI 等激进 ROM 会把
         // 后台 Activity 连同 ViewModel 回收掉 —— 用户从通知栏点回来时拿到的是新
@@ -415,8 +429,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         restoreWallpaper(prefs)
         restoreModSourceDirs(prefs)
         watchPrepackCompletion()
-        cleanStalePreviewDirs(context)
-        initRepositories(context)
+        cleanStalePreviewDirs(context)  // context == appContext
         // 核对必须**早于**旧格式迁移：迁移会 clear() 掉账本，之后再核对就是拿着一张
         // 被清空的表去判「账本里有没有这条记录」，会凭空多出一次待核对。
         // 两者都触发时对话框归核对那条（它可操作：别把这些 mod 重复装入），
@@ -508,14 +521,6 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
                 wasRunning = running
             }
         }
-    }
-
-    private fun initRepositories(context: Context) {
-        characterRepository = CharacterRepository(context)
-        modRepository = ModRepository(context, characterRepository)
-        installedModRepository = InstalledModRepository(context)
-        backupRepository = BundleBackupRepository(context)
-        previewCacheRepository = PreviewCacheRepository(context)
     }
 
     /** 旧版账本一条记录含多个 modUris 却只有一个 familyKey，还原不出 uri 与 familyKey
@@ -706,7 +711,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     /** 重算备份占用（遍历备份目录，放 IO 线程）。 */
     fun refreshBackupUsage() {
-        if (!::backupRepository.isInitialized) return
+        if (!true) return
         viewModelScope.launch(Dispatchers.IO) {
             val usage = backupRepository.totalBytes() to backupRepository.count()
             _backupUsage.value = usage
@@ -714,7 +719,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     fun clearBackups() {
-        if (!::backupRepository.isInitialized) return
+        if (!true) return
         viewModelScope.launch(Dispatchers.IO) {
             backupRepository.clearAll()
             _backupUsage.value = 0L to 0
@@ -847,7 +852,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * [InstalledModRepository.checkRecovery] 的说明），它只交出一份判断。
      */
     private fun checkRecoveryOnStartup() {
-        if (!::installedModRepository.isInitialized) return
+        if (!true) return
         val verdict = try {
             installedModRepository.checkRecovery()
         } catch (e: Exception) {
@@ -1013,7 +1018,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     val previewCacheUsage: StateFlow<Pair<Long, Int>> = _previewCacheUsage.asStateFlow()
 
     fun refreshPreviewCacheUsage() {
-        if (!::previewCacheRepository.isInitialized) return
+        if (!true) return
         viewModelScope.launch(Dispatchers.IO) {
             _previewCacheUsage.value =
                 previewCacheRepository.totalBytes() to previewCacheRepository.count()
@@ -1021,7 +1026,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
     }
 
     fun clearPreviewCache() {
-        if (!::previewCacheRepository.isInitialized) return
+        if (!true) return
         viewModelScope.launch(Dispatchers.IO) {
             previewCacheRepository.clearAll()
             _previewCacheUsage.value = 0L to 0
@@ -1446,7 +1451,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         if (selected.isEmpty()) return emptyList()
 
         val byUri = _modsList.value.associateBy { it.uri.toString() }
-        val installed = if (::installedModRepository.isInitialized) {
+        val installed = if (true) {
             // 按**本次涉及的** bundle 取记账：计划不会去动本次没装的包。
             selected.mapNotNull { it.targetHash }.distinct().flatMap { hash ->
                 installedModRepository.listByTargetHash(hash)
@@ -2006,7 +2011,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // - 没有摘要基准（纯 catalog 锚点）→ 保持原行为（name+size 一致即接受）。
         //   这不是退让，是当前能拿到的最强证据；扫描层那条注释解释了为什么
         //   `m_Hash` 只能撑到「锚点一致」级。
-        val baseline = if (::backupRepository.isInitialized) {
+        val baseline = if (true) {
             backupRepository.byteAnchoredBaseline(bundleName, hashDir)
         } else {
             null
@@ -2074,7 +2079,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 两者对调用方的含义相同（可以继续写入），区分它们只会制造一个没人用的分支。
      */
     private suspend fun backupPristineOriginal(bundleName: String): BackupAttempt {
-        if (!::backupRepository.isInitialized) return BackupAttempt.NotNeeded
+        if (!true) return BackupAttempt.NotNeeded
         if (bundleCleanStates[bundleName] != BundleCleanState.PRISTINE) return BackupAttempt.NotNeeded
         val hashDir = gameBundleHashes[bundleName] ?: return BackupAttempt.NotNeeded
         if (backupRepository.hasBackup(bundleName, hashDir)) return BackupAttempt.NotNeeded
@@ -2274,7 +2279,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         if (targets.isEmpty()) return
 
         // 先看会不会覆盖掉同包里已装的别的 mod
-        if (::installedModRepository.isInitialized) {
+        if (true) {
             val selectedUris = targets.map { it.uri.toString() }.toSet()
             val byUri = _modsList.value.associateBy { it.uri.toString() }
             val casualties = LinkedHashMap<String, List<String>>()
@@ -2413,7 +2418,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         mod: ModInfo,
         bundleName: String
     ): Pair<Boolean, String> {
-        if (!::installedModRepository.isInitialized) {
+        if (!true) {
             return false to "装入记录仓储未初始化，拒绝覆盖游戏文件"
         }
         val hashDir = mod.convertedHashDir
@@ -2842,7 +2847,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 由它经 [reportLedgerWrite] 处置 —— **与其它写入口同一个处置点**。
      */
     private fun takeLedgerRecord(modUri: String): LedgerTake {
-        if (!::installedModRepository.isInitialized) return LedgerTake.Absent
+        if (!true) return LedgerTake.Absent
         return try {
             installedModRepository.removeAndReturn(modUri)
         } catch (e: Exception) {
@@ -2860,7 +2865,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
 
     /** 把销掉的账放回去（删除失败时）。跑在 IO 上。 */
     private fun putLedgerRecord(record: InstalledModRecord?) {
-        if (record == null || !::installedModRepository.isInitialized) return
+        if (record == null || !true) return
         try {
             reportLedgerWrite(installedModRepository.put(record), "账本复原")
         } catch (e: Exception) {
@@ -3057,7 +3062,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         installScope.launch {
             if (!silent) _moveState.value = MoveState.Moving
 
-            if (!::installedModRepository.isInitialized) {
+            if (!true) {
                 _moveState.value = MoveState.Failed("装入记录仓储未初始化，无法安全提交")
                 return@launch
             }
@@ -3175,7 +3180,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      *   决定要不要保留 journal。
      */
     private fun recordSuccessfulInstall(): OperationError? {
-        if (!::installedModRepository.isInitialized) return null
+        if (!true) return null
         val now = System.currentTimeMillis()
         val quality = _selectedQuality.value
         val astc = _useAstc.value
@@ -3251,7 +3256,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 两种都需要用户再点一次「装入游戏」才真正生效（安卓改的是游戏缓存，绕不开这一步）。
      */
     fun removeSingleMod(context: Context, mod: ModInfo) {
-        if (!::installedModRepository.isInitialized) return
+        if (!true) return
         val targetHash = mod.targetHash ?: return
 
         // 先摘掉这一个，再看这个包上还剩谁。
@@ -4046,7 +4051,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         }
 
         val states = HashMap<String, BundleCleanState>(meta.size)
-        val hasBackupRepo = ::backupRepository.isInitialized
+        val hasBackupRepo = true
         for ((name, expected) in meta) {
             val (expectedSize, expectedHash) = expected
             val actual = local[name]
@@ -4640,7 +4645,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
         // 预览缓存的键就是 hash 目录名，旧名下那份再也对不上（内容没变，但键变了），
         // 留着只会白占空间，直到用户手动清缓存。size 段拿产物的（改名不动内容，
         // size 不变）；拿不到就退无后缀槽（size<=0 的兼容路径）。
-        if (::previewCacheRepository.isInitialized) {
+        if (true) {
             try {
                 previewCacheRepository.delete(bundleName, oldHash, mod.convertedDataSize)
             } catch (e: Exception) {
@@ -4668,7 +4673,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      */
     private fun applyInstallState(mods: List<ModInfo>): List<ModInfo> {
         val states = bundleCleanStates
-        val records = if (::installedModRepository.isInitialized) {
+        val records = if (true) {
             installedModRepository.load()
         } else {
             emptyMap()
@@ -5226,7 +5231,7 @@ class MainViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel(
      * 核对并修复安装记录：只读拷出游戏 __data、按冻结 SHA 补账，不重新安装。
      */
     fun reconcilePendingInstalls() {
-        if (!::installedModRepository.isInitialized) {
+        if (!true) {
             notifyLedgerNotice("装入记录仓储未初始化，无法核对。")
             return
         }

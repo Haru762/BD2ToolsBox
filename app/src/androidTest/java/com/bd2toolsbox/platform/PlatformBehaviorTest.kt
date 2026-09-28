@@ -22,6 +22,11 @@ import com.bd2toolsbox.MainActivity
 import com.bd2toolsbox.data.model.InstallJob
 import com.bd2toolsbox.data.model.JobStatus
 import com.bd2toolsbox.data.model.RepackJob
+import com.bd2toolsbox.data.repository.BundleBackupRepository
+import com.bd2toolsbox.data.repository.CharacterRepository
+import com.bd2toolsbox.data.repository.InstalledModRepository
+import com.bd2toolsbox.data.repository.ModRepository
+import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import com.bd2toolsbox.data.repository.UpdateRepository
 import com.bd2toolsbox.service.InstallService
 import com.bd2toolsbox.service.PrepackService
@@ -64,6 +69,23 @@ class PlatformBehaviorTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context get() = instrumentation.targetContext
     private val pkg get() = context.packageName
+
+    /**
+     * T17：appContext 与仓储改为构造注入后，测试用指定 context 直接构造 MainViewModel，
+     * 不再反射 set 私有字段。仓储都建在同一个 context 上（filesDir 一致），保持账本单一事实源。
+     */
+    private fun newViewModel(ctx: Context): MainViewModel {
+        val character = CharacterRepository(ctx)
+        return MainViewModel(
+            SavedStateHandle(),
+            ctx,
+            character,
+            ModRepository(ctx, character),
+            InstalledModRepository(ctx),
+            BundleBackupRepository(ctx),
+            PreviewCacheRepository(ctx),
+        )
+    }
 
     private fun shell(cmd: String): String =
         instrumentation.uiAutomation.executeShellCommand(cmd).use { fd ->
@@ -240,11 +262,11 @@ class PlatformBehaviorTest {
     @Test
     fun refusedForegroundServiceFailsInstallBatchWithReason() {
         val store = ViewModelStore()
-        val vm = MainViewModel(SavedStateHandle())
+        val refusing = refusingContext()
+        // T17：appContext 与仓储改为构造注入，直接用 refusing context 构造 VM。
+        val vm = newViewModel(refusing)
         store.put("t15-platform", vm)
         try {
-            val refusing = refusingContext()
-            MainViewModel::class.java.getDeclaredField("appContext").apply { isAccessible = true }.set(vm, refusing)
             @Suppress("UNCHECKED_CAST")
             val jobs = MainViewModel::class.java.getDeclaredField("_installJobs").apply { isAccessible = true }
                 .get(vm) as MutableStateFlow<List<InstallJob>>
@@ -344,11 +366,10 @@ class PlatformBehaviorTest {
         val granted = context.contentResolver.persistedUriPermissions.map { it.uri.toString() }
         assertFalse("夹具前提：该 URI 不应在持久授权里", revoked in granted)
         val store = ViewModelStore()
-        val vm = MainViewModel(SavedStateHandle())
+        val vm = newViewModel(context)
         store.put("t15-saf", vm)
         try {
             prefs.edit().putString("mod_source_dirs", (granted + revoked).joinToString("\n")).commit()
-            MainViewModel::class.java.getDeclaredField("appContext").apply { isAccessible = true }.set(vm, context)
             MainViewModel::class.java.getDeclaredMethod("restoreModSourceDirs", android.content.SharedPreferences::class.java)
                 .apply { isAccessible = true }.invoke(vm, prefs)
 
@@ -373,11 +394,10 @@ class PlatformBehaviorTest {
         val granted = context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }
             .map { it.uri.toString() }
         val store = ViewModelStore()
-        val vm = MainViewModel(SavedStateHandle())
+        val vm = newViewModel(context)
         store.put("t15-saf-ok", vm)
         try {
             prefs.edit().putString("mod_source_dirs", granted.joinToString("\n")).commit()
-            MainViewModel::class.java.getDeclaredField("appContext").apply { isAccessible = true }.set(vm, context)
             MainViewModel::class.java.getDeclaredMethod("restoreModSourceDirs", android.content.SharedPreferences::class.java)
                 .apply { isAccessible = true }.invoke(vm, prefs)
             assertEquals(granted, vm.modSourceDirs.value.map { it.toString() })

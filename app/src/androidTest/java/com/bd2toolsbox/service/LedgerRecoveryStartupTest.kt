@@ -10,6 +10,11 @@ import com.bd2toolsbox.core.storage.JournalEntry
 import com.bd2toolsbox.core.storage.JournalStage
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.OperationJournalStore
+import com.bd2toolsbox.data.repository.BundleBackupRepository
+import com.bd2toolsbox.data.repository.CharacterRepository
+import com.bd2toolsbox.data.repository.InstalledModRepository
+import com.bd2toolsbox.data.repository.ModRepository
+import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import com.bd2toolsbox.ui.viewmodel.MainViewModel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -69,6 +74,15 @@ class LedgerRecoveryStartupTest {
     private val store = ViewModelStore()
     private var fixtureDir: File? = null
 
+    /** T17：用指定 context 直接构造 MainViewModel（appContext 与仓储均构造注入）。 */
+    private fun newViewModel(ctx: android.content.Context): MainViewModel {
+        val character = CharacterRepository(ctx)
+        return MainViewModel(
+            SavedStateHandle(), ctx, character, ModRepository(ctx, character),
+            InstalledModRepository(ctx), BundleBackupRepository(ctx), PreviewCacheRepository(ctx),
+        )
+    }
+
     @After
     fun cleanupOwnFixture() {
         store.clear()
@@ -99,14 +113,15 @@ class LedgerRecoveryStartupTest {
             }
         }
 
-        val vm = MainViewModel(SavedStateHandle())
-        store.put("t08r2-recovery", vm)
         val wrapper = object : ContextWrapper(base) {
             override fun getFilesDir(): File = dir
             override fun getSharedPreferences(name: String, mode: Int) =
                 super.getSharedPreferences(PREFIX_SHARED_PREFS + name, mode)
         }
-        vm.initialize(wrapper)
+        // T17：appContext 与仓储改构造注入；把 wrapper 作为 appContext 传进去，initialize() 无参。
+        val vm = newViewModel(wrapper)
+        store.put("t08r2-recovery", vm)
+        vm.initialize()
         return vm
     }
 
@@ -192,14 +207,14 @@ class LedgerRecoveryStartupTest {
         val journalStore = OperationJournalStore(File(dir, "install_journal.json"))
         assertNull(journalStore.append(replacedEntry("bundle-alpha", "uri-a", "uri-b")))
 
-        val vm = MainViewModel(SavedStateHandle())
-        store.put("t08r2-recovery-2", vm)
         val wrapper = object : ContextWrapper(base) {
             override fun getFilesDir(): File = dir
             override fun getSharedPreferences(name: String, mode: Int) =
                 super.getSharedPreferences(PREFIX_SHARED_PREFS + name, mode)
         }
-        vm.initialize(wrapper)
+        val vm = newViewModel(wrapper)
+        store.put("t08r2-recovery-2", vm)
+        vm.initialize()
 
         assertTrue(
             "缺本次内容证明时不能仅靠账本放行，实际 ${vm.recoveryVerdict.value}",

@@ -74,7 +74,7 @@ import java.util.Locale
 @Composable
 fun GuideScreen(viewModel: GuideViewModel) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { viewModel.initialize(context) }
+    LaunchedEffect(Unit) { viewModel.initialize() }
 
     val tree by viewModel.tree.collectAsState()
     val treeLoading by viewModel.treeLoading.collectAsState()

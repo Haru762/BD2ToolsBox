@@ -1,6 +1,5 @@
 package com.bd2toolsbox.ui.viewmodel
 
-import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +7,8 @@ import com.bd2toolsbox.data.model.GuideArticle
 import com.bd2toolsbox.data.model.GuideCategory
 import com.bd2toolsbox.data.model.GuideDetail
 import com.bd2toolsbox.data.repository.GamekeeRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +23,11 @@ import kotlinx.coroutines.launch
  * 子页面。右栏的另外两种内容是「最近更新」（随树一次带回）和搜索结果
  * （走 gamekee 的搜索接口，带分页）。
  */
-class GuideViewModel : ViewModel() {
+@HiltViewModel
+class GuideViewModel @Inject constructor(
+    // T17：仓储改构造注入（Hilt 单例），不再用 initialize(context)+lateinit 装配。
+    private val repo: GamekeeRepository,
+) : ViewModel() {
 
     companion object {
         private const val TAG = "GuideViewModel"
@@ -30,8 +35,6 @@ class GuideViewModel : ViewModel() {
         /** 侧栏第一项「最近更新」的虚拟节点 id。真实分类 id 都是正数，不会撞上。 */
         const val NODE_RECENT = -1L
     }
-
-    private lateinit var repo: GamekeeRepository
 
     // ---------------------------------------------------------------- 分类树
 
@@ -108,15 +111,22 @@ class GuideViewModel : ViewModel() {
     private val _cacheUsage = MutableStateFlow(0L to 0)
     val cacheUsage: StateFlow<Pair<Long, Int>> = _cacheUsage.asStateFlow()
 
-    fun initialize(context: Context) {
-        if (!::repo.isInitialized) {
-            repo = GamekeeRepository.get(context)
+    /**
+     * T17：仓储改构造注入后，initialize 不再需要 context/lateinit 装配，只保留
+     * 「进入攻略 tab 就刷新」的入口语义（用户要求实时）。首次顺手刷一下缓存用量。
+     */
+    fun initialize() {
+        if (!cacheUsagePrimed) {
+            cacheUsagePrimed = true
             refreshCacheUsage()
         }
         // 每次进入攻略 tab 都拉新树（用户要求实时）—— ViewModel 挂在 Activity 上，
         // tab 切回来时 GuideScreen 重新组合、LaunchedEffect 再调一次这里
         refreshTree()
     }
+
+    /** 缓存用量首次已刷（替代旧的 `::repo.isInitialized` 判断）。 */
+    private var cacheUsagePrimed = false
 
     // ---------------------------------------------------------------- 树
 
@@ -318,14 +328,12 @@ class GuideViewModel : ViewModel() {
     // ---------------------------------------------------------------- 缓存
 
     fun refreshCacheUsage() {
-        if (!::repo.isInitialized) return
         viewModelScope.launch {
             _cacheUsage.value = repo.usage()
         }
     }
 
     fun clearGuideCache() {
-        if (!::repo.isInitialized) return
         viewModelScope.launch {
             repo.clearCache()
             _cacheUsage.value = 0L to 0

@@ -80,8 +80,19 @@ class SnapshotStoreInstanceReuseTest {
     private val store = ViewModelStore()
     private var fixtureDir: File? = null
 
-    private val appContextField = MainViewModel::class.java
-        .getDeclaredField("appContext").apply { isAccessible = true }
+    // T17：appContext 与仓储改为构造注入。测试直接用指定 context 构造 VM（不再反射 set）。
+    private fun newViewModel(ctx: Context): MainViewModel {
+        val character = CharacterRepository(ctx)
+        return MainViewModel(
+            SavedStateHandle(),
+            ctx,
+            character,
+            ModRepository(ctx, character),
+            InstalledModRepository(ctx),
+            BundleBackupRepository(ctx),
+            PreviewCacheRepository(ctx),
+        )
+    }
 
     @Before
     fun setUp() {
@@ -114,14 +125,13 @@ class SnapshotStoreInstanceReuseTest {
         val base = InstrumentationRegistry.getInstrumentation().targetContext
         val snapshotFile = File(dir, ModSnapshotStore.SNAPSHOT_FILENAME)
 
-        val vm = MainViewModel(SavedStateHandle())
-        store.put("t10r2-store-reuse", vm)
         // 接线：把 appContext 指到夹具目录（initialize() 在生产里做的就是这一件事；
         // 这里不走 initialize() 的原因见类注释「为什么不走 initialize()」）。
-        // snapshotStore() 只从 appContext.filesDir 取路径，所以这一个赋值就够了。
-        appContextField.set(vm, object : ContextWrapper(base) {
+        // snapshotStore() 只从 appContext.filesDir 取路径，所以构造时传这个 context 就够了。
+        val vm = newViewModel(object : ContextWrapper(base) {
             override fun getFilesDir(): File = dir
         })
+        store.put("t10r2-store-reuse", vm)
 
         assertTrue("前提：夹具目录里此刻不该有快照", !snapshotFile.exists())
 

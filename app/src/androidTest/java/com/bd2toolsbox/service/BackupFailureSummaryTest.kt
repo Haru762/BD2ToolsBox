@@ -10,6 +10,10 @@ import com.bd2toolsbox.data.model.InstallJob
 import com.bd2toolsbox.data.model.JobStatus
 import com.bd2toolsbox.data.model.RepackJob
 import com.bd2toolsbox.data.repository.BundleBackupRepository
+import com.bd2toolsbox.data.repository.CharacterRepository
+import com.bd2toolsbox.data.repository.InstalledModRepository
+import com.bd2toolsbox.data.repository.ModRepository
+import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import com.bd2toolsbox.ui.viewmodel.MainViewModel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -66,7 +70,15 @@ import java.io.File
 class BackupFailureSummaryTest {
 
     private val store = ViewModelStore()
-    private val vm: MainViewModel = MainViewModel(SavedStateHandle())
+    // T17：appContext 与仓储改构造注入。vm 直接用 targetContext + 真实仓储构造。
+    private val vm: MainViewModel = run {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val character = CharacterRepository(ctx)
+        MainViewModel(
+            SavedStateHandle(), ctx, character, ModRepository(ctx, character),
+            InstalledModRepository(ctx), BundleBackupRepository(ctx), PreviewCacheRepository(ctx),
+        )
+    }
 
     private val reportBackupFailure = MainViewModel::class.java
         .getDeclaredMethod("reportBackupFailure", String::class.java, String::class.java)
@@ -84,10 +96,7 @@ class BackupFailureSummaryTest {
 
     init {
         store.put("t07-backup-summary", vm)
-        // toast 与 updateJobStatus 都要 appContext；沿用 ModSnapshotTest:34-40 的注入方式。
-        val base = InstrumentationRegistry.getInstrumentation().targetContext
-        MainViewModel::class.java.getDeclaredField("appContext").apply { isAccessible = true }
-            .set(vm, base)
+        // appContext 与 backupRepository 已在构造时注入（targetContext + 真实仓储）。
     }
 
     @After
@@ -322,10 +331,7 @@ class BackupFailureSummaryTest {
     @Test
     fun restoreBackupHonoursTheAutoBackupSwitch() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        // 让这条链真的能走到 saveBackup：注入一个真仓储（生产里 initialize() 里建）。
-        MainViewModel::class.java.getDeclaredField("backupRepository").apply { isAccessible = true }
-            .set(vm, BundleBackupRepository(ctx))
-
+        // backupRepository 已在 vm 构造时注入为真实仓储（同一 targetContext），无需再 set。
         val bundleName = "t07r3-switch-${java.util.UUID.randomUUID()}"
         val hashDir = "hash-${java.util.UUID.randomUUID()}"
         val cacheDir = ctx.cacheDir

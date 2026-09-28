@@ -7,6 +7,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.bd2toolsbox.core.storage.BackupProvenance
 import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.data.repository.BundleBackupRepository
+import com.bd2toolsbox.data.repository.CharacterRepository
+import com.bd2toolsbox.data.repository.InstalledModRepository
+import com.bd2toolsbox.data.repository.ModRepository
+import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import com.bd2toolsbox.ui.viewmodel.MainViewModel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -66,7 +70,16 @@ import java.io.File
 class TryUseBackupTrustGateTest {
 
     private val store = ViewModelStore()
-    private val vm: MainViewModel = MainViewModel(SavedStateHandle())
+    private val ctx0 = InstrumentationRegistry.getInstrumentation().targetContext
+    // T17：appContext 与仓储改构造注入。backupRepo 保留引用供 seedBackup 复用。
+    private val backupRepo = BundleBackupRepository(ctx0)
+    private val vm: MainViewModel = run {
+        val character = CharacterRepository(ctx0)
+        MainViewModel(
+            SavedStateHandle(), ctx0, character, ModRepository(ctx0, character),
+            InstalledModRepository(ctx0), backupRepo, PreviewCacheRepository(ctx0),
+        )
+    }
 
     private val tryUseBackup = MainViewModel::class.java
         .getDeclaredMethod("tryUseBackup", android.content.Context::class.java, String::class.java)
@@ -75,18 +88,14 @@ class TryUseBackupTrustGateTest {
     private val gameBundleHashesField = MainViewModel::class.java
         .getDeclaredField("gameBundleHashes").apply { isAccessible = true }
 
-    private val backupRepositoryField = MainViewModel::class.java
-        .getDeclaredField("backupRepository").apply { isAccessible = true }
-
-    private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+    private val ctx = ctx0
 
     /** 夹具造出来的东西，`finally` 里按这个清单清。 */
     private val cleanupDirs = mutableListOf<File>()
 
     init {
         store.put("t09-try-use-backup", vm)
-        MainViewModel::class.java.getDeclaredField("appContext").apply { isAccessible = true }
-            .set(vm, ctx)
+        // appContext 与 backupRepository 已在构造时注入。
     }
 
     @After
@@ -102,7 +111,7 @@ class TryUseBackupTrustGateTest {
      * @return 备份文件的字节数（调用方用它拼 catalog 登记值）
      */
     private fun seedBackup(bundleName: String, hashDir: String, size: Int, source: BaselineSource): File {
-        val repo = BundleBackupRepository(ctx).also { backupRepositoryField.set(vm, it) }
+        val repo = backupRepo  // vm 构造时注入的同一仓储
         val srcDir = File(ctx.cacheDir, "t09gate/$bundleName").apply { mkdirs() }
         cleanupDirs += srcDir
         val src = File(srcDir, "__data").apply { writeBytes(ByteArray(size) { 0x5A }) }
