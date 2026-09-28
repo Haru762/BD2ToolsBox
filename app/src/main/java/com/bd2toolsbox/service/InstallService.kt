@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bd2toolsbox.MainActivity
+import dagger.hilt.android.AndroidEntryPoint
 
 /**
  * 转换 / 装入期间的前台服务。
@@ -30,6 +31,7 @@ import com.bd2toolsbox.MainActivity
  * 通知里刻意**不放取消按钮**：重打包中途断掉会在游戏目录留下半个 __data，
  * 而这条流程目前也没有干净的中断点。要停就等它跑完再卸载。
  */
+@AndroidEntryPoint // T16：本进程前台服务接入 Hilt（当前无注入字段，留给 T17）
 class InstallService : Service() {
 
     companion object {

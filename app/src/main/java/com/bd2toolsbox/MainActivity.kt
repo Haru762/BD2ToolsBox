@@ -17,6 +17,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import dagger.hilt.android.AndroidEntryPoint
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -98,6 +99,9 @@ import com.bd2toolsbox.utils.SafManager
 import com.bd2toolsbox.service.ShizukuManager
 import rikka.shizuku.Shizuku
 
+// T16：接入 Hilt 对象图。当前不注入任何字段（构造注入留给 T17），但登记为受支持
+// 入口后，Compose 的 hiltViewModel() 与后续构造注入才能在本 Activity 生效。
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     /**

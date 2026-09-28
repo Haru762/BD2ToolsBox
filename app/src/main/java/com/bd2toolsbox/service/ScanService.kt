@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bd2toolsbox.MainActivity
+import dagger.hilt.android.AndroidEntryPoint
 
 /**
  * 游戏资源扫描期间的前台服务：把进程钉在前台，并在通知栏显示进度条。
@@ -28,6 +29,7 @@ import com.bd2toolsbox.MainActivity
  *  - 重复 start 不重置进度：扫描中途的 start 只可能来自异常路径（误触、
  *    界面重建后的初始化检查），归零会让用户以为扫描从头来过。
  */
+@AndroidEntryPoint // T16：本进程前台服务接入 Hilt（当前无注入字段，留给 T17）
 class ScanService : Service() {
 
     companion object {

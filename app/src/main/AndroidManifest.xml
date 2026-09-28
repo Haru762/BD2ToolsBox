@@ -24,6 +24,7 @@
          也只有 4 KB 链接对齐，没有兼容模式它们在 16 KB 页上加载不了。低于 API 36 的系统
          不认识这个属性，直接忽略。全部 native 换成 16 KB 对齐后改成 disabled（见 T15.md）。 -->
     <application
+        android:name=".Bd2Application"
         android:largeHeap="true"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

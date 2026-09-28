@@ -16,6 +16,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.bd2toolsbox.core.python.PythonRuntime
 import com.bd2toolsbox.MainActivity
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,6 +47,7 @@ import java.io.File
  * 中断安全性不依赖本服务：缓存是逐个提交的，所以无论被杀还是被取消，
  * 下次再点都会跳过已完成的接着做，不会白干。前台服务只是让「被杀」变得罕见。
  */
+@AndroidEntryPoint // T16：本进程前台服务接入 Hilt（当前无注入字段，留给 T17）
 class PrepackService : Service() {
 
     // 这两个 data class 放在类体里而不是 companion 里：嵌套在 companion 中的类，
