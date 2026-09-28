@@ -856,7 +856,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.di.HiltEntryPointTest' -Abi 'x86_64'
 
 ### T17 — 把仓库、调度器和有状态依赖改成构造注入
 
-- [ ] **T17 完成**
+- [x] **T17 完成** — 状态 **DONE**（2026-09-27）：6 个有状态仓储改 Hilt @Singleton、两个 VM 改 @HiltViewModel 构造注入（删 lateinit+initialize(context)），新增 Dispatcher/Runtime/RepositoryModule。RepositoryConstructionTest 5/5、JVM 434、6 个设备类全过、minified release+release-probe PASS、arm64 静态审计 PASS。见 [T17.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T17.md>)。
 
 **优先级：** P1　**前置：** T16、T05
 
@@ -871,13 +871,13 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.di.HiltEntryPointTest' -Abi 'x86_64'
 - 新增测试：[app/src/test/java/com/bd2toolsbox/di/RepositoryConstructionTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/test/java/com/bd2toolsbox/di/RepositoryConstructionTest.kt>)
 
 **落实要求：**
-- [ ] 逐个迁移有状态 Repository 的 get(context)/手工单例和 ViewModel.initialize(context)+lateinit 装配；纯静态工具不为形式统一强行加 DI。
-- [ ] 统一注入 ApplicationContext、IO/Default dispatcher、时钟和必要文件/网络 adapter；Activity Context 不进入长寿命对象，作用域以资源所有权而非“全部 Singleton”决定。
-- [ ] 页面选择/筛选状态不放进应用级单例；安装账本与任务协调共享一个事实源。纯逻辑测试直接构造类，不要求每个测试启动 Hilt。
+- [x] 逐个迁移有状态 Repository 的 get(context)/手工单例和 ViewModel.initialize(context)+lateinit 装配；纯静态工具不为形式统一强行加 DI。
+- [x] 统一注入 ApplicationContext、IO/Default dispatcher、时钟和必要文件/网络 adapter；Activity Context 不进入长寿命对象，作用域以资源所有权而非“全部 Singleton”决定。
+- [x] 页面选择/筛选状态不放进应用级单例；安装账本与任务协调共享一个事实源。纯逻辑测试直接构造类，不要求每个测试启动 Hilt。
 
 **验收与回归：**
-- [ ] 同一应用图不会构造多个可竞争写账本的仓库；重建 Activity 不创建新的后台任务所有者。
-- [ ] 真实业务类可用 fake 文件/网络/时间 adapter 测试；去掉 initialize 调用后所有入口仍可用。
+- [x] 同一应用图不会构造多个可竞争写账本的仓库；重建 Activity 不创建新的后台任务所有者。
+- [x] 真实业务类可用 fake 文件/网络/时间 adapter 测试；去掉 initialize 调用后所有入口仍可用。
 
 **执行/验证命令：**
 ~~~powershell
