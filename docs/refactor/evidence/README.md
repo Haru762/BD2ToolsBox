@@ -8,11 +8,11 @@
 
 | 项 | 值 |
 |---|---|
-| 阶段 | **G3 Hilt 与平台适配层进行中**（G2 已收口 T11–T15）；历史 **G2 构建与依赖治理**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 DONE、T14 DONE、T15 DONE、T16 DONE、T17 DONE（2026-09-27，G3 进行中）） |
+| 阶段 | **G3 Hilt 与平台适配层进行中**（G2 已收口 T11–T15）；历史 **G2 构建与依赖治理**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 DONE、T14 DONE、T15 DONE、T16 DONE、T17 DONE（G3 进行中）；T18 IMPLEMENTED_NOT_VERIFIED（2026-09-27，缺原生 arm64）） |
 | arm64 验证策略 | 2026-09-26 起按 [arm64-verification-policy.md](../arm64-verification-policy.md)：原生 arm64 只要求 T14/T18/T49/T50/T51/T54/T57；其余任务为 x86_64 设备验收 + arm64 静态审计（`tools/audit_native_abi.py`） |
 | 权威状态依据 | 本文件与各任务证据的最新追加章节；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
 | 最近已验收任务 | T17（2026-09-27，仓储/VM 构造注入，RepositoryConstructionTest 5/5 + 6 个设备类全过 + minified release PASS，arm64 静态审计）；T16（Hilt Application + 5 入口）；T15（SDK/权限/前台服务/16KB，四台 + 原生 arm64）；T14（2026-09-27，生产构建链升级）；T13（2026-09-26，兼容探针两 ABI 通过）；T12（2026-09-26，含用户授权的已接受限制） |
-| 下一任务 | T18（抽取 Kotlin–Python 引擎适配层）；T08/T10 遗留缺口另行补齐 |
+| 下一任务 | T18 补原生 arm64 NativeEngineSmokeTest（隔离包名，APK 已备）；随后 T19；T08/T10 遗留缺口另行补齐 |
 | 最后核对的代码提交 | HEAD `cf8e87a`（PythonRuntime ABI 选择修复提交 `0032886`，计划/证据状态提交 `cf8e87a`）；T11 为 `53959b3`，T10 为 `f08fa27`，T09 为 `6529e81` |
 | 工作区脏文件 | 历史 T12 requirements/build.gradle 改动继续保留；2026-09-19–20 另有 T08 提交/恢复实现、JVM 回归、独立 release-probe、host runner 与证据文档未提交改动。不是只有两处脏文件；准确清单以当前 git status 为准。/local/、本地配置与构建产物保持忽略；未动只读 bdroid_src。 |
 | 环境/输入清单 | local/refactor-artifacts/historical-0.2.16（2 APK + mapping）、rebuilt-original（3 APK + mapping + metadata）；local/refactor-inputs（catalog-alpha.json、wiki-v2-detail-2238.source.json）。冻结记录见 artifact-manifest.json 的 t03Freeze；旧数据样本与缺口见 fixture-manifest.json |
@@ -40,6 +40,7 @@
 | T15 | DONE | [T15.md](T15.md) | 2026-09-27 | minSdk 29 / compileSdk 36 / targetSdk 34（用户裁定保持）。前台服务被拒时三服务 `start()` 如实返回 false，装入批次全部 Failed 且未动文件/账本；SAF 授权失效改为弹窗告知；删除两个未用存储权限；`libtexture2ddecoder.so` 重编为 16 KB 对齐（两次构建逐字节相同），manifest `pageSizeCompat="enabled"` 消除 Android 16 启动警告（反证：disabled 时 lz4/brotli/UnityPy dlopen 失败）。`PlatformBehaviorTest` 13 条：MuMu API 32（`Test-Bd2Device`）与 AVD API 29/34/36-16KB 全过，三处证伪真红。JVM 435/0/0/0、Python 122/122、release probe 三台 AVD OK。**arm64 native 被替换 → 升格 A 类**：原生 arm64 真机（Xiaomi 2509FPN0BC / API 36，隔离包名）Runtime+Dependency probe PASS，无崩溃/对齐错误，用户正式包前后未变。 |
 | T16 | DONE | [T16.md](T16.md) | 2026-09-27 | 引入 Hilt 2.58 / KSP 2.2.20-2.0.3 / androidx.hilt 1.3.0（T13 组合）：`@HiltAndroidApp Bd2Application`（不抢先启动 Python/不阻塞首屏）、`MainActivity`/`SpinePreviewActivity`/三个本进程 Service 加 `@AndroidEntryPoint`；`ShizukuFileService` 刻意不接（外部 shell 进程 Binder Stub）。compiler 走 KSP 无 kapt，R8 无需手写 Hilt keep。HiltEntryPointTest 4/4（AVD API34）、JVM 429、minified release 冷启动+release-probe PASS；arm64 静态审计 PASS（B 类，dex 层，未在原生 arm64 运行）。 |
 | T17 | DONE | [T17.md](T17.md) | 2026-09-27 | 有状态仓储（Character/Mod/InstalledMod/BundleBackup/PreviewCache/Gamekee）改 Hilt `@Singleton`，MainViewModel/GuideViewModel 改 `@HiltViewModel` 构造注入（删 lateinit+initRepositories，`initialize()` 去 context 化），新增 DispatcherModule/RuntimeModule/RepositoryModule。账本单写不变量保持（`LedgerSubmissionCoordinator` 进程锁 + @Singleton 消分叉），Activity Context 不进长寿命对象。RepositoryConstructionTest 5/5（纯 JVM）、全量 JVM 434、6 个涉及 MainViewModel 的设备类全过（Hilt/Platform/Snapshot/BackupFailure/LedgerRecovery/TryUseBackup）、minified release 冷启动+release-probe PASS；arm64 静态审计 PASS（B 类，dex 层，未在原生 arm64 运行）。 |
+| T18 | IMPLEMENTED_NOT_VERIFIED | [T18.md](T18.md) | — | ModdingService 静态桥 → 可注入 `ModEngine` 接口 + `ChaquopyModEngine`（PyObject 经 `PyCell` 完全封闭，`PyCaller` 可注入 seam），Hilt `@Singleton` + 进程级 `ModEngine.get()`（T20 清理）。协议 15 入口逐一保留，CancellationException 不吞。EngineProtocolTest 9/9（纯 JVM）、NativeEngineSmokeTest 4/4（AVD x86_64，真 Python/JNI BC1）、JVM 443、minified release+release-probe PASS、arm64 静态审计 PASS。**A 类：原生 arm64 NativeEngineSmokeTest 待跑**（隔离包 APK 已备 local/t18/arm64-verify）。 |
 | T16–T62 | NOT_STARTED | （未创建） | — | |
 
 

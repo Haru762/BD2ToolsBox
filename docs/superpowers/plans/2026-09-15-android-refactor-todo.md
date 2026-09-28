@@ -893,7 +893,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.di.RepositoryConstructionTest'
 
 ### T18 — 抽取 Kotlin—Python 引擎适配层并保留协议
 
-- [ ] **T18 完成**
+- [ ] **T18 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-27）：ModdingService → 可注入 ModEngine/ChaquopyModEngine（PyObject 经 PyCell 封闭），Hilt 单例 + ModEngine.get()（T20 清理）。EngineProtocolTest 9/9、NativeEngineSmokeTest 4/4（AVD x86_64）、JVM 443、minified release PASS、arm64 静态审计 PASS。**A 类：原生 arm64 待跑**（隔离包已备）。见 [T18.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T18.md>)。
 
 **优先级：** P1　**前置：** T17、T12
 
