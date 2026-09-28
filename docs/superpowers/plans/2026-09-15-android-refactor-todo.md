@@ -816,7 +816,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.platform.PlatformBehaviorTest' -Abi '
 
 ### T16 — 建立 Hilt Application 和真实 Android 入口
 
-- [ ] **T16 完成**
+- [x] **T16 完成** — 状态 **DONE**（2026-09-27）：Hilt 2.58 / KSP 2.2.20-2.0.3 / androidx.hilt 1.3.0；`@HiltAndroidApp Bd2Application`（懒加载、不抢先启动 Python）、两个 Activity + 三个本进程 Service 加 `@AndroidEntryPoint`，`ShizukuFileService` 不接。HiltEntryPointTest 4/4（AVD API34）、JVM 429、minified release+release-probe PASS、arm64 静态审计 PASS。见 [T16.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T16.md>)。
 
 **优先级：** P1　**前置：** T14、T15
 
@@ -833,13 +833,13 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.platform.PlatformBehaviorTest' -Abi '
 - 新增测试：[app/src/androidTest/java/com/bd2toolsbox/di/HiltEntryPointTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/androidTest/java/com/bd2toolsbox/di/HiltEntryPointTest.kt>)
 
 **落实要求：**
-- [ ] 引入经 T13 验证的 Hilt plugin/runtime/compiler 与 KSP 配置；Application 使用 @HiltAndroidApp，需要注入的 Android Activity/Service 使用受支持入口。
-- [ ] 新增 Application 不抢先启动 Python、扫描游戏文件或阻塞首屏；依赖按实际使用懒加载。
-- [ ] 明确 ShizukuFileService 是外部进程的 Binder Stub，不给它生搬 @AndroidEntryPoint，不让它依赖主进程对象图。
+- [x] 引入经 T13 验证的 Hilt plugin/runtime/compiler 与 KSP 配置；Application 使用 @HiltAndroidApp，需要注入的 Android Activity/Service 使用受支持入口。
+- [x] 新增 Application 不抢先启动 Python、扫描游戏文件或阻塞首屏；依赖按实际使用懒加载。
+- [x] 明确 ShizukuFileService 是外部进程的 Binder Stub，不给它生搬 @AndroidEntryPoint，不让它依赖主进程对象图。
 
 **验收与回归：**
-- [ ] 主界面、预览入口、三个 Service 的独立冷启动均能解析所需依赖；未使用 Python 功能前不触发 Python 重初始化。
-- [ ] Hilt 生成代码构建正常，配置错误会被测试捕获；无跨进程 Hilt 单例访问假设。
+- [x] 主界面、预览入口、三个 Service 的独立冷启动均能解析所需依赖；未使用 Python 功能前不触发 Python 重初始化。
+- [x] Hilt 生成代码构建正常，配置错误会被测试捕获；无跨进程 Hilt 单例访问假设。
 
 **执行/验证命令：**
 ~~~powershell
