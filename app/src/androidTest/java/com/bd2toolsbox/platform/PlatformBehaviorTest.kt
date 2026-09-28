@@ -84,6 +84,7 @@ class PlatformBehaviorTest {
             InstalledModRepository(ctx),
             BundleBackupRepository(ctx),
             PreviewCacheRepository(ctx),
+            com.bd2toolsbox.core.engine.ChaquopyModEngine(),
         )
     }
 

@@ -1,7 +1,7 @@
 package com.bd2toolsbox.data.repository
 
 import android.content.Context
-import com.bd2toolsbox.service.ModdingService
+import com.bd2toolsbox.core.engine.ModEngine
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.json.JSONObject
@@ -23,7 +23,7 @@ import java.io.File
  *
  * 三条自动命名路，越靠前越优先、越不花钱：
  *   1. characters.json 的 `hashed_name` 直查 —— 一步到位，实测 176 个产物里 172 个命中（98%）
- *   2. catalog 的 download_key 推导（[ModdingService.getBundleHints]）—— 要下 60MB catalog，
+ *   2. catalog 的 download_key 推导（[ModEngine.getBundleHints]）—— 要下 60MB catalog，
  *      但**不依赖游戏目录、也不依赖「扫描游戏资源」**，是新装 / 无游戏 / 清过数据时的兜底
  *   3. scannedBundles 里的资源名 —— 最准（看的是 bundle 真实内容），但要先跑完几分钟的扫描
  *
@@ -92,7 +92,7 @@ class BundleNameResolver(private val context: Context) {
             "HD"
         }
         val hints = try {
-            ModdingService.getBundleHints(context.filesDir.absolutePath, quality) { }
+            ModEngine.get().getBundleHints(context.filesDir.absolutePath, quality) { }
         } catch (e: Exception) {
             e.printStackTrace()
             null

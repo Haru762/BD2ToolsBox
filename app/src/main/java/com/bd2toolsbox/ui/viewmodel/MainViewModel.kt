@@ -78,7 +78,7 @@ import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import com.bd2toolsbox.data.repository.SpineRuntimeRepository
 import com.bd2toolsbox.data.repository.UpdateRepository
 import com.bd2toolsbox.service.InstallService
-import com.bd2toolsbox.service.ModdingService
+import com.bd2toolsbox.core.engine.ModEngine
 import com.bd2toolsbox.service.PrepackService
 import com.bd2toolsbox.service.ScanService
 import com.bd2toolsbox.service.ShizukuManager
@@ -119,6 +119,7 @@ class MainViewModel @Inject constructor(
     private val installedModRepository: InstalledModRepository,
     private val backupRepository: BundleBackupRepository,
     private val previewCacheRepository: PreviewCacheRepository,
+    private val modEngine: ModEngine,
 ) : ViewModel() {
 
     companion object {
@@ -1634,7 +1635,7 @@ class MainViewModel @Inject constructor(
                 localBase
             } else {
                 updateJobStatus(hashedName, JobStatus.Downloading("开始下载..."))
-                val (ok, result) = ModdingService.downloadBundle(
+                val (ok, result) = modEngine.downloadBundle(
                     hashedName, selectedQuality.value, context.cacheDir.absolutePath, cacheKey
                 ) { progress -> updateJobStatus(hashedName, JobStatus.Downloading(progress)) }
                 if (!ok) throw Exception("Download failed: $result")
@@ -1699,7 +1700,7 @@ class MainViewModel @Inject constructor(
             if (installJob.job.modsToInstall.isEmpty()) {
                 restoreBaseBundle(hashedName, originalDataCache, repackedDataCache, baseIsGameFormat, relativePath)
             } else {
-                val (ok, message) = ModdingService.repackBundle(
+                val (ok, message) = modEngine.repackBundle(
                     originalDataCache.absolutePath, modAssetsDir.absolutePath,
                     repackedDataCache.absolutePath, useAstc.value
                 ) { progress -> updateJobStatus(hashedName, JobStatus.Installing(progress)) }
@@ -1754,7 +1755,7 @@ class MainViewModel @Inject constructor(
      *
      * **不参与任何判定**，所以拿不到就返回 null。取法是从磁盘缓存文件名反推
      * （`catalog_{画质}_{版本}.json`，见 `catalog_indexer.cache_file_name`）——
-     * 这样不必给 `ModdingService.getBundleMeta` 加返回值（那会把 T09 的范围
+     * 这样不必给 `modEngine.getBundleMeta` 加返回值（那会把 T09 的范围
      * 扩到 `service/` 去，超出计划列的文件清单）。
      */
     private fun currentCatalogVersion(quality: String): String? {
@@ -1827,7 +1828,7 @@ class MainViewModel @Inject constructor(
             base.copyTo(output, overwrite = true)
             return
         }
-        val (ok, msg) = ModdingService.restoreBundle(
+        val (ok, msg) = modEngine.restoreBundle(
             base.absolutePath, output.absolutePath
         ) { progress -> updateJobStatus(hashedName, JobStatus.Installing(progress)) }
         if (!ok) throw Exception("Restore failed: $msg")
@@ -2450,7 +2451,7 @@ class MainViewModel @Inject constructor(
         return try {
             val verdict = try {
                 if (!Python.isStarted()) null
-                else ModdingService.validateBundle(prepared.dataFile.absolutePath)
+                else modEngine.validateBundle(prepared.dataFile.absolutePath)
             } catch (e: Exception) {
                 Log.w("MainViewModel", "暂存校验异常，不据此拦下装入：${mod.name}", e)
                 null
@@ -3340,7 +3341,7 @@ class MainViewModel @Inject constructor(
                     mkdirs()
                 }
 
-                val result = ModdingService.unpackBundle(
+                val result = modEngine.unpackBundle(
                     tempInput.absolutePath, tempOutput.absolutePath
                 ) { progress ->
                     viewModelScope.launch(Dispatchers.Main) {
@@ -3401,7 +3402,7 @@ class MainViewModel @Inject constructor(
                 }
 
                 val (success, message) = withContext(Dispatchers.IO) {
-                    ModdingService.mergeSpineAssets(tempDir.absolutePath) { progress ->
+                    modEngine.mergeSpineAssets(tempDir.absolutePath) { progress ->
                         viewModelScope.launch(Dispatchers.Main) {
                             _mergeState.value = MergeState.Merging(progress)
                         }
@@ -4009,7 +4010,7 @@ class MainViewModel @Inject constructor(
                     if (msg.contains("失败")) metaHint = msg
                 }
             } else {
-                ModdingService.getBundleMeta(
+                modEngine.getBundleMeta(
                     context.filesDir.absolutePath, _selectedQuality.value
                 ) { msg ->
                     Log.d("MainViewModel", "bundleMeta: $msg")
@@ -4126,7 +4127,7 @@ class MainViewModel @Inject constructor(
         onProgress: (String) -> Unit
     ): Pair<Map<String, Pair<Long, String>>, Boolean>? {
         val selected = _selectedQuality.value
-        val selectedResult = ModdingService.getBundleMeta(context.filesDir.absolutePath, selected, onProgress)
+        val selectedResult = modEngine.getBundleMeta(context.filesDir.absolutePath, selected, onProgress)
             ?: return null
         val selectedMeta = selectedResult.first
         // 游戏目录还没东西（刚装游戏）或当前档位对得上 —— 不需要判别
@@ -4138,7 +4139,7 @@ class MainViewModel @Inject constructor(
         // 画质判别在线下没意义（离线降级表对哪一档都只有一份缓存），直接返回本档。
         if (selectedResult.second) return selectedResult
         val other = if (selected == "HD") "SD" else "HD"
-        val otherResult = ModdingService.getBundleMeta(context.filesDir.absolutePath, other) { }
+        val otherResult = modEngine.getBundleMeta(context.filesDir.absolutePath, other) { }
             ?: return selectedResult
         if (hashMatchRatio(local, otherResult.first) > hashMatchRatio(local, selectedMeta)) {
             Log.i("MainViewModel", "画质自检：游戏资源是 $other（原设置 $selected），已自动切换")
@@ -4179,7 +4180,7 @@ class MainViewModel @Inject constructor(
         if (currentResult == null || currentResult.second) return null
         val other = if (_selectedQuality.value == "HD") "SD" else "HD"
         return try {
-            val result = ModdingService.getBundleMeta(context.filesDir.absolutePath, other) { }
+            val result = modEngine.getBundleMeta(context.filesDir.absolutePath, other) { }
             if (result == null || result.second) {
                 Log.i("MainViewModel",
                     "另一档（$other）catalog 本次不可用：hash 不符的产物分不出画质错配，一律保守拦住")
@@ -4379,7 +4380,7 @@ class MainViewModel @Inject constructor(
         val context = appContext ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val result = ModdingService.getBundleMeta(
+                val result = modEngine.getBundleMeta(
                     context.filesDir.absolutePath, _selectedQuality.value
                 ) { }
                 if (result == null) return@launch
@@ -4847,7 +4848,7 @@ class MainViewModel @Inject constructor(
         PythonRuntime.ensureStarted(context)
         // 直接解到缓存位置，省掉「解到临时目录再整体拷进缓存」那一趟
         val outDir = previewCacheRepository.prepareDir(bundleName, hashDir, srcSize)
-        val (ok, msg) = ModdingService.unpackBundle(
+        val (ok, msg) = modEngine.unpackBundle(
             bundleFile.absolutePath, outDir.absolutePath, fast = true
         ) { p ->
             _previewState.value = PreviewState.Preparing(p)

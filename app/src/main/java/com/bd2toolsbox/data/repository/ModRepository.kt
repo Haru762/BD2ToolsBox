@@ -13,7 +13,7 @@ import com.bd2toolsbox.data.model.ModInfo
 import com.bd2toolsbox.data.model.ModKind
 import com.bd2toolsbox.data.model.ResolutionState
 import com.bd2toolsbox.data.model.ResolvedTarget
-import com.bd2toolsbox.service.ModdingService
+import com.bd2toolsbox.core.engine.ModEngine
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -467,7 +467,7 @@ class ModRepository(
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         val quality = prefs.getString("selected_quality", "HD") ?: "HD"
 
-        val (batchSuccess, batchResults) = ModdingService.resolveModBatch(
+        val (batchSuccess, batchResults) = ModEngine.get().resolveModBatch(
             payload.toString(),
             context.filesDir.absolutePath,
             quality

@@ -80,6 +80,7 @@ class LedgerRecoveryStartupTest {
         return MainViewModel(
             SavedStateHandle(), ctx, character, ModRepository(ctx, character),
             InstalledModRepository(ctx), BundleBackupRepository(ctx), PreviewCacheRepository(ctx),
+            com.bd2toolsbox.core.engine.ChaquopyModEngine(),
         )
     }
 

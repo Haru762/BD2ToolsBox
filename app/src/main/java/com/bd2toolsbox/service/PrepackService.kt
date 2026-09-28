@@ -47,8 +47,11 @@ import java.io.File
  * 中断安全性不依赖本服务：缓存是逐个提交的，所以无论被杀还是被取消，
  * 下次再点都会跳过已完成的接着做，不会白干。前台服务只是让「被杀」变得罕见。
  */
-@AndroidEntryPoint // T16：本进程前台服务接入 Hilt（当前无注入字段，留给 T17）
+@AndroidEntryPoint // T16：本进程前台服务接入 Hilt；T18 字段注入 ModEngine
 class PrepackService : Service() {
+
+    /** T18：Kotlin–Python 引擎（Hilt 单例），代替旧的 ModdingService 静态桥。 */
+    @javax.inject.Inject lateinit var modEngine: com.bd2toolsbox.core.engine.ModEngine
 
     // 这两个 data class 放在类体里而不是 companion 里：嵌套在 companion 中的类，
     // 外部得写 PrepackService.Companion.Target 才引用得到，而放这一层就是自然的
@@ -262,7 +265,7 @@ class PrepackService : Service() {
 
                     val outDir = previewCache.prepareDir(t.bundleName, t.hashDir, t.size)
                     var lastPush = 0L
-                    val (ok, _) = ModdingService.unpackBundle(
+                    val (ok, _) = modEngine.unpackBundle(
                         tmp.absolutePath, outDir.absolutePath, fast = true
                     ) { line ->
                         // Python 侧每个 asset 报一次，形如

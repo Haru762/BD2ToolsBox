@@ -5,6 +5,7 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
 import android.util.Log
+import com.bd2toolsbox.core.engine.ModEngine
 import com.bd2toolsbox.IFileService
 import com.bd2toolsbox.data.model.BundleCheckResult
 import kotlinx.coroutines.CompletableDeferred
@@ -356,7 +357,7 @@ object ShizukuManager {
             onProgress("Found ${bundleList.length()} bundles. Checking cache...")
 
             // python 侧对照缓存给出待扫名单
-            val needsScanJson = ModdingService.checkScanNeeded(outputDir, bundleList.toString(), onProgress)
+            val needsScanJson = ModEngine.get().checkScanNeeded(outputDir, bundleList.toString(), onProgress)
             val needsScan = JSONArray(needsScanJson)
 
             val hashMap = HashMap<String, String>(bundleList.length())
@@ -398,7 +399,7 @@ object ShizukuManager {
             val total = needsScan.length()
             if (total == 0) {
                 // 没有要扫的，只用缓存数据收个尾
-                ModdingService.finalizeScan(outputDir) { }
+                ModEngine.get().finalizeScan(outputDir) { }
                 return@withContext Triple(true, 0, 0)
             }
 
@@ -428,7 +429,7 @@ object ShizukuManager {
                 }
 
                 onBundleProgress(i, total, bundleName, "Scanning $bundleName...")
-                val (ok, _, _) = ModdingService.scanSingleBundle(
+                val (ok, _, _) = ModEngine.get().scanSingleBundle(
                     bundleName, bundleHash, tempDataFile.absolutePath
                 ) { msg -> onBundleProgress(i, total, bundleName, msg) }
                 if (ok) scanned++ else failed++
@@ -436,13 +437,13 @@ object ShizukuManager {
                 tempDataFile.delete()     // 立刻清，60MB 级文件不留过夜
 
                 if ((i + 1) % checkpointEvery == 0) {
-                    ModdingService.checkpointScan(outputDir)
+                    ModEngine.get().checkpointScan(outputDir)
                 }
             }
             tempDir.deleteRecursively()
 
             onBundleProgress(total, total, "", "Saving index...")
-            val (finalSuccess, _) = ModdingService.finalizeScan(outputDir) { msg ->
+            val (finalSuccess, _) = ModEngine.get().finalizeScan(outputDir) { msg ->
                 onBundleProgress(total, total, "", msg)
             }
             Triple(finalSuccess, scanned, failed)
@@ -463,7 +464,7 @@ object ShizukuManager {
 
         if (checkResult.needsScanCount == 0) {
             onProgress("All bundles are up to date. Finalizing...")
-            return@withContext ModdingService.finalizeScan(outputDir, onProgress)
+            return@withContext ModEngine.get().finalizeScan(outputDir, onProgress)
         }
 
         onProgress("${checkResult.needsScanCount} bundles need scanning...")
