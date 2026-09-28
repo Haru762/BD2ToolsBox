@@ -776,7 +776,7 @@ Test-Bd2Python -Pattern 'test_*.py'
 
 ### T15 — 验证 SDK、权限、前台服务和更新安装行为
 
-- [ ] **T15 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-27）：x86_64 全部验收项通过（MuMu API 32 `Test-Bd2Device` 13/13，AVD API 29/34/36-16KB 13/13）；本任务替换了 arm64 `libtexture2ddecoder.so`，按 arm64 验证策略升格 A 类，**缺原生 arm64 release probe**。见 [T15.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T15.md>)。
+- [x] **T15 完成** — 状态 **DONE**（2026-09-27）：minSdk 29 / compileSdk 36 / targetSdk 34（用户裁定）；前台服务被拒安全停止+反馈、SAF 授权失效弹窗、删两个未用存储权限、libtexture2ddecoder 16KB 重编 + pageSizeCompat。PlatformBehaviorTest 13/13 于 MuMu API32 + AVD API29/34/36-16KB；JVM 435、Python 122；**原生 arm64 真机** Runtime+Dependency probe PASS。见 [T15.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T15.md>)。 — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-27）：x86_64 全部验收项通过（MuMu API 32 `Test-Bd2Device` 13/13，AVD API 29/34/36-16KB 13/13）；本任务替换了 arm64 `libtexture2ddecoder.so`，按 arm64 验证策略升格 A 类，**缺原生 arm64 release probe**。见 [T15.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T15.md>)。
 
 **优先级：** P0　**前置：** T14
 
@@ -790,14 +790,14 @@ Test-Bd2Python -Pattern 'test_*.py'
 - 新增测试：[app/src/androidTest/java/com/bd2toolsbox/platform/PlatformBehaviorTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/androidTest/java/com/bd2toolsbox/platform/PlatformBehaviorTest.kt>)
 
 **落实要求：**
-- [ ] minSdk 固定29。根据 T13 和实测结果明确 compileSdk/targetSdk，分别记录；选择稳定且已验证的目标，不把 targetSdk 上调当普通依赖改号。
-- [ ] 验证通知拒绝、后台启动限制、前台服务类型/权限、适用系统的 dataSync 超时，以及受限情况下安全停止和反馈；不靠 Service 名称或 Hilt 注解假定保活成立。
-- [ ] 验证 SAF 持久授权、全部文件权限、Shizuku 授权、下载完成广播、FileProvider 和未知来源 APK 安装授权；不更改 applicationId、authority 或外部组件身份。
-- [ ] 对适用的新系统验证16KB内存页下的 native 加载与 APK 对齐；ELF 链接对齐和 ZIP 对齐分别检查，不能用 strip 或压缩代替兼容修复。
+- [x] minSdk 固定29。根据 T13 和实测结果明确 compileSdk/targetSdk，分别记录；选择稳定且已验证的目标，不把 targetSdk 上调当普通依赖改号。
+- [x] 验证通知拒绝、后台启动限制、前台服务类型/权限、适用系统的 dataSync 超时，以及受限情况下安全停止和反馈；不靠 Service 名称或 Hilt 注解假定保活成立。
+- [x] 验证 SAF 持久授权、全部文件权限、Shizuku 授权、下载完成广播、FileProvider 和未知来源 APK 安装授权；不更改 applicationId、authority 或外部组件身份。
+- [x] 对适用的新系统验证16KB内存页下的 native 加载与 APK 对齐；ELF 链接对齐和 ZIP 对齐分别检查，不能用 strip 或压缩代替兼容修复。
 
 **验收与回归：**
-- [ ] API29、34及选定目标/较新系统上，授权成功/拒绝/撤销都有正确结果；拒绝权限不能显示成功的空列表。
-- [ ] 前台服务被拒绝或超时不会截断游戏文件、漏记账本或永久卡住进度；更新仍交由系统安装器确认。
+- [x] API29、34及选定目标/较新系统上，授权成功/拒绝/撤销都有正确结果；拒绝权限不能显示成功的空列表。
+- [x] 前台服务被拒绝或超时不会截断游戏文件、漏记账本或永久卡住进度；更新仍交由系统安装器确认。
 
 **执行/验证命令：**
 ~~~powershell
