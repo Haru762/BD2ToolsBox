@@ -2,232 +2,211 @@ package com.bd2toolsbox.core.engine
 
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
-import javax.inject.Inject
-import javax.inject.Singleton
 
-/**
- * Python 返回元组里的一个单元，脱去 [PyObject]（T18）。
- *
- * 协议解码只依赖这个中性接口，[PyObject] 因此**完全**封闭在 [ChaquopyPyCaller] 里——
- * 既满足「PyObject 不穿透」，也让 [EngineProtocolTest] 在纯 JVM 下用简单 fake 驱动解码，
- * 不必 mock Chaquopy 的 native 方法（`PyObject.toString()` 是 native，无法 mock）。
- */
+/** Python values stay behind this boundary; protocol tests need no native interpreter. */
 interface PyCell {
     fun asBool(): Boolean
     fun asInt(): Int
     fun asLong(): Long
     fun asText(): String
-    /** map 值展开成 cell 列表；非 map 返回 null。 */
     fun asMap(): Map<String, List<PyCell>>?
 }
 
-/**
- * 取一次 main_script 入口的原始返回（cell 列表）；解释器/调用细节都在实现里。
- * 抽成可注入 seam，生产用 [ChaquopyPyCaller]，测试用 fake。
- */
 fun interface PyCaller {
     fun call(function: String, args: Array<out Any?>): List<PyCell>
 }
 
-/** [PyObject] 到 [PyCell] 的适配（唯一触碰 PyObject 的地方）。 */
-private class PyObjectCell(private val po: PyObject) : PyCell {
-    override fun asBool(): Boolean = po.toBoolean()
-    override fun asInt(): Int = po.toInt()
-    override fun asLong(): Long = po.toLong()
-    override fun asText(): String = po.toString()
-    override fun asMap(): Map<String, List<PyCell>>? = try {
-        buildMap {
-            for ((k, v) in po.asMap()) {
-                val name = k?.toString() ?: continue
-                val list = v?.asList()?.map { PyObjectCell(it) } ?: continue
-                put(name, list)
-            }
+private class PyObjectCell(private val value: PyObject?) : PyCell {
+    // Chaquopy represents Python None as null. Failed metadata tuples legitimately contain it;
+    // only converting a field which the protocol requires must reject it.
+    private fun required(): PyObject = requireNotNull(value) { "Unexpected Python None" }
+    override fun asBool(): Boolean = required().toBoolean()
+    override fun asInt(): Int = required().toInt()
+    override fun asLong(): Long = required().toLong()
+    override fun asText(): String = required().toString()
+    override fun asMap(): Map<String, List<PyCell>> = buildMap {
+        for ((key, item) in required().asMap()) {
+            val name = requireNotNull(key) { "Metadata key is None" }.toString()
+            val fields = requireNotNull(item) { "Metadata value is None" }.asList()
+            put(name, fields.map { PyObjectCell(it) })
         }
-    } catch (e: Exception) {
-        null
     }
 }
 
-/**
- * 生产实现：真正走 Chaquopy 的 main_script 模块。
- *
- * 进入这里才把进度回调（`Function1`）转成 [PyObject]——`PyObject.fromJava` 需要
- * 解释器已启动，放到最后一刻做，使上层不需在组装参数时就碰 Python。
- */
-@Singleton
-class ChaquopyPyCaller @Inject constructor() : PyCaller {
+class ChaquopyPyCaller : PyCaller {
     override fun call(function: String, args: Array<out Any?>): List<PyCell> {
         val converted = args.map { if (it is Function1<*, *>) PyObject.fromJava(it) else it }.toTypedArray()
-        return Python.getInstance()
-            .getModule("main_script")
-            .callAttr(function, *converted)
-            .asList()
-            .map { PyObjectCell(it) }
+        val result = Python.getInstance().getModule("main_script").callAttrThrows(function, *converted)
+        // asList alone also accepts Python strings and lists, masking a broken tuple protocol.
+        if (result == null || result.type().get("__name__")?.toString() != "tuple") {
+            throw EngineBridgeException(
+                function, EngineBridgeException.Phase.PROTOCOL,
+                IllegalArgumentException("Expected a Python tuple"),
+            )
+        }
+        return result.asList().map { PyObjectCell(it) }
     }
 }
 
-/**
- * [ModEngine] 的 Chaquopy 实现（T18）。
- *
- * 从原 `service.ModdingService` 静态桥逐字搬迁——方法名、参数顺序、返回装配、失败值、
- * SD/HD/ASTC/resolver 语义都不变，只是从 `object` 变成可注入的类，且解码基于 [PyCell]。
- */
-@Singleton
-class ChaquopyModEngine @Inject constructor(
+/** Preserves Python names/argument order; validates the entire response before returning success. */
+class ChaquopyModEngine(
     private val pyCaller: PyCaller,
 ) : ModEngine {
-
-    /** 无参构造：兜底给 [ModEngine.get] 的进程级默认用（未经 Hilt 时）。 */
     constructor() : this(ChaquopyPyCaller())
 
-    /** 调 main_script 的一个入口，返回结果 cell 列表；异常时返回 null。
-     *  协程取消（[CancellationException]）**不**吞成一般失败：直接重新抛出，让上层协程
-     *  正常走取消流程，而不是被记成「未知错误」。 */
-    private fun callMain(function: String, vararg args: Any?): List<PyCell>? = try {
-        pyCaller.call(function, args)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
+    private class Progress<T>(private val callback: (String) -> T) : (String) -> T {
+        @Volatile var cancellation: CancellationException? = null
+            private set
+
+        override fun invoke(message: String): T {
+            cancellation?.let { throw it }
+            try {
+                return callback(message)
+            } catch (e: CancellationException) {
+                cancellation = e
+                throw e
+            }
+        }
     }
 
-    // ---------------------------------------------------------------- 下载与转换
+    private fun checkCallbackCancellation(args: Array<out Any?>) {
+        // Python's broad except clauses can swallow a Java callback exception. Preserve it on
+        // the Kotlin side and rethrow when the native call returns, before decoding any success.
+        for (arg in args) (arg as? Progress<*>)?.cancellation?.let { throw it }
+    }
+
+    private inline fun <T> callMain(
+        function: String,
+        arity: Int,
+        vararg args: Any?,
+        onFailure: (EngineBridgeException) -> T,
+        decode: (List<PyCell>) -> T,
+    ): T {
+        var phase = EngineBridgeException.Phase.CALL
+        try {
+            val cells = pyCaller.call(function, args)
+            checkCallbackCancellation(args)
+            phase = EngineBridgeException.Phase.PROTOCOL
+            require(cells.size == arity) { "Expected $arity tuple cells, got ${cells.size}" }
+            return decode(cells)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            checkCallbackCancellation(args)
+            val failure = e as? EngineBridgeException ?: EngineBridgeException(function, phase, e)
+            failure.printStackTrace()
+            return onFailure(failure)
+        }
+    }
+
+    private fun callPair(function: String, vararg args: Any?): Pair<Boolean, String> =
+        callMain(function, 2, *args, onFailure = { false to it.message.orEmpty() }) { cells ->
+            cells[0].asBool() to cells[1].asText()
+        }
 
     override fun downloadBundle(
         hashedName: String, quality: String, outputDir: String,
         cacheKey: String, onProgress: (String) -> Unit,
-    ): Pair<Boolean, String> {
-        val r = callMain("download_bundle", hashedName, quality, outputDir, cacheKey, onProgress)
-            ?: return Pair(false, "An unknown error occurred in Kotlin during download.")
-        return r[0].asBool() to r[1].asText()
-    }
+    ): Pair<Boolean, String> = callPair("download_bundle", hashedName, quality, outputDir, cacheKey, Progress(onProgress))
 
     override fun repackBundle(
         originalBundlePath: String, moddedAssetsFolder: String,
         outputPath: String, useAstc: Boolean, onProgress: (String) -> Unit,
-    ): Pair<Boolean, String> {
-        val r = callMain("main", originalBundlePath, moddedAssetsFolder, outputPath, useAstc, onProgress)
-            ?: return Pair(false, "An unknown error occurred in Kotlin.")
-        return r[0].asBool() to r[1].asText()
-    }
+    ): Pair<Boolean, String> = callPair("main", originalBundlePath, moddedAssetsFolder, outputPath, useAstc, Progress(onProgress))
 
     override fun getBundleMeta(
         outputDir: String, quality: String, onProgress: (String) -> Unit,
-    ): Pair<Map<String, Pair<Long, String>>, Boolean>? {
-        val r = callMain("get_bundle_meta", outputDir, quality, onProgress)
-            ?: return null
-        if (!r[0].asBool()) {
-            onProgress("获取 bundle 元数据失败：${r[1].asText()}")
-            return null
-        }
-        val meta = r.getOrNull(2) ?: return null
-        if (meta.asText() == "None") return null
-        // python 离线降级时 r[1] 是 "degraded"：表来自磁盘缓存、可能不是最新版
-        val degraded = r.getOrNull(1)?.asText() == "degraded"
-
-        val map = buildMap {
-            for ((name, pair) in meta.asMap() ?: return@buildMap) {
-                if (pair.size >= 2) put(name, pair[0].asLong() to pair[1].asText())
+    ): Pair<Map<String, Pair<Long, String>>, Boolean>? =
+        callMain("get_bundle_meta", 3, outputDir, quality, Progress(onProgress), onFailure = { null }) { cells ->
+            if (!cells[0].asBool()) {
+                onProgress("获取 bundle 元数据失败：${cells[1].asText()}")
+                return@callMain null
             }
+            val degraded = cells[1].asText() == "degraded"
+            val raw = requireNotNull(cells[2].asMap()) { "Expected a metadata map" }
+            val decoded = raw.mapValues { (_, fields) ->
+                require(fields.size == 2) { "Metadata entry must have size and hash" }
+                fields[0].asLong() to fields[1].asText()
+            }
+            decoded to degraded
         }
-        return map to degraded
-    }
 
     override fun getBundleHints(
         outputDir: String, quality: String, onProgress: (String) -> Unit,
-    ): Map<String, Pair<String, String>>? {
-        val r = callMain("get_bundle_hints", outputDir, quality, onProgress)
-            ?: return null
-        if (!r[0].asBool()) {
-            onProgress("获取 bundle 命名提示失败：${r[1].asText()}")
-            return null
-        }
-        val hints = r.getOrNull(2) ?: return null
-        if (hints.asText() == "None") return null
-
-        return buildMap {
-            for ((name, pair) in hints.asMap() ?: return@buildMap) {
-                if (pair.size >= 2) put(name, pair[0].asText() to pair[1].asText())
+    ): Map<String, Pair<String, String>>? =
+        callMain("get_bundle_hints", 3, outputDir, quality, Progress(onProgress), onFailure = { null }) { cells ->
+            if (!cells[0].asBool()) {
+                onProgress("获取 bundle 命名提示失败：${cells[1].asText()}")
+                return@callMain null
+            }
+            val raw = requireNotNull(cells[2].asMap()) { "Expected a hints map" }
+            raw.mapValues { (_, fields) ->
+                require(fields.size == 2) { "Hint entry must have file ID and slot" }
+                fields[0].asText() to fields[1].asText()
             }
         }
-    }
 
     override fun restoreBundle(
         originalBundlePath: String, outputPath: String, onProgress: (String) -> Unit,
-    ): Pair<Boolean, String> {
-        val r = callMain("restore_bundle", originalBundlePath, outputPath, onProgress)
-            ?: return Pair(false, "restore_bundle 调用失败")
-        return r[0].asBool() to r[1].asText()
-    }
+    ): Pair<Boolean, String> = callPair("restore_bundle", originalBundlePath, outputPath, Progress(onProgress))
 
     override fun unpackBundle(
         bundlePath: String, outputDir: String, fast: Boolean,
         onProgress: (String) -> Boolean,
-    ): Pair<Boolean, String> {
-        val r = callMain("unpack_bundle", bundlePath, outputDir, onProgress, fast)
-            ?: return Pair(false, "An unknown error occurred in Kotlin during unpack.")
-        return r[0].asBool() to r[1].asText()
-    }
+    ): Pair<Boolean, String> = callPair("unpack_bundle", bundlePath, outputDir, Progress(onProgress), fast)
 
-    override fun validateBundle(bundlePath: String): Pair<Boolean, String> {
-        val r = callMain("validate_bundle", bundlePath)
-            ?: return Pair(false, "validate_bundle 调用失败")
-        return r[0].asBool() to r[1].asText()
-    }
-
-    // ---------------------------------------------------------------- mod 解析
+    override fun validateBundle(bundlePath: String): Pair<Boolean, String> = callPair("validate_bundle", bundlePath)
 
     override fun resolveModFiles(
         fileNamesJson: String, outputDir: String, quality: String, onProgress: (String) -> Unit,
-    ): Pair<Boolean, JSONObject?> {
-        val r = callMain("resolve_mod_files", fileNamesJson, outputDir, quality, onProgress)
-            ?: return Pair(false, null)
-        val success = r[0].asBool()
-        return success to success.takeIf { it }?.let { JSONObject(r[1].asText()) }
-    }
+    ): Pair<Boolean, JSONObject?> =
+        callMain("resolve_mod_files", 2, fileNamesJson, outputDir, quality, Progress(onProgress),
+            onFailure = { false to null }) { cells ->
+            if (!cells[0].asBool()) return@callMain false to null
+            val json = cells[1].asText()
+            require(JsonParser.parseString(json).isJsonObject) { "Expected a resolver JSON object" }
+            true to JSONObject(json)
+        }
 
     override fun resolveModBatch(
         modsJson: String, outputDir: String, quality: String, onProgress: (String) -> Unit,
-    ): Pair<Boolean, JSONArray?> {
-        val r = callMain("resolve_mod_batch", modsJson, outputDir, quality, onProgress)
-            ?: return Pair(false, null)
-        val success = r[0].asBool()
-        return success to success.takeIf { it }?.let { JSONArray(r[1].asText()) }
-    }
+    ): Pair<Boolean, JSONArray?> =
+        callMain("resolve_mod_batch", 2, modsJson, outputDir, quality, Progress(onProgress),
+            onFailure = { false to null }) { cells ->
+            if (!cells[0].asBool()) return@callMain false to null
+            val json = cells[1].asText()
+            require(JsonParser.parseString(json).isJsonArray) { "Expected a resolver JSON array" }
+            true to JSONArray(json)
+        }
 
-    override fun mergeSpineAssets(modPath: String, onProgress: (String) -> Unit): Pair<Boolean, String> {
-        val r = callMain("merge_spine_assets", modPath, onProgress)
-            ?: return Pair(false, "An unknown error occurred in Kotlin during spine merge.")
-        return r[0].asBool() to r[1].asText()
-    }
+    override fun mergeSpineAssets(modPath: String, onProgress: (String) -> Unit): Pair<Boolean, String> =
+        callPair("merge_spine_assets", modPath, Progress(onProgress))
 
-    // ---------------------------------------------------------------- 本地扫描（三步 API）
-
+    // A failed scan check has no valid String sentinel: "[]" would incorrectly mean up-to-date.
     override fun checkScanNeeded(outputDir: String, bundleListJson: String, onProgress: (String) -> Unit): String =
-        callMain("check_scan_needed", outputDir, bundleListJson, onProgress)
-            ?.firstOrNull()?.asText() ?: "[]"
+        callMain("check_scan_needed", 1, outputDir, bundleListJson, Progress(onProgress), onFailure = { throw it }) { cells ->
+            val json = cells[0].asText()
+            val parsed = JsonParser.parseString(json)
+            require(parsed.isJsonArray && parsed.asJsonArray.all {
+                it.isJsonPrimitive && it.asJsonPrimitive.isString
+            }) { "Expected a scan list of bundle names" }
+            json
+        }
 
     override fun scanSingleBundle(
         bundleName: String, bundleHash: String, tempDataPath: String, onProgress: (String) -> Unit,
-    ): Triple<Boolean, Int, String> {
-        val r = callMain("scan_single_bundle", bundleName, bundleHash, tempDataPath, onProgress)
-            ?: return Triple(false, 0, "Unknown error during bundle scan.")
-        return Triple(r[0].asBool(), r[1].asInt(), r[2].asText())
-    }
+    ): Triple<Boolean, Int, String> =
+        callMain("scan_single_bundle", 3, bundleName, bundleHash, tempDataPath, Progress(onProgress),
+            onFailure = { Triple(false, 0, it.message.orEmpty()) }) { cells ->
+            Triple(cells[0].asBool(), cells[1].asInt(), cells[2].asText())
+        }
 
-    override fun checkpointScan(outputDir: String): Pair<Boolean, String> {
-        val r = callMain("checkpoint_scan", outputDir)
-            ?: return Pair(false, "Unknown error during scan checkpoint.")
-        return r[0].asBool() to r[1].asText()
-    }
+    override fun checkpointScan(outputDir: String): Pair<Boolean, String> = callPair("checkpoint_scan", outputDir)
 
-    override fun finalizeScan(outputDir: String, onProgress: (String) -> Unit): Pair<Boolean, String> {
-        val r = callMain("finalize_scan", outputDir, onProgress)
-            ?: return Pair(false, "Unknown error during scan finalization.")
-        return r[0].asBool() to r[1].asText()
-    }
+    override fun finalizeScan(outputDir: String, onProgress: (String) -> Unit): Pair<Boolean, String> =
+        callPair("finalize_scan", outputDir, Progress(onProgress))
 }

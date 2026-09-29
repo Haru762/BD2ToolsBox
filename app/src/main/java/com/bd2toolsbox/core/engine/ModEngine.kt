@@ -12,8 +12,8 @@ import org.json.JSONObject
  *
  * ## 类型化边界
  * 每个入口返回 Kotlin 原生类型（`Pair`/`Triple`/`JSONObject`/`String`），不返回 `PyObject`。
- * 桥接层错误（取不到模块、调用抛异常、返回元组非法）被兜成各入口约定的失败值
- * （`(false, message)` / `null` / 空名单），并保留诊断（`printStackTrace`）。
+ * 桥接和解码错误统一保留函数名、阶段与原因；有失败值的入口返回 `(false, message)`
+ * 或 `null`。扫描检查抛 [EngineBridgeException]，绝不把失败伪装成成功的空名单。
  *
  * ## 取消
  * [unpackBundle] 的 `onProgress` 返回 `true` 表示请求取消——Python 侧每个资产检查一次，
@@ -83,28 +83,14 @@ interface ModEngine {
     fun finalizeScan(outputDir: String, onProgress: (String) -> Unit): Pair<Boolean, String>
 
     companion object {
-        @Volatile
-        private var default: ModEngine? = null
+        private val default: ModEngine by lazy { ChaquopyModEngine() }
 
         /**
-         * 进程级默认引擎（T18 → T20 清理）。
-         *
-         * ShizukuManager（全局 object）、BundleNameResolver、ModRepository 这些**非 Hilt 管理**的
-         * 调用方经此取到与 Hilt `@Singleton` **同一个** [ChaquopyModEngine] 实例——它由
-         * `di.EngineModule` 在提供单例时调 [install] 注册。这是明确标注的临时兼容入口，
-         * 委托对象唯一（就是那个单例）；T19/T20 把 ShizukuManager 等改注入后删除本访问器。
-         *
-         * 未安装时兜底为一个新的 [ChaquopyModEngine]（例如测试或极早期调用），行为一致。
+         * T20 清理前的唯一进程级实例。Hilt provider 也委托到这里，不能再通过
+         * install 替换实例，否则早期静态调用方与后续注入方会持有不同引擎。
+         * 构造引擎不启动 Python；运行时仍由 PythonRuntime 按需启动。
          */
         @JvmStatic
-        fun get(): ModEngine = default ?: synchronized(this) {
-            default ?: ChaquopyModEngine().also { default = it }
-        }
-
-        /** 由 DI 模块在构造单例时调用，保证静态访问器与注入拿到同一实例。 */
-        @JvmStatic
-        fun install(engine: ModEngine) {
-            synchronized(this) { default = engine }
-        }
+        fun get(): ModEngine = default
     }
 }

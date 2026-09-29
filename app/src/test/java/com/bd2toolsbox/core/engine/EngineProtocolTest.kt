@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,10 +12,8 @@ import org.junit.Test
 /**
  * T18：Kotlin–Python 引擎的**协议解码**测试（纯 JVM，不启 Chaquopy）。
  *
- * 用 [PyCell] fake 喂入元组，覆盖每个入口的：成功元组、失败元组 `(false,msg)`、
- * 桥接异常 → 各入口约定失败值（`null`/`(false,…)`/空名单）、非法元组（元素不够）、
- * 协程取消（CancellationException 不被吞成一般失败）。PyObject 已封闭在 PyObjectCell 里，
- * 这里不碰它的 native 方法。
+ * 桥接异常与非法元组必须走失败路径，不能变成空名单或半张元数据表。
+ * Fake 只替换外部 Python 调用，协议校验与解码均运行生产实现。
  */
 class EngineProtocolTest {
 
@@ -88,19 +87,106 @@ class EngineProtocolTest {
         assertNull(engine.getBundleHints("/o", "HD") {})
         val (ok, json) = engine.resolveModFiles("[]", "/o", "HD") {}
         assertFalse(ok); assertNull(json)
-        assertEquals("[]", engine.checkScanNeeded("/o", "[]") {})
+        val scanError = assertThrows(IllegalStateException::class.java) {
+            engine.checkScanNeeded("/o", "[]") {}
+        }
+        assertTrue(scanError.message.orEmpty().contains("check_scan_needed"))
+        assertEquals("boom", scanError.cause?.message)
         assertFalse(engine.scanSingleBundle("b", "h", "/t") {}.first)
     }
 
     // ---------------------------------------------------------------- 非法元组
 
     @Test
-    fun illegalTupleTooShortIsHandled() {
-        // scan_single_bundle 约定三元组；只给两个 → 读 r[2] 越界（明确失败，不静默给错值）。
+    fun illegalTupleTooShortReturnsDiagnosticFailure() {
         val engine = engineReturning(FakeCell(b = true), FakeCell(i = 1))
-        assertThrows(IndexOutOfBoundsException::class.java) {
-            engine.scanSingleBundle("b", "h", "/t") {}
+        val (ok, count, message) = engine.scanSingleBundle("b", "h", "/t") {}
+        assertFalse(ok)
+        assertEquals(0, count)
+        assertTrue(message.contains("scan_single_bundle"))
+    }
+
+    @Test
+    fun everyPairOperationRejectsMissingAndExtraCells() {
+        val operations: List<(ModEngine) -> Pair<Boolean, String>> = listOf(
+            { it.downloadBundle("bundle", "SD", "/out", "key") {} },
+            { it.repackBundle("/original", "/mod", "/out", true) {} },
+            { it.restoreBundle("/original", "/out") {} },
+            { it.unpackBundle("/bundle", "/out", fast = true) { false } },
+            { it.validateBundle("/bundle") },
+            { it.mergeSpineAssets("/mod") {} },
+            { it.checkpointScan("/out") },
+            { it.finalizeScan("/out") {} },
+        )
+        for (operation in operations) {
+            for (cells in listOf(
+                emptyList(),
+                listOf(FakeCell(b = true)),
+                listOf(FakeCell(b = true), FakeCell(s = "ok"), FakeCell(s = "extra")),
+            )) {
+                val result = operation(ChaquopyModEngine(PyCaller { _, _ -> cells }))
+                assertFalse("Malformed tuple must not succeed: $cells", result.first)
+                assertTrue(result.second.isNotBlank())
+            }
         }
+    }
+
+    @Test
+    fun wrongCellTypeIsReportedAsProtocolFailure() {
+        val wrongBoolean = object : PyCell by FakeCell() {
+            override fun asBool(): Boolean = throw ClassCastException("expected bool")
+        }
+        val (ok, message) = engineReturning(wrongBoolean, FakeCell(s = "unused"))
+            .validateBundle("/bundle")
+        assertFalse(ok)
+        assertTrue(message.contains("validate_bundle"))
+        assertTrue(message.contains("expected bool"))
+    }
+
+    @Test
+    fun unreadableMapsNeverBecomeSuccessfulEmptyMaps() {
+        for (payload in listOf(
+            FakeCell(s = "not a map"),
+            FakeCell(map = mapOf("broken" to listOf(FakeCell(l = 1)))),
+            FakeCell(map = mapOf("broken" to listOf(FakeCell(l = 1), FakeCell(s = "h"), FakeCell()))),
+        )) {
+            val engine = engineReturning(FakeCell(b = true), FakeCell(s = "version"), payload)
+            assertNull(engine.getBundleMeta("/out", "HD") {})
+            assertNull(engine.getBundleHints("/out", "HD") {})
+        }
+    }
+
+    @Test
+    fun validEmptyMetadataRemainsDistinctFromFailure() {
+        val engine = engineReturning(FakeCell(b = true), FakeCell(s = "version"), FakeCell(map = emptyMap()))
+        assertEquals(emptyMap<String, Pair<Long, String>>() to false, engine.getBundleMeta("/out", "HD") {})
+        assertEquals(emptyMap<String, Pair<String, String>>(), engine.getBundleHints("/out", "HD") {})
+    }
+
+    @Test
+    fun scanCheckRejectsMalformedShapeRatherThanReportingNoWork() {
+        for (cells in listOf(
+            emptyList(),
+            listOf(FakeCell(s = "[]"), FakeCell(s = "extra")),
+            listOf(FakeCell(s = "not-json")),
+            listOf(FakeCell(s = "{}")),
+            listOf(FakeCell(s = "[123]")),
+        )) {
+            val engine = ChaquopyModEngine(PyCaller { _, _ -> cells })
+            assertThrows(IllegalStateException::class.java) {
+                engine.checkScanNeeded("/out", "[]") {}
+            }
+        }
+    }
+
+    @Test
+    fun cancellationDuringDecodeIsNotConvertedToFailure() {
+        val cancelledMap = object : PyCell by FakeCell() {
+            override fun asMap(): Map<String, List<PyCell>> = throw CancellationException("map cancelled")
+        }
+        val engine = engineReturning(FakeCell(b = true), FakeCell(s = "version"), cancelledMap)
+        assertThrows(CancellationException::class.java) { engine.getBundleMeta("/out", "HD") {} }
+        assertThrows(CancellationException::class.java) { engine.getBundleHints("/out", "HD") {} }
     }
 
     @Test
@@ -110,7 +196,91 @@ class EngineProtocolTest {
         assertFalse(ok); assertNull(json)
     }
 
+    @Test
+    fun pairEntrypointsPreservePythonArgumentsAndFailureMessages() {
+        val calls = mutableListOf<Pair<String, List<Any?>>>()
+        val progress = mutableListOf<String>()
+        val onProgress: (String) -> Unit = { progress += it }
+        val engine = ChaquopyModEngine(PyCaller { function, args ->
+            calls += function to args.map { if (it is Function1<*, *>) "<callback>" else it }
+            for (arg in args) {
+                if (arg is Function1<*, *>) {
+                    @Suppress("UNCHECKED_CAST")
+                    val callback = arg as (String) -> Any?
+                    val result = callback(function)
+                    if (function == "unpack_bundle") assertEquals(true, result)
+                }
+            }
+            listOf(FakeCell(b = false), FakeCell(s = "operation failed"))
+        })
+        val results = listOf(
+            engine.downloadBundle("bundle", "SD", "/out", "cache-key", onProgress),
+            engine.repackBundle("/original", "/assets", "/repacked", true, onProgress),
+            engine.restoreBundle("/original", "/restored", onProgress),
+            engine.unpackBundle("/bundle", "/unpacked", true) { progress += it; true },
+            engine.validateBundle("/bundle"),
+            engine.mergeSpineAssets("/assets", onProgress),
+            engine.checkpointScan("/index"),
+            engine.finalizeScan("/index", onProgress),
+        )
+        assertTrue(results.all { it == (false to "operation failed") })
+        assertEquals(listOf(
+            "download_bundle" to listOf("bundle", "SD", "/out", "cache-key", "<callback>"),
+            "main" to listOf("/original", "/assets", "/repacked", true, "<callback>"),
+            "restore_bundle" to listOf("/original", "/restored", "<callback>"),
+            "unpack_bundle" to listOf("/bundle", "/unpacked", "<callback>", true),
+            "validate_bundle" to listOf("/bundle"),
+            "merge_spine_assets" to listOf("/assets", "<callback>"),
+            "checkpoint_scan" to listOf("/index"),
+            "finalize_scan" to listOf("/index", "<callback>"),
+        ), calls)
+        assertEquals(listOf("download_bundle", "main", "restore_bundle", "unpack_bundle", "merge_spine_assets", "finalize_scan"), progress)
+    }
+
+    @Test
+    fun malformedResolverPayloadsNeverEscapeAsSuccessfulJson() {
+        for (payload in listOf("not-json", "null", "123")) {
+            val engine = engineReturning(FakeCell(b = true), FakeCell(s = payload))
+            assertEquals(false to null, engine.resolveModFiles("[]", "/out", "SD") {})
+            assertEquals(false to null, engine.resolveModBatch("[]", "/out", "HD") {})
+        }
+    }
+
+    @Test
+    fun metadataKeepsDegradedFlagAndHintFields() {
+        val metadata = engineReturning(
+            FakeCell(b = true), FakeCell(s = "degraded"),
+            FakeCell(map = mapOf("bundle" to listOf(FakeCell(l = 20L), FakeCell(s = "hash")))),
+        )
+        assertEquals(mapOf("bundle" to (20L to "hash")) to true, metadata.getBundleMeta("/out", "SD") {})
+        val hints = engineReturning(
+            FakeCell(b = true), FakeCell(s = "version"),
+            FakeCell(map = mapOf("bundle" to listOf(FakeCell(s = "char000001"), FakeCell(s = "idle")))),
+        )
+        assertEquals(mapOf("bundle" to ("char000001" to "idle")), hints.getBundleHints("/out", "HD") {})
+    }
+
     // ---------------------------------------------------------------- 取消
+
+    @Test
+    fun cancellationSurvivesAReceiverWhichCatchesCallbackExceptions() {
+        val cancelled = CancellationException("callback cancelled")
+        val engine = ChaquopyModEngine(PyCaller { function, args ->
+            assertEquals("unpack_bundle", function)
+            @Suppress("UNCHECKED_CAST")
+            val callback = args[2] as (String) -> Boolean
+            try {
+                callback("Processing asset")
+            } catch (_: CancellationException) {
+                // The Python unpacker catches callback exceptions and can return a success tuple.
+            }
+            listOf(FakeCell(b = true), FakeCell(s = "Unpacking complete."))
+        })
+        val actual = assertThrows(CancellationException::class.java) {
+            engine.unpackBundle("/bundle", "/out") { throw cancelled }
+        }
+        assertSame(cancelled, actual)
+    }
 
     @Test
     fun cancellationExceptionIsRethrownNotSwallowed() {

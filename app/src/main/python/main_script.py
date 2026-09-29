@@ -281,7 +281,7 @@ def _cached_table_from_disk(output_dir, cache_prefix, payload_key, quality):
 # ---------------------------------------------------------------------------
 
 def check_scan_needed(output_dir, bundle_list_json, progress_callback=None, full_scan=True):
-    """Step 1：对照缓存给出待扫 bundle 名单（JSON 串）。异常时返回空名单。
+    """Step 1：对照缓存给出待扫名单；失败必须抛出，不能伪装成空名单。
 
     默认全量扫描（不预筛）—— 预筛会误杀装着 spine 资产但 catalog 地址
     不含 illust/skeletondata 的 bundle（timeline/storypack 等），详见
@@ -301,7 +301,8 @@ def check_scan_needed(output_dir, bundle_list_json, progress_callback=None, full
         return (result,)
     except Exception:
         report(f"Error checking scan: {_fail(None)[1]}")
-        return (json.dumps([]),)
+        # Kotlin 将异常识别为扫描检查失败；[] 只表示检查成功且没有待扫项。
+        raise
 
 
 def scan_single_bundle(bundle_name, bundle_hash, temp_data_path, progress_callback=None):

@@ -893,7 +893,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.di.RepositoryConstructionTest'
 
 ### T18 — 抽取 Kotlin—Python 引擎适配层并保留协议
 
-- [ ] **T18 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-27）：ModdingService → 可注入 ModEngine/ChaquopyModEngine（PyObject 经 PyCell 封闭），Hilt 单例 + ModEngine.get()（T20 清理）。EngineProtocolTest 9/9、NativeEngineSmokeTest 4/4（AVD x86_64）、JVM 443、minified release PASS、arm64 静态审计 PASS。**A 类：原生 arm64 待跑**（隔离包已备）。见 [T18.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T18.md>)。
+- [ ] **T18 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-29）：旧 4 项真机结果未覆盖有效 bundle 转换，不能收口 DONE。本轮修复协议校验、扫描假空名单、跨 Python 回调取消和默认实例替换；引擎 JVM 20/20、扫描 Python 12/12、x86_64 加强版 NativeEngineSmokeTest 9/9（含真实转换与产物逐字节检查）。**新版仍需原生 arm64 验证**。见 [T18.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T18.md>)。
 
 **优先级：** P1　**前置：** T17、T12
 
@@ -906,13 +906,13 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.di.RepositoryConstructionTest'
 - 新增测试：[app/src/androidTest/java/com/bd2toolsbox/core/engine/NativeEngineSmokeTest.kt](<D:/bd2 mod/worktrees/bdroid-android-refactor/app/src/androidTest/java/com/bd2toolsbox/core/engine/NativeEngineSmokeTest.kt>)
 
 **落实要求：**
-- [ ] 把 ModdingService 静态桥收敛到可注入的 ModEngine，集中 Python 模块获取、参数装配、返回值校验、进度与取消；不让 PyObject 穿透到 ViewModel/UI。
-- [ ] 保持现有函数名、参数顺序、SD/HD、ASTC、resolver 语义；只有明确协议缺陷才改 Python 入口并同步两端测试，不重写 vendored 算法。
-- [ ] 捕获桥接错误形成有类型结果，保留必要诊断；协程 CancellationException 不被吞成一般失败。Python 实例初始化一次、按使用启动，记录可取消与不可中断调用的边界。
+- [x] 把 ModdingService 静态桥收敛到可注入的 ModEngine，集中 Python 模块获取、参数装配、返回值校验、进度与取消；不让 PyObject 穿透到 ViewModel/UI。
+- [x] 保持现有函数名、参数顺序、SD/HD、ASTC、resolver 语义；只有明确协议缺陷才改 Python 入口并同步两端测试，不重写 vendored 算法。
+- [x] 捕获桥接错误形成有类型结果，保留必要诊断；协程 CancellationException 不被吞成一般失败。Python 实例初始化一次、按使用启动，记录可取消与不可中断调用的边界。
 
 **验收与回归：**
-- [ ] 下载/重打包/解包/合并/扫描等入口的成功、异常返回、非法元组和取消都有协议测试。
-- [ ] 两 ABI 的真实 Python/JNI 纹理解码与至少一条转换路径可运行；仅通过 host mock 不算此项完成。
+- [x] 下载/重打包/解包/合并/扫描等入口的成功、异常返回、非法元组和取消都有协议测试。
+- [ ] 两 ABI 的真实 Python/JNI 纹理解码与至少一条转换路径可运行；仅通过 host mock 不算此项完成。**x86_64 新版 9/9；原生 arm64 新版待测。**
 
 **执行/验证命令：**
 ~~~powershell

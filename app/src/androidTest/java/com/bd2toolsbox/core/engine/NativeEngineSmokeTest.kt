@@ -4,90 +4,153 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bd2toolsbox.core.python.PythonRuntime
 import com.chaquo.python.Python
+import kotlinx.coroutines.CancellationException
+import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.UUID
 
-/**
- * T18：真实 Python/JNI 引擎冒烟（设备侧，两 ABI）。
- *
- * 走**注入后的** [ModEngine]（经 `ModEngine.get()` 取到与 Hilt 同一个 [ChaquopyModEngine]），
- * 用真实 Chaquopy 跑：
- *  - 一条转换路径：`validateBundle` / `unpackBundle` 对合法/非法输入都返回**类型化结果**
- *    （不崩、不泄 PyObject），且非法 UnityFS 头得到中文原因。
- *  - 真实 JNI 纹理解码：`texture2ddecoder.decode_bc1` 对确定输入产出确定 64 字节。
- *
- * 不需要游戏文件：用 app 私有目录里合成的字节。仅 host mock 不算完成本项——这里是真机/真 Python。
- */
+/** Real engine calls on a self-authored TextAsset bundle; never reads or writes game data. */
 @RunWith(AndroidJUnit4::class)
 class NativeEngineSmokeTest {
-
-    private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
+    private val context get() = instrumentation.targetContext
     private val engine: ModEngine get() = ModEngine.get()
+    private lateinit var root: File
 
     @Before
     fun startPython() {
+        root = File(context.cacheDir, "t18-engine-${UUID.randomUUID()}")
+        check(root.mkdir())
         PythonRuntime.ensureStarted(context)
-        assertTrue("Python 必须已启动", Python.isStarted())
+        assertTrue(Python.isStarted())
     }
 
-    /** 不存在的路径：真实 Python 走头部快检，返回类型化失败（不抛、不泄 PyObject）。 */
+    @After
+    fun removeOwnFixture() {
+        if (::root.isInitialized) {
+            check(root.parentFile == context.cacheDir && root.name.startsWith("t18-engine-"))
+            check(root.deleteRecursively())
+        }
+    }
+
+    private fun sourceBundle(): File {
+        val code = instrumentation.context.assets.open("engine/text_asset_bundle.py")
+            .bufferedReader().use { it.readText() }
+        val builtins = Python.getInstance().getModule("builtins")
+        val globals = builtins.callAttr("dict")
+        builtins.callAttr("exec", code, globals)
+        val bytes = globals.callAttr("get", "build_bundle").call().toJava(ByteArray::class.java)
+        return File(root, "source.bundle").apply { writeBytes(bytes) }
+    }
+
     @Test
     fun validateBundleOnMissingFileReturnsTypedFailure() {
-        val (ok, msg) = engine.validateBundle(File(context.cacheDir, "t18-does-not-exist").absolutePath)
+        val (ok, message) = engine.validateBundle(File(root, "absent.bundle").absolutePath)
         assertFalse(ok)
-        assertTrue("应给出中文原因，实际=$msg", msg.contains("文件不存在") || msg.isNotBlank())
+        assertTrue(message, message.contains("文件不存在"))
     }
 
-    /** 非 UnityFS 的垃圾字节：头部签名不符 → 类型化失败，原因指向签名。 */
     @Test
     fun validateBundleOnGarbageReturnsTypedFailure() {
-        val f = File(context.cacheDir, "t18-garbage-${System.nanoTime()}.bin")
-        f.writeBytes(ByteArray(512) { 0x41 })  // "AAAA…"，绝不以 UnityFS\0 开头
-        try {
-            val (ok, msg) = engine.validateBundle(f.absolutePath)
-            assertFalse(ok)
-            assertTrue("原因应指向 UnityFS 签名，实际=$msg", msg.contains("UnityFS") || msg.contains("有效"))
-        } finally {
-            f.delete()
-        }
+        val file = File(root, "invalid.bundle").apply { writeBytes(ByteArray(512) { 0x41 }) }
+        val (ok, message) = engine.validateBundle(file.absolutePath)
+        assertFalse(ok)
+        assertTrue(message, message.contains("UnityFS"))
     }
 
-    /**
-     * unpackBundle（可取消路径）跑真实 Python 解包，无论成败都返回**类型化** `(Boolean, String)`
-     * 而不是崩溃或汄出 PyObject；回调返回 false（不取消）时 python 跑完整流程。
-     * （注：当前 python 解包器对非 UnityFS 垃圾字节也可能报 `Unpacking complete.`——本用例
-     * 只验证「真实 Python 可运行 + 类型化返回」这条转换路径，不断言具体成败。）
-     */
     @Test
-    fun unpackBundleRunsRealPythonAndReturnsTypedResult() {
-        val src = File(context.cacheDir, "t18-unpack-src-${System.nanoTime()}.bin").apply {
-            writeBytes(ByteArray(512) { 0x42 })
-        }
-        val outDir = File(context.cacheDir, "t18-unpack-out-${System.nanoTime()}").apply { mkdirs() }
-        try {
-            var cancelAsked = false
-            val (ok, msg) = engine.unpackBundle(src.absolutePath, outDir.absolutePath) { cancelAsked = true; false }
-            // 结果必须是类型化的 (Boolean, String)：能走到这里、msg 非空即证明未崩、未泄 PyObject。
-            assertTrue("应有类型化消息（成败均可），实际 ok=$ok msg=$msg", msg.isNotBlank())
-            // 我们没请求取消，engine 不应把 false 回调当成取消而抛异常。
-            assertTrue("回调被调用过（进度回调可达）", cancelAsked || msg.isNotBlank())
-        } finally {
-            src.delete(); outDir.deleteRecursively()
+    fun restoreAndUnpackPreserveTheTextAssetBytes() {
+        val source = sourceBundle()
+        val valid = engine.validateBundle(source.absolutePath)
+        assertTrue(valid.second, valid.first)
+        val output = File(root, "converted.bundle")
+        val progress = mutableListOf<String>()
+        val restored = engine.restoreBundle(source.absolutePath, output.absolutePath) { progress += it }
+        assertTrue(restored.second, restored.first)
+        assertTrue("Conversion must write a bundle", output.isFile && output.length() > 0)
+        assertTrue("Conversion must report progress", progress.isNotEmpty())
+        assertFalse("Conversion must re-encode, not simply copy", source.readBytes().contentEquals(output.readBytes()))
+        val validOutput = engine.validateBundle(output.absolutePath)
+        assertTrue(validOutput.second, validOutput.first)
+
+        // Both export modes must preserve content, not merely return a non-empty status message.
+        for (fast in listOf(false, true)) {
+            val directory = File(root, "unpacked-$fast")
+            val unpacked = engine.unpackBundle(output.absolutePath, directory.absolutePath, fast) { false }
+            assertTrue(unpacked.second, unpacked.first)
+            assertArrayEquals(
+                "T18 conversion fixture.\n".toByteArray(Charsets.UTF_8),
+                File(directory, "t18-text.txt").readBytes(),
+            )
         }
     }
 
-    /** 真实 JNI：texture2ddecoder.decode_bc1 对 4x4 白底不透明 block 产出 64 字节 0xFF。 */
+    @Test
+    fun callbackCancellationStopsBeforeExportingTheAsset() {
+        val source = sourceBundle()
+        val directory = File(root, "cancelled")
+        var cancellationRequested = false
+        val result = engine.unpackBundle(source.absolutePath, directory.absolutePath) { message ->
+            message.startsWith("Processing asset").also { if (it) cancellationRequested = true }
+        }
+        assertTrue("Asset callback must be reached", cancellationRequested)
+        assertFalse("Requested cancellation must not report success", result.first)
+        assertTrue(result.second, result.second.contains("cancel", ignoreCase = true))
+        assertFalse(File(directory, "t18-text.txt").exists())
+    }
+
+    @Test
+    fun callbackCancellationExceptionIsNotLostInsidePython() {
+        val source = sourceBundle()
+        val directory = File(root, "cancel-exception")
+        val cancelled = CancellationException("T18 callback cancelled")
+        val actual = assertThrows(CancellationException::class.java) {
+            engine.unpackBundle(source.absolutePath, directory.absolutePath) { message ->
+                if (message.startsWith("Processing asset")) throw cancelled
+                false
+            }
+        }
+        assertSame(cancelled, actual)
+        assertFalse(File(directory, "t18-text.txt").exists())
+    }
+
+    @Test
+    fun scanFailureDoesNotMasqueradeAsAnEmptyWorklist() {
+        val failure = assertThrows(EngineBridgeException::class.java) {
+            engine.checkScanNeeded(root.absolutePath, "[") {}
+        }
+        assertEquals("check_scan_needed", failure.function)
+        assertEquals(EngineBridgeException.Phase.CALL, failure.phase)
+    }
+
+    @Test
+    fun emptyResolverBatchDecodesARealJsonArray() {
+        val result = engine.resolveModBatch("[]", root.absolutePath, "SD") {}
+        assertTrue(result.first)
+        assertEquals(0, requireNotNull(result.second).length())
+    }
+
+    @Test
+    fun repeatedRuntimeAccessKeepsTheSameInterpreter() {
+        val python = Python.getInstance()
+        repeat(3) {
+            PythonRuntime.ensureStarted(context)
+            assertSame(python, Python.getInstance())
+        }
+    }
+
     @Test
     fun bc1DecodeProducesDeterministicOutput() {
-        val py = Python.getInstance()
-        // 用 exec 在 python 内构造 bytes 输入并解码（直接传 JVM ByteArray 会被 ctypes 拒为 wrong type）。
-        // 4x4 BC1 白底不透明 block（8 字节）→ 64 字节全 0xFF。
-        val builtins = py.getModule("builtins")
+        val builtins = Python.getInstance().getModule("builtins")
         val globals = builtins.callAttr("dict")
         builtins.callAttr(
             "exec",
@@ -99,7 +162,7 @@ class NativeEngineSmokeTest {
             """.trimIndent(),
             globals,
         )
-        assertEquals("BC1 输出应为 64 字节", 64, globals.callAttr("get", "_len").toInt())
-        assertEquals("BC1 白底应全为 0xFF", "True", globals.callAttr("get", "_ok").toString())
+        assertEquals(64, globals.callAttr("get", "_len").toInt())
+        assertEquals("True", globals.callAttr("get", "_ok").toString())
     }
 }
