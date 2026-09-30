@@ -13,6 +13,7 @@
 | 权威状态依据 | 本文件与各任务证据的最新追加章节；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
 | 最近已验收任务 | T17（仓储/VM 构造注入，RepositoryConstructionTest 5/5 + 6 个设备类全过 + minified release PASS，arm64 静态审计）；T16（Hilt Application + 5 入口）；T15（SDK/权限/前台服务/16KB，四台 + 原生 arm64）；T14（2026-09-27，生产构建链升级）；T13（2026-09-26，兼容探针两 ABI 通过）；T12（2026-09-26，含用户授权的已接受限制） |
 | 下一任务 | T18 新版 9 项 NativeEngineSmokeTest 原生 arm64 补验；随后 T19。T18 旧 4 项真机结果不替代有效 bundle 转换验收。 |
+| 并行分支合并（2026-09-30） | 已把 `fix/review-closeout` 的 R1（验证器加固，`01868b1`）与 `fix/audit-safety` 的 13 项只读审查修复（`1a27342`）cherry-pick 合入本分支（提交 `cb8df30`、`2fafebd`）。`MainViewModel.kt` 的 `installOneConverted`/`moveFilesToGame`/`recordSuccessfulInstall` 与 T15–T18 冲突已手工解决，统一采用审查修复侧的完整实现；三个继承自 T17 前基线的 JVM 测试（`DirectInstallWiringTest`、`LocalBaseReuseTest`、`MoveInstallWiringTest`）已迁移到当前构造注入签名与 `ModEngine` 接口。合并后 `:app:testDebugUnitTest` **505/0/0/0**，`compileDebugAndroidTestKotlin`、`assembleDebug` 均成功。`fix/review-closeout` 的 R2–R6（未落地的生产代码修复）与 `fix/audit-safety` 的「独立审阅、真实设备验收」仍未完成，不因本次合并升级为 DONE。两个来源 worktree 保持原状未被本次操作修改。 |
 | 最后核对的代码提交 | `b1dfb6e`；本轮只补 T18 的协议校验、扫描错误、取消传播、实例一致性和有效转换测试，见 [T18.md](T18.md)。 |
 | 工作区脏文件 | 开始时有 T18 的三份未提交状态文档，已纳入本轮修正；旧 `diff.txt`、`patch.py`、三份 09-23 计划与两份诊断 probe 为原有未跟踪文件，不暂存、不清理。准确状态以 `git status` 为准。 |
 | 环境/输入清单 | local/refactor-artifacts/historical-0.2.16（2 APK + mapping）、rebuilt-original（3 APK + mapping + metadata）；local/refactor-inputs（catalog-alpha.json、wiki-v2-detail-2238.source.json）。冻结记录见 artifact-manifest.json 的 t03Freeze；旧数据样本与缺口见 fixture-manifest.json |
