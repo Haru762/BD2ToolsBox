@@ -15,8 +15,8 @@ function Assert-Bd2Workspace {
     $top = [IO.Path]::GetFullPath($top.Trim()).TrimEnd([IO.Path]::DirectorySeparatorChar)
     if (-not [string]::Equals($top, $Root, [StringComparison]::OrdinalIgnoreCase)) { throw 'Wrong repository root' }
     $branch = (git -c safe.directory=$Root -C $Root branch --show-current) -join ''
-    if ($LASTEXITCODE -ne 0 -or $branch.Trim() -ne 'refactor/android-architecture') {
-        throw 'Verification must run on the authorized refactor branch, never main or detached HEAD'
+    if ($LASTEXITCODE -ne 0 -or $branch.Trim() -notin @('refactor/android-architecture', 'fix/review-closeout')) {
+        throw 'Verification must run on an authorized refactor/review branch, never main or detached HEAD'
     }
     foreach ($relative in @('docs/refactor/handoff-manifest.json', 'docs/refactor/artifact-manifest.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $Root $relative) -PathType Leaf)) {
@@ -250,6 +250,19 @@ function Read-Bd2UnitXml {
         $xml = [xml](Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8)
         foreach ($suite in @($xml.testsuite)) {
             if ($null -eq $suite) { continue }
+            $cases = @($suite.SelectNodes('testcase'))
+            $actual = @{
+                tests = $cases.Count
+                failures = @($cases | Where-Object { $null -ne $_.SelectSingleNode('failure') }).Count
+                errors = @($cases | Where-Object { $null -ne $_.SelectSingleNode('error') }).Count
+                skipped = @($cases | Where-Object { $null -ne $_.SelectSingleNode('skipped') }).Count
+            }
+            foreach ($attribute in @('tests', 'failures', 'errors', 'skipped')) {
+                $declared = $suite.GetAttribute($attribute)
+                if ($declared -notmatch '^\d+$' -or [int]$declared -ne $actual[$attribute]) {
+                    throw "JUnit XML count mismatch: $($file.Name) $attribute does not match actual testcases"
+                }
+            }
             $agg.classes += [string]$suite.name
             $agg.tests += [int]$suite.tests
             $agg.failures += [int]$suite.failures
@@ -276,20 +289,24 @@ function Get-Bd2UnitFixtures {
       .DESCRIPTION
         manifest 的 usedBy 写的是**源码相对路径**（如
         app/src/test/java/com/bd2toolsbox/data/repository/GamekeeBattleV2RendererTest.kt），
-        而调用方拿到的是类名。Kotlin/Java 测试类名与文件名一致，故按
-        「usedBy 任一项以 <简单类名>.kt / .java 结尾」匹配。
+        而调用方拿到的是类名。Kotlin/Java 测试类名与文件名一致，故将
+        java/ 后的相对路径转换成全限定类名，并支持类选择器中的 *。
         匹配不到 = 该类没有声明夹具，返回空数组，不是错误。
     #>
     param([Parameter(Mandatory=$true)][string]$TestClass)
     if (-not (Test-Path -LiteralPath $Bd2FixtureManifest -PathType Leaf)) {
         throw "fixture manifest is missing: $Bd2FixtureManifest"
     }
-    $simple = ($TestClass -split '\.')[-1]
-    $pattern = '(^|/)' + [regex]::Escape($simple) + '\.(kt|java)$'
+    $selector = '^' + [regex]::Escape($TestClass).Replace('\*', '.*') + '$'
+    $matchesClass = {
+        if ($_ -match '/java/(.+)\.(?:kt|java)$') {
+            ($Matches[1].Replace('/', '.')) -cmatch $selector
+        } else { $false }
+    }
     $manifest = Get-Content -LiteralPath $Bd2FixtureManifest -Raw -Encoding UTF8 | ConvertFrom-Json
     $entries = @()
     foreach ($fixture in @($manifest.fixtures)) {
-        if (@($fixture.usedBy | Where-Object { $_ -match $pattern }).Count -eq 0) { continue }
+        if (@($fixture.usedBy | Where-Object $matchesClass).Count -eq 0) { continue }
         $entries += [ordered]@{
             id = [string]$fixture.id
             kind = 'fixture'
@@ -300,7 +317,7 @@ function Get-Bd2UnitFixtures {
         }
     }
     foreach ($target in @($manifest.derivedTargets)) {
-        if (@($target.usedBy | Where-Object { $_ -match $pattern }).Count -eq 0) { continue }
+        if (@($target.usedBy | Where-Object $matchesClass).Count -eq 0) { continue }
         $entries += [ordered]@{
             id = [string]$target.id
             kind = 'derivedTarget'
@@ -382,7 +399,8 @@ function Test-Bd2Unit {
         if ($summary.xmlFiles.Count -eq 0) {
             [void]$reasonList.Add("${task}:未产生 JUnit XML（Gradle exit $gradleExit）")
         } else {
-            if (-not ($summary.classes -contains $TestClass)) {
+            $selector = '^' + [regex]::Escape($TestClass).Replace('\*', '.*') + '$'
+            if (@($summary.classes | Where-Object { $_ -cmatch $selector }).Count -eq 0) {
                 [void]$reasonList.Add("${task}:报告里没有 $TestClass（classes: $($summary.classes -join ', ')）")
             }
             if ($summary.tests -le 0) {
@@ -391,7 +409,7 @@ function Test-Bd2Unit {
             if ($summary.failures -gt 0 -or $summary.errors -gt 0) {
                 [void]$reasonList.Add("${task}:failures=$($summary.failures) errors=$($summary.errors) -> $($summary.failedTests -join '; ')")
             }
-            if ($summary.skipped -gt 0 -and -not $AllowSkip) {
+            if ($summary.skipped -gt 0) {
                 [void]$reasonList.Add("${task}:skipped=$($summary.skipped) -> $($summary.skippedTests -join '; ')（skip 不抵扣必需覆盖）")
             }
             if ($gradleExit -ne 0 -and $summary.failures -eq 0 -and $summary.errors -eq 0) {
@@ -694,6 +712,24 @@ function Invoke-Bd2Instrumentation {
 
 function Assert-Bd2InstrumentationResult {
     param([Parameter(Mandatory=$true)][hashtable]$Result, [Parameter(Mandatory=$true)][string]$Label)
+    # A complete successful test prefix is not a completed instrumentation run.
+    if ($Result.adbExit -ne 0) { throw "${Label}:instrumentation transport failed" }
+    if ($Result.output -match 'INSTRUMENTATION_FAILED|INSTRUMENTATION_RESULT:\s*shortMsg=') {
+        throw "${Label}:instrumentation aborted"
+    }
+    $terminal = [regex]::Matches($Result.output, '(?m)^INSTRUMENTATION_CODE:\s*(-?\d+)\s*$')
+    $success = [regex]::Matches($Result.output, '(?m)^(?:INSTRUMENTATION_RESULT:\s*stream=)?OK \((\d+) tests?\)\s*$')
+    if ($terminal.Count -ne 1 -or $terminal[0].Groups[1].Value -ne '-1' -or $success.Count -ne 1) {
+        throw "${Label}:missing successful instrumentation termination"
+    }
+    if ($Result.output.Substring($terminal[0].Index + $terminal[0].Length).Trim().Length -gt 0 -or
+        $success[0].Index -gt $terminal[0].Index) {
+        throw "${Label}:instrumentation termination is not last"
+    }
+    $rawStatuses = [regex]::Matches($Result.output, '(?m)^INSTRUMENTATION_STATUS_CODE:.*$')
+    if ($rawStatuses.Count -gt 0 -and $rawStatuses[$rawStatuses.Count - 1].Index -gt $success[0].Index) {
+        throw "${Label}:success summary precedes test completion"
+    }
     # adb 的退出码对 am instrument 不可靠：以输出里的 runner 终判为准。
     # 但**只**看尾部 "OK (n tests)" 不够：n 把 @Ignore（code -3）和 Assume 不成立
     # （code -4）也算在内，被跳过的用例会被判成 PASS。所以以 -r 原始协议里的
@@ -704,14 +740,37 @@ function Assert-Bd2InstrumentationResult {
     }
 
     $codes = @{}
-    $skippedNames = New-Object System.Collections.Generic.List[string]
     $currentTest = $null
+    $currentClass = $null
+    $activeTest = $null
+    $activeClass = $null
     foreach ($line in ($Result.output -split "`r?`n")) {
-        if ($line -match 'INSTRUMENTATION_STATUS: test=(.+?)\s*$') { $currentTest = $Matches[1]; continue }
-        if ($line -match 'INSTRUMENTATION_STATUS_CODE: (-?\d+)\s*$') {
+        if ($line -match '^INSTRUMENTATION_STATUS: test=(.+?)\s*$') { $currentTest = $Matches[1]; continue }
+        if ($line -match '^INSTRUMENTATION_STATUS: class=(.+?)\s*$') { $currentClass = $Matches[1]; continue }
+        if ($line -match '^INSTRUMENTATION_STATUS_CODE:') {
+            if ($line -notmatch '^INSTRUMENTATION_STATUS_CODE: (-?\d+)\s*$') {
+                throw "${Label}:malformed raw instrumentation status"
+            }
             $code = [int]$Matches[1]
+            if ($code -notin @(0, 1, 2)) {
+                throw "${Label}:failed, skipped or unknown raw instrumentation status $code"
+            }
+            if ($code -eq 1) {
+                if ($null -ne $activeTest -or [string]::IsNullOrWhiteSpace($currentTest)) {
+                    throw "${Label}:missing or overlapping test start"
+                }
+                $activeTest = $currentTest
+                $activeClass = $currentClass
+            } elseif ($code -eq 0) {
+                if ($null -eq $activeTest -or $activeTest -cne $currentTest -or $activeClass -cne $currentClass) {
+                    throw "${Label}:test completion does not match its start"
+                }
+                $activeTest = $null
+                $activeClass = $null
+            }
             $codes[$code] = [int]$codes[$code] + 1
-            if (($code -eq -3 -or $code -eq -4) -and $currentTest) { $skippedNames.Add($currentTest) }
+            $currentTest = $null
+            $currentClass = $null
         }
     }
     $passed = [int]$codes[0]
@@ -725,12 +784,14 @@ function Assert-Bd2InstrumentationResult {
         }
         throw "${Label}:无法从输出判定结果（adb exit $($Result.adbExit)）——未运行不算通过"
     }
-    if ($skippedNames.Count -gt 0) {
-        throw "${Label}:$($skippedNames.Count) 条用例被跳过（$($skippedNames -join '、')）——skip 不是通过（passed=$passed/$started）"
-    }
     if ($passed -le 0) { throw "${Label}:runner 报 OK 但通过用例数为 0" }
     if ($passed -ne $started) {
         throw "${Label}:起止数不匹配（started=$started, passed=$passed, adb exit $($Result.adbExit)）"
+    }
+    $declared = @([regex]::Matches($Result.output, '(?m)^INSTRUMENTATION_STATUS:\s*numtests=(\d+)\s*$') | ForEach-Object { [int]$_.Groups[1].Value } | Select-Object -Unique)
+    $finishedCount = [int]$success[0].Groups[1].Value
+    if ($finishedCount -ne $passed -or ($declared.Count -gt 0 -and ($declared.Count -ne 1 -or $declared[0] -ne $passed))) {
+        throw "${Label}:not all selected tests completed"
     }
     return $passed
 }

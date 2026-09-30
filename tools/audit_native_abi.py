@@ -9,7 +9,7 @@
   5. 必需的 JNI/C 导出符号（例如 texture2ddecoder 的 20 个 decode_*），读自 .dynsym；
   6. DT_NEEDED 依赖都能在 APK 的同 ABI lib/ 或 Android 系统 NDK 公开库中找到；
   7. Chaquopy 资产：bootstrap-native/<abi>/ 与 stdlib-<abi>.imy、requirements-<abi>.imy 存在，
-     且 bootstrap-native/<abi>/*.so 也是对应架构。
+     归档逐项读取并校验完整性，内部 .so 与 bootstrap-native/<abi>/*.so 必须也是对应架构。
 
 它不能证明运行时行为（JNI 注册、dlopen 链接期错误、指令集特性），只能拦住
 「打错包 / 漏文件 / 错架构 / 缺符号 / 对齐不满足」这一类问题。
@@ -27,6 +27,7 @@ import json
 import struct
 import sys
 import zipfile
+import zlib
 
 EM = {"arm64-v8a": 183, "x86_64": 62}          # EM_AARCH64, EM_X86_64
 ALL_ABIS = ("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
@@ -67,6 +68,8 @@ class ElfError(Exception):
 
 
 def parse_elf(data: bytes) -> dict:
+    if len(data) < 64:
+        raise ElfError("truncated ELF header")
     if data[:4] != b"\x7fELF":
         raise ElfError("not an ELF file")
     ei_class, ei_data = data[4], data[5]
@@ -137,6 +140,28 @@ def zip_data_offset(zf: zipfile.ZipFile, raw: bytes, info: zipfile.ZipInfo) -> i
     return h + 30 + name_len + extra_len
 
 
+def audit_python_archive(zf: zipfile.ZipFile, name: str, abi: str, failures: list) -> dict:
+    """Read every entry (including CRC) and inspect native payloads without extracting them."""
+    result = {"files": 0, "nativeFiles": 0}
+    try:
+        with zipfile.ZipFile(io.BytesIO(zf.read(name))) as archive:
+            entries = [entry for entry in archive.infolist() if not entry.is_dir()]
+            if not entries:
+                raise ValueError("empty Python archive")
+            result["files"] = len(entries)
+            for entry in entries:
+                data = archive.read(entry)
+                if entry.filename.endswith(".so"):
+                    elf = parse_elf(data)
+                    result["nativeFiles"] += 1
+                    if elf["machine"] != EM[abi]:
+                        failures.append(f"{name}!/{entry.filename}: e_machine={elf['machine']} expected {EM[abi]}")
+    except (OSError, EOFError, RuntimeError, zipfile.BadZipFile, zlib.error,
+            ElfError, ValueError, IndexError, struct.error) as exc:
+        failures.append(f"{name}: invalid archive or native payload ({exc})")
+    return result
+
+
 def audit(apk_path: str, abi: str, require_16k: bool) -> dict:
     if abi not in EM:
         raise SystemExit(f"unsupported --abi {abi}")
@@ -202,6 +227,8 @@ def audit(apk_path: str, abi: str, require_16k: bool) -> dict:
         cq[req] = req in names
         if req not in names:
             failures.append(f"{req} missing")
+        elif req.endswith(".imy"):
+            cq.setdefault("archives", {})[req] = audit_python_archive(zf, req, abi, failures)
     boot = [n for n in names if n.startswith(f"assets/chaquopy/bootstrap-native/{abi}/") and n.endswith(".so")]
     bad = []
     for n in boot:

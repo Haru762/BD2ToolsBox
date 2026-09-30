@@ -53,7 +53,7 @@ TODO 里原本写着 `-Abi 'arm64-v8a'` 的设备或 release smoke 命令，对�
 
 ## 静态审计覆盖面
 
-`tools/audit_native_abi.py`（证伪测试：`tools/tests/test_audit_native_abi.py`，8 条）只读解析 APK，检查：
+`tools/audit_native_abi.py`（真实 APK 证伪：`tools/tests/test_audit_native_abi.py`；无需构建的归档回归：`tools/tests/test_audit_native_archives.py`）只读解析 APK，检查：
 
 - `lib/<abi>/` 是否存在，有没有多余的 ABI 目录；
 - 每个 `.so` 的 ELF64 / 小端 / `e_machine`（arm64=183、x86_64=62）；
@@ -61,7 +61,7 @@ TODO 里原本写着 `-Abi 'arm64-v8a'` 的设备或 release smoke 命令，对�
 - `DT_NEEDED` 能否在 APK 同 ABI 目录或 NDK 系统库中解析；
 - texture2ddecoder 的 20 个导出与 `JNI_OnLoad`；
 - 以 STORED 方式存放的 `.so` 在 ZIP 中是否 4 KB 对齐；PT_LOAD 是否 16 KB 对齐（默认只警告，`--require-16k` 时判失败）；
-- Chaquopy `stdlib-<abi>.imy`、`requirements-<abi>.imy`、`bootstrap-native/<abi>/` 是否存在，以及它们的架构。
+- Chaquopy `stdlib-<abi>.imy`、`requirements-<abi>.imy`、`bootstrap.imy` 必须存在、非空且可逐项读取（包括 CRC 校验），ABI 归档内每个 `.so` 的 ELF 架构必须匹配；`bootstrap-native/<abi>/` 的 `.so` 同样检查架构。
 
 **它不能证明：** JNI 注册成功、dlopen 期链接错误不存在、指令集特性可用、Python import 成功、运行时行为正确。上述内容只能由 A 类任务的原生运行覆盖。
 

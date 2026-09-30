@@ -21,7 +21,8 @@ T02 实测到过这个假绿色：worktree 里的 test_resolution_catalog_fallba
 ----
     python tools/run_python_tests.py --pattern test_scan_checkpoint.py --output <report.json>
 
-`--start-dir` 与 `--output` 都必须落在实施根内。catalog 这类受限输入**只**从已批准的
+`--start-dir` 必须落在实施根内，`--output` 必须是实施根 `local/` 下不经过
+符号链接/junction 的新 JSON 文件。catalog 这类受限输入**只**从已批准的
 本地配置（docs/refactor/evidence/environment.local.json 的 externalFixtures）或同名
 环境变量读取，不拼仓库父目录，也不搜索文件系统。
 """
@@ -33,6 +34,7 @@ import io
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -68,13 +70,43 @@ def sha256_file(path):
 
 
 def _norm(path):
-    return os.path.normcase(os.path.abspath(path))
+    return os.path.normcase(os.path.realpath(os.path.abspath(path)))
 
 
 def _is_within(path, root):
     p = _norm(path)
     r = _norm(root)
     return p == r or p.startswith(r + os.sep)
+
+
+def _validate_report_destination(root, output, expected_root):
+    """Check before every report-side effect, including mkdir; never overwrite evidence."""
+    lexical_root = os.path.normcase(os.path.abspath(root))
+    lexical_output = os.path.normcase(os.path.abspath(output))
+    allowed = os.path.join(lexical_root, "local")
+    if (os.path.commonpath([allowed, lexical_output]) != allowed or
+            lexical_output == allowed or not lexical_output.endswith(".json")):
+        raise ValueError("report must be a new JSON file under the worktree local/ directory")
+    if _norm(root) != expected_root or not _is_within(output, root):
+        raise ValueError("report destination escaped the original worktree")
+    # realpath alone would allow a link which points back inside the repository,
+    # including one redirected into app/src. Reject every link/reparse component.
+    current = lexical_root
+    components = [""] + os.path.relpath(lexical_output, lexical_root).split(os.sep)
+    for component in components:
+        if component:
+            current = os.path.join(current, component)
+        try:
+            attrs = os.lstat(current)
+        except FileNotFoundError:
+            continue
+        if (stat.S_ISLNK(attrs.st_mode) or
+                getattr(attrs, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+            raise ValueError("report path contains a link or reparse point")
+        if current != lexical_output and not stat.S_ISDIR(attrs.st_mode):
+            raise ValueError("report parent is not a directory")
+    if os.path.lexists(output):
+        raise FileExistsError("report already exists; use a new report path")
 
 
 def _rel(root, path):
@@ -240,12 +272,12 @@ def parse_args(argv):
     parser.add_argument("--environment",
                         default=os.path.join(root, "docs", "refactor", "evidence",
                                              "environment.local.json"))
-    parser.add_argument("--output", required=True, help="结果 JSON 路径，必须位于实施根内")
+    parser.add_argument("--output", required=True, help="新的结果 JSON，必须位于实施根 local/ 内且不经过链接")
     parser.add_argument("--required", action="append", default=None,
                         help="必需测试 ID（module.Class.test）。给出时未发现的 ID 即非零；"
                              "缺省时本次发现到的全部用例都算必需")
     parser.add_argument("--allow-skip", action="append", default=None,
-                        help="允许 skip 的测试 ID（必须显式登记；缺省任何 skip 都算失败）")
+                        help="兼容旧调用的显式 skip 登记；不能豁免所选必需用例")
     parser.add_argument("--root", default=root, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     args.root = os.path.abspath(args.root)
@@ -262,6 +294,7 @@ def main(argv):
         pass
     args = parse_args(argv)
     root = args.root
+    report_root = _norm(root)
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
 
     reasons = []
@@ -280,9 +313,13 @@ def main(argv):
     elif not os.path.isdir(start_dir):
         reasons.append({"code": "start-dir-missing", "detail": start_dir})
 
-    if not _is_within(output, root):
-        reasons.append({"code": "output-outside-root",
-                        "detail": "output 必须位于实施根内: %s" % output})
+    # Reject before discovery or report creation: a failing exit code must not
+    # come at the cost of truncating a file outside the approved workspace.
+    try:
+        _validate_report_destination(root, output, report_root)
+    except (OSError, ValueError) as exc:
+        print("FAIL unsafe-report-destination: %s" % exc, file=sys.stderr)
+        return 1
 
     manifest = {}
     if not os.path.isfile(args.fixture_manifest):
@@ -442,9 +479,11 @@ def main(argv):
     if counts["errors"]:
         reasons.append({"code": "test-error", "detail": "%d 个用例出错" % counts["errors"]})
     for entry in tests_report:
-        if entry["outcome"] == "skipped" and entry["required"] and entry["id"] not in allow_skip:
+        if entry["outcome"] == "skipped" and entry["required"]:
             reasons.append({"code": "required-test-skipped",
                             "detail": "%s: %s" % (entry["id"], "; ".join(entry["messages"]))})
+        elif entry["outcome"] == "expected-failure" and entry["required"]:
+            reasons.append({"code": "required-test-expected-failure", "detail": entry["id"]})
         elif entry["outcome"] == "unexpected-success":
             reasons.append({"code": "unexpected-success", "detail": entry["id"]})
         elif entry["outcome"] == "notRun" and entry["required"]:
@@ -476,10 +515,13 @@ def main(argv):
     }
 
     try:
+        _validate_report_destination(root, output, report_root)
         parent = os.path.dirname(output)
-        if parent and not os.path.isdir(parent):
-            os.makedirs(parent)
-        with io.open(output, "w", encoding="utf-8", newline="\n") as f:
+        os.makedirs(parent, exist_ok=True)
+        # Recheck after mkdir, then create exclusively. This protects against
+        # paths redirected by the tests, as well as a concurrently created file.
+        _validate_report_destination(root, output, report_root)
+        with io.open(output, "x", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(report, ensure_ascii=False, indent=2))
             f.write("\n")
     except Exception as exc:

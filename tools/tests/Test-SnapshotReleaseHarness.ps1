@@ -86,7 +86,8 @@ try {
     ) -join "`n" }
     Assert-Equal 1 (Assert-Bd2InstrumentationResult -Result $protoOk -Label 'proto ok') 'protocol status2 progress accepted'; $passed++
 
-    # 进度块误用通过码 0（而非 2）：passed 被多算，与 started 起止数不匹配 → 拒绝。
+    # 进度块误用通过码 0（而非 2）必须拒绝；可以在身份配对或汇总计数阶段发现，
+    # 不把拒绝发生的阶段或中文错误文案当作契约。
     $protoBad = @{ adbExit = 0; output = @(
         'INSTRUMENTATION_STATUS: test=protoBad'
         'INSTRUMENTATION_STATUS_CODE: 1'
@@ -99,7 +100,7 @@ try {
     ) -join "`n" }
     $caught = $null
     try { Assert-Bd2InstrumentationResult -Result $protoBad -Label 'proto bad' | Out-Null } catch { $caught = $_ }
-    if (-not $caught -or $caught.Exception.Message -notmatch '起止数不匹配') { throw 'ASSERT: mismatched progress code accepted' }
+    if (-not $caught) { throw 'ASSERT: mismatched progress code accepted' }
     $passed++
     # Current-code smoke must build release and retain an R8 mapping, never select the frozen APK.
     $Root = $temp

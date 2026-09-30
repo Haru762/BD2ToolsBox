@@ -21,7 +21,17 @@
 | **退出码 0 不是验收** | 只看进程退出码会得到假绿色：本仓实测过 `python -m unittest` 在 6 条真实用例全被 skip 时照样 `exit 0` 并报 `OK (skipped=6)`。判定一律看**逐用例结果 + 必需集合 + 夹具哈希**。 |
 | **零用例 / 无报告非零** | 发现到 0 个用例、报告缺失或不可解析、必需测试 ID 未被发现，都是失败。 |
 | **失败要能复现** | 人为破坏实现必须让对应测试真的失败，见 `docs/refactor/evidence/T04.md` 的变异实验记录。 |
-| **失败也要落档** | 任一入口失败都必须留下 `summary.json`（含 `result` 与 `reason`），不能只剩一个空目录。**含「断言之前」的失败**（构建、安装、runner 起不来），不只是判定失败那一步。 |
+| **失败也要落档** | 运行失败应留下 `summary.json`（含 `result` 与 `reason`），包括构建、安装和 runner 启动失败。**非法输出路径除外**：只向 stderr 报错并非零退出，不能为生成失败报告而创建越界目录或覆盖已有文件。 |
+
+### 1.1.1 审查修复后的边界（2026-09-28）
+
+- 验证工作区只允许 `refactor/android-architecture` 与本轮授权的 `fix/review-closeout`；仍拒绝 main、detached HEAD、跨工作树加载脚本。
+- Python `--output` 必须是当前仓库 `local/` 下不经过 symlink/junction 的**新 JSON**；发现前、建目录前及独占创建文件前均校验，已有报告不覆盖。
+- 必需用例不能通过 `--allow-skip` / `-AllowSkip` 豁免；expected-failure 同样不是必需覆盖通过。
+- JVM `-TestClass` 支持 `*`，按实际类名匹配，并校验对应夹具及 XML 真实 testcase 数量。
+- instrumentation 必须有成功终态、成功摘要和匹配的测试起止身份/数量；非零传输退出码、崩溃、缺终态或残缺运行均失败。
+- 本轮定向 RED/GREEN 结果见 [修复证据](evidence/review-closeout.md)；下文 T04 的历史数量不代表本轮运行数。
+
 
 ### 1.2 夹具规则（各入口的实施范围不同，别按表头想当然）
 
@@ -44,9 +54,9 @@
 
 | 入口 | 范围 | 结果来源 | 原始报告落点 |
 |---|---|---|---|
-| `Test-Bd2Unit -TestClass <类名>` | JVM 单测（实际 variant） | `app/build/test-results/<task>/TEST-*.xml` 真解析；外加按 manifest `usedBy` 匹配到本类的夹具存在性/哈希核对 | `test-results/<运行ID>-unit-<类名>/summary.json`（含 `fixtures` 段）+ 复制过来的 XML |
+| `Test-Bd2Unit -TestClass <类名或通配选择器>` | JVM 单测（实际 variant） | `app/build/test-results/<task>/TEST-*.xml` 真解析；外加按 manifest `usedBy` 匹配到本类的夹具存在性/哈希核对 | `test-results/<运行ID>-unit-<类名>/summary.json`（含 `fixtures` 段）+ 复制过来的 XML |
 | `Test-Bd2Python -Pattern <文件模式>` | Python unittest | `tools/run_python_tests.py` 的 JSON（逐用例 ID + 计数 + 夹具结论 + reasons） | `test-results/<运行ID>-python-<模式>/report.json` |
-| `Test-Bd2Device -TestClass <类名> -Abi <ABI>` | 设备 instrumentation | `am instrument -w -r` 的**逐条** `INSTRUMENTATION_STATUS_CODE`（1=开始 / 0=通过 / -3=`@Ignore` / -4=`Assume` 不成立）：要求 `passed == started` 且无 `-3`/`-4`。**只看尾部 `OK (n tests)` 会把跳过的用例算成通过**；`adb`/`am instrument` 的退出码不可信，**未运行不算通过** | `test-results/<运行ID>-device-<ABI>-<类名>/`（成功与失败都写 `instrumentation.txt` + `summary.json`；**构建/安装阶段的失败也写** `summary.json`，见 T04.md §5.4.1） |
+| `Test-Bd2Device -TestClass <类名> -Abi <ABI>` | 设备 instrumentation | `am instrument -w -r` 的逐测试起止身份/状态码、声明数量、`OK (n tests)` 与 `INSTRUMENTATION_CODE: -1` 必须一致，且 `adbExit == 0`。跳过、错误、崩溃、缺终态、残缺或乱序输出均失败 | `test-results/<运行ID>-device-<ABI>-<类名>/`（成功与失败都写 `instrumentation.txt` + `summary.json`；**构建/安装阶段的失败也写** `summary.json`，见 T04.md §5.4.1） |
 | `Test-Bd2ReleaseSmoke -Case <case> -Abi <ABI>` | 真实 minified release | apksigner 证书 + 清单哈希 + 设备内 `ReleaseContractProbeTest` | `test-results/<运行ID>-smoke-<case>-<ABI>/`（`summary.json` 同样在 `finally` 里落盘） |
 | `verification.ps1 -Mode LocalAll` | 本地全量调度 | 上述各步；**未实现步骤一律非零**，不返回空成功 | 各步各自的运行目录 |
 
