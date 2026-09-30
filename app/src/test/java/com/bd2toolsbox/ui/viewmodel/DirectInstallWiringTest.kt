@@ -93,6 +93,10 @@ class DirectInstallWiringTest {
         mockkObject(StagingDirectoryLease.Companion)
         every { StagingDirectoryLease.NIO_FILE_KEY } returns JvmTestStagingIdentity
         mockkObject(ShizukuManager, InstallService.Companion)
+        // T19: acquire/releaseConnection touch real Shizuku (Binder init) unless stubbed;
+        // JVM tests never bind for real, so the token itself is an opaque marker here.
+        every { ShizukuManager.acquireConnection() } returns Any()
+        every { ShizukuManager.releaseConnection(any()) } just Runs
         every { InstallService.start(any(), any()) } returns true
         every { InstallService.update(any(), any(), any(), any()) } just Runs
         every { InstallService.stop(any()) } just Runs

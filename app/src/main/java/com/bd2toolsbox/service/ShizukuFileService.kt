@@ -55,25 +55,44 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
         }
     }
 
+    /**
+     * 返回 envelope：`{"ok":true,"entries":[...]}` 或 `{"ok":false,"error":"..."}`（T19）。
+     *
+     * 旧实现把「目录不存在」「listFiles() 返 null」「异常」三种情况都返回裸数组 `[]`，
+     * 调用方（`ShizukuManager`）拿到同一个值，无法区分「确实为空」与「读失败」。
+     * 现在明确分开：目录不存在/listFiles 返 null 都是 `ok:false`（不是「确实没文件」）；
+     * 只有真正遍历完毕且没有子目录无法读取时才返回 `ok:true`（entries 可以为空）。
+     */
     override fun listBundleDirectoryPaged(sharedDirPath: String, offset: Int, limit: Int): String {
-        return try {
-            val sharedDir = File(sharedDirPath)
-            if (!sharedDir.isDirectory) {
-                Log.w(TAG, "Shared directory does not exist: $sharedDirPath")
-                return "[]"
-            }
+        fun failure(message: String): String =
+            JSONObject().put("ok", false).put("error", message).toString()
 
+        val sharedDir = File(sharedDirPath)
+        if (!sharedDir.isDirectory) {
+            Log.w(TAG, "Shared directory does not exist: $sharedDirPath")
+            return failure("Shared directory does not exist: $sharedDirPath")
+        }
+
+        return try {
             // Shared/{bundleName}/{hash}/__data；一个 bundle 只取第一个含 __data 的 hash 目录。
             // size 是 __data 实际字节数，供「干净检测」与 catalog 的官方大小比对 ——
             // 重打包产物沿用原版路径结构（目录名相同），只有大小能区分原版和装着 mod。
             // 分页：先全量收进内存（服务进程侧无 binder 限制），再切 [offset, offset+limit)
-            // 出去 —— 调用方循环拉到「返回条数 < limit」即最后一页。单页必须显著小于
-            // binder 1MB 事务上限：500 条 × ~120B ≈ 60KB，余量充足。
+            // 出去 —— 调用方循环拉到「ok:true 且返回条数 < limit」即最后一页。单页必须显著
+            // 小于 binder 1MB 事务上限：500 条 × ~120B ≈ 60KB，余量充足。
+            //
+            // 子目录 listFiles() 返 null 不能静默跳过（旧实现用 `?.forEach` 跳过，相当于
+            // 把「这个 bundle 目录读失败」当成「这个 bundle 没有内容」，两者对干净检测的
+            // 含义不同）：读失败的 bundle 目录直接让整次列举失败。
             val all = JSONArray()
-            sharedDir.listFiles()?.forEach { bundleDir ->
-                if (!bundleDir.isDirectory) return@forEach
-                bundleDir.listFiles()?.forEach inner@{ hashDir ->
-                    if (!hashDir.isDirectory) return@inner
+            val topLevel = sharedDir.listFiles()
+                ?: return failure("Cannot list shared directory (listFiles returned null): $sharedDirPath")
+            for (bundleDir in topLevel) {
+                if (!bundleDir.isDirectory) continue
+                val hashDirs = bundleDir.listFiles()
+                    ?: return failure("Cannot list bundle directory (listFiles returned null): ${bundleDir.absolutePath}")
+                for (hashDir in hashDirs) {
+                    if (!hashDir.isDirectory) continue
                     val dataFile = File(hashDir, "__data")
                     if (dataFile.isFile) {
                         all.put(JSONObject().apply {
@@ -81,7 +100,7 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
                             put("hash", hashDir.name)
                             put("size", dataFile.length())
                         })
-                        return@forEach
+                        break
                     }
                 }
             }
@@ -93,10 +112,10 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
                 i++
             }
             Log.d(TAG, "Listed bundles $offset..${i - 1} of $total from $sharedDirPath")
-            page.toString()
+            JSONObject().put("ok", true).put("entries", page).toString()
         } catch (e: Exception) {
             Log.e(TAG, "Error listing bundle directory $sharedDirPath", e)
-            "[]"
+            failure("Exception while listing $sharedDirPath: ${e.message}")
         }
     }
 

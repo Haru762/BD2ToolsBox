@@ -125,6 +125,13 @@ class MainActivity : ComponentActivity() {
 
     private val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
 
+    /**
+     * T19：Activity 自己持有的一份占用。旧行为是 `onDestroy` 时无条件 unbind，会切断
+     * 仍在 installScope/ScanService 里跑着的任务的连接。现在只释放自己这一份，
+     * 底层连接是否真正断开由 [ShizukuManager] 内部的占用计数决定。
+     */
+    private var shizukuConnectionToken: Any? = null
+
     private val shizukuPermissionListener =
         Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             if (requestCode == SHIZUKU_PERMISSION_REQUEST_CODE) {
@@ -152,6 +159,9 @@ class MainActivity : ComponentActivity() {
         viewModel.initialize()
         // 攻略板块的仓库现已构造注入（T17），这里顺手把分类树拉起来（进 tab 前就绪）
         guideViewModel.initialize()
+        // T19：Activity 存活期间自己占用一份连接；即使这一份释放，连接也不会断，
+        // 只要还有其他占用者（后台安装/扫描任务）。
+        shizukuConnectionToken = ShizukuManager.acquireConnection()
 
         try {
             Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
@@ -955,16 +965,18 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {
             // Shizuku not available
         }
-        // 正常退出时顺手把 Shizuku 服务进程收掉，省下约 130 MB 常驻。
+        // T19：旧行为是 isFinishing 时无条件 unbind（会切断仍在 installScope/ScanService 里
+        // 跑着的任务的连接），现在改成无条件释放 Activity 自己那一份占用——它只减去
+        // 本实例的占用，后台任务自己持有的 token 不受影响，真正解绑只在全部 token 都
+        // 释放时发生。
         //
-        // 防止进程堆积靠的是 .daemon(true)（见 ShizukuManager）——「守护」保证无论怎么退出
-        // 都只有一个进程可复用；这里只是让主动退出的情况更干净些，收不掉也不会累积。
-        //
-        // isFinishing 判断是必要的：旋转屏幕等配置变更同样走 onDestroy，那时 Activity
-        // 马上重建，解绑只会让下一次操作重新走一遍绑定握手。
-        if (isFinishing) {
-            ShizukuManager.unbindService()
-        }
+        // 故意不沿用旧的 isFinishing 分支：那个优化建立在“unbind 是唯一直接操作”上，
+        // 换成计数模型后会引发 token 泄漏：旋转屏幕时旧 Activity 实例销毁，如果这里不释放，
+        // 它持有的 token 引用就永久丢失了，没有任何入口能把它 remove 掉，占用计数
+        // 会每次旋转都多出一份永久不可回收的占用，最终连接永远不会真正解绑。
+        // 没有后台任务时旋转会多一次解绑/重绑，但正确性优先于这点开销。
+        shizukuConnectionToken?.let { ShizukuManager.releaseConnection(it) }
+        shizukuConnectionToken = null
     }
 
     /**

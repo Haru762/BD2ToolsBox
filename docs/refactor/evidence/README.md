@@ -8,11 +8,12 @@
 
 | 项 | 值 |
 |---|---|
-| 阶段 | **G3 Hilt 与平台适配层进行中**（G2 已收口 T11–T15）；历史 **G2 构建与依赖治理**（2026-09-26 更新：T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 LOCAL_VERIFIED、T12 DONE（含用户授权的已接受限制）、T13 DONE、T14 DONE、T15 DONE、T16 DONE、T17 DONE；T18 IMPLEMENTED_NOT_VERIFIED（2026-09-29，协议边界修复后需重新做原生 arm64 验证）） |
+| 阶段 | **G4 后台任务与生命周期进行中**（T19 IMPLEMENTED_NOT_VERIFIED）；历史 **G3 Hilt 与平台适配层**（G2 已收口 T11–T15；T16 DONE、T17 DONE；T18 IMPLEMENTED_NOT_VERIFIED（2026-09-29，协议边界修复后需重新做原生 arm64 验证）） |
 | arm64 验证策略 | 2026-09-26 起按 [arm64-verification-policy.md](../arm64-verification-policy.md)：原生 arm64 只要求 T14/T18/T49/T50/T51/T54/T57；其余任务为 x86_64 设备验收 + arm64 静态审计（`tools/audit_native_abi.py`） |
 | 权威状态依据 | 本文件与各任务证据的最新追加章节；历史完成记录与当前权威状态分开，本次同步不删改原需求、不降低验收标准 |
 | 最近已验收任务 | T17（仓储/VM 构造注入，RepositoryConstructionTest 5/5 + 6 个设备类全过 + minified release PASS，arm64 静态审计）；T16（Hilt Application + 5 入口）；T15（SDK/权限/前台服务/16KB，四台 + 原生 arm64）；T14（2026-09-27，生产构建链升级）；T13（2026-09-26，兼容探针两 ABI 通过）；T12（2026-09-26，含用户授权的已接受限制） |
-| 下一任务 | T18 新版 9 项 NativeEngineSmokeTest 原生 arm64 补验；随后 T19。T18 旧 4 项真机结果不替代有效 bundle 转换验收。 |
+| 下一任务 | T19 真实 Shizuku 授权/断连场景需在有 Shizuku 环境的设备上补验；随后 T20（DI 装配收尾）。T18 新版 9 项 NativeEngineSmokeTest 原生 arm64 仍待补验（A 类任务，与 T19 无依赖关系）。T18 旧 4 项真机结果不替代有效 bundle 转换验收。 |
+| T19（本轮，2026-09-30） | 新增 `GameFileAccess`/`ShizukuGameFileAccess`/`ConnectionOccupancy`/`FileAccessModule`；`ShizukuManager` 重写为委托门面；`MainActivity` 不再无条件 unbind，改为引用计数；`MainViewModel` 5 处长任务入口接入占用；AIDL `listBundleDirectoryPaged` 升级为 envelope 协议（`.version(7)`）。JVM **510/0/0/0**（505 既有 + 5 新增 `ConnectionOccupancyTest`）。x86_64 AVD 设备新增两个测试类均 PASS（`ShizukuFileServiceListingTest` 5/5、`ShizukuConnectionLifecycleTest` 2/2，三处真实缺陷/假设错误均已自查证伪并修复）；既有 `PlatformBehaviorTest` 13/13、`HiltEntryPointTest` 4/4 回归未受影响。minified release 受控 debug signer 成功、R8 mapping 核对无裁剪、x86_64 冷启动无崩溃。两 ABI 静态审计 PASS。详见 [T19.md](T19.md)。 |
 | 并行分支合并（2026-09-30） | 已把 `fix/review-closeout` 的 R1（验证器加固，`01868b1`）与 `fix/audit-safety` 的 13 项只读审查修复（`1a27342`）cherry-pick 合入本分支（提交 `cb8df30`、`2fafebd`）。`MainViewModel.kt` 的 `installOneConverted`/`moveFilesToGame`/`recordSuccessfulInstall` 与 T15–T18 冲突已手工解决，统一采用审查修复侧的完整实现；三个继承自 T17 前基线的 JVM 测试（`DirectInstallWiringTest`、`LocalBaseReuseTest`、`MoveInstallWiringTest`）已迁移到当前构造注入签名与 `ModEngine` 接口。合并后 `:app:testDebugUnitTest` **505/0/0/0**，`compileDebugAndroidTestKotlin`、`assembleDebug` 均成功。`fix/review-closeout` 的 R2–R6（未落地的生产代码修复）与 `fix/audit-safety` 的「独立审阅、真实设备验收」仍未完成，不因本次合并升级为 DONE。两个来源 worktree 保持原状未被本次操作修改。 |
 | 最后核对的代码提交 | `b1dfb6e`；本轮只补 T18 的协议校验、扫描错误、取消传播、实例一致性和有效转换测试，见 [T18.md](T18.md)。 |
 | 工作区脏文件 | 开始时有 T18 的三份未提交状态文档，已纳入本轮修正；旧 `diff.txt`、`patch.py`、三份 09-23 计划与两份诊断 probe 为原有未跟踪文件，不暂存、不清理。准确状态以 `git status` 为准。 |
@@ -42,7 +43,8 @@
 | T16 | DONE | [T16.md](T16.md) | 2026-09-27 | 引入 Hilt 2.58 / KSP 2.2.20-2.0.3 / androidx.hilt 1.3.0（T13 组合）：`@HiltAndroidApp Bd2Application`（不抢先启动 Python/不阻塞首屏）、`MainActivity`/`SpinePreviewActivity`/三个本进程 Service 加 `@AndroidEntryPoint`；`ShizukuFileService` 刻意不接（外部 shell 进程 Binder Stub）。compiler 走 KSP 无 kapt，R8 无需手写 Hilt keep。HiltEntryPointTest 4/4（AVD API34）、JVM 429、minified release 冷启动+release-probe PASS；arm64 静态审计 PASS（B 类，dex 层，未在原生 arm64 运行）。 |
 | T17 | DONE | [T17.md](T17.md) | 2026-09-27 | 有状态仓储（Character/Mod/InstalledMod/BundleBackup/PreviewCache/Gamekee）改 Hilt `@Singleton`，MainViewModel/GuideViewModel 改 `@HiltViewModel` 构造注入（删 lateinit+initRepositories，`initialize()` 去 context 化），新增 DispatcherModule/RuntimeModule/RepositoryModule。账本单写不变量保持（`LedgerSubmissionCoordinator` 进程锁 + @Singleton 消分叉），Activity Context 不进长寿命对象。RepositoryConstructionTest 5/5（纯 JVM）、全量 JVM 434、6 个涉及 MainViewModel 的设备类全过（Hilt/Platform/Snapshot/BackupFailure/LedgerRecovery/TryUseBackup）、minified release 冷启动+release-probe PASS；arm64 静态审计 PASS（B 类，dex 层，未在原生 arm64 运行）。 |
 | T18 | IMPLEMENTED_NOT_VERIFIED | [T18.md](T18.md) | — | 2026-09-29 撤回过早的 DONE：旧真机 4 项只证明 BC1 和无效输入调用，没有有效 bundle 转换。补齐元组/字段/JSON 校验，扫描失败不再返回空名单，修复 Python 吞取消与可替换默认实例问题。引擎 JVM 20/20、扫描 Python 12/12、x86_64 真转换/逐字节导出/取消/BC1 9/9。A 类：本轮新版 9 项仍需原生 arm64 验证。 |
-| T19–T62 | NOT_STARTED | （未创建） | — | |
+| T19 | IMPLEMENTED_NOT_VERIFIED | [T19.md](T19.md) | — | 隔离 Shizuku Binder 并由任务持有连接：新增 `GameFileAccess` 接口 + `ShizukuGameFileAccess`（引用计数占用）+ `ConnectionOccupancy`（纯逻辑可独立测试）+ `FileAccessModule`；`ShizukuManager` 改为委托门面；`MainActivity` 不再无条件 unbind；AIDL `listBundleDirectoryPaged` 升级 envelope 协议修复「目录不存在/读失败/确实为空」被同一裸数组隐藏的问题。JVM 510/0/0/0，x86_64 设备 2 个新增类 + 2 个既有回归均 PASS，两 ABI 静态审计 PASS。未覆盖：真实 Shizuku 授权/断连场景（无 Shizuku 设备）。 |
+| T20–T62 | NOT_STARTED | （未创建） | — | |
 
 
 ### 2026-09-20 最新增量（更新上表，历史结果不外推到新源树）

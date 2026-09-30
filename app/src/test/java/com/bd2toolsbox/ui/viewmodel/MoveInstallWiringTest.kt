@@ -87,16 +87,15 @@ class MoveInstallWiringTest {
         mockkObject(StagingDirectoryLease.Companion)
         every { StagingDirectoryLease.NIO_FILE_KEY } returns JvmTestStagingIdentity
         mockkObject(ShizukuManager)
+        // T19: acquire/releaseConnection touch real Shizuku (Binder init) unless stubbed;
+        // JVM tests never bind for real, so the token itself is an opaque marker here.
+        every { ShizukuManager.acquireConnection() } returns Any()
+        every { ShizukuManager.releaseConnection(any()) } just Runs
         every { ShizukuManager.isRunning() } returns true
         coEvery { ShizukuManager.listGameBundles() } returns null
-        // Characterize the old public-tree endpoint faithfully: whole-tree copy + deletion.
-        coEvery { ShizukuManager.moveDownloadToGame() } coAnswers {
-            copyCalls++
-            beforeCopy()
-            shared.copyRecursively(game, overwrite = true)
-            shared.deleteRecursively()
-            true to "copied"
-        }
+        // T19: production `moveFilesToGame` no longer calls the whole-tree
+        // `moveDownloadToGame` endpoint (removed from ShizukuManager) — every real
+        // commit path goes through per-target `installConvertedBundle` below.
         coEvery { ShizukuManager.installConvertedBundle(any(), any()) } coAnswers {
             copyCalls++
             beforeCopy()

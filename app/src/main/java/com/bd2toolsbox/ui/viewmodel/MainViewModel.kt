@@ -1216,6 +1216,9 @@ class MainViewModel @Inject constructor(
                 withContext(Dispatchers.Main) { toast(context, FGS_REFUSED_MESSAGE) }
                 return@launch
             }
+            // T19：扫描全程在 installScope——界面销毁也不能让连接断。自己持有一份占用，不再
+            // 依赖 MainActivity 的 token 是否还在。
+            val scanConnectionToken = ShizukuManager.acquireConnection()
             try {
                 // Shizuku 服务跑在 shell UID，写不了 app 的内部 cacheDir（/data/data/…），
                 // 扫描临时文件得放 externalCacheDir
@@ -1261,6 +1264,7 @@ class MainViewModel @Inject constructor(
                 ScanService.stop(svcCtx)
             } finally {
                 ShizukuManager.markScanRunning(false)
+                ShizukuManager.releaseConnection(scanConnectionToken)
                 // 扫描产出新索引，收尾初始化并触发一轮 mod 重扫。回 viewModelScope：
                 // 里面的刷新本来就挂在界面上，界面没了就不必跑（下次冷启动会重来）
                 viewModelScope.launch { finishInitialization() }
@@ -1568,6 +1572,9 @@ class MainViewModel @Inject constructor(
                 failAllJobsForRefusedForegroundService()
                 return@launch
             }
+            // T19：转换/装入全程可能需要 ShizukuManager（本地基底复用/装入游戏目录），
+            // 自己持有一份占用，不依赖 MainActivity 的 token 是否还在。
+            val installConnectionToken = ShizukuManager.acquireConnection()
             try {
                 withContext(Dispatchers.IO) {
                     PythonRuntime.ensureStarted(context)
@@ -1601,6 +1608,7 @@ class MainViewModel @Inject constructor(
                 }
             } finally {
                 InstallService.stop(svcCtx)
+                ShizukuManager.releaseConnection(installConnectionToken)
             }
         }
     }
@@ -2318,6 +2326,9 @@ class MainViewModel @Inject constructor(
                 failAllJobsForRefusedForegroundService()
                 return@launch
             }
+            // T19：直接装入全程需要 ShizukuManager.installConvertedBundle（真正的 Binder 调用），
+            // 自己持有一份占用，不依赖 MainActivity 的 token 是否还在。
+            val directInstallConnectionToken = ShizukuManager.acquireConnection()
             try {
             var ok = 0
             var reconcile = 0
@@ -2409,6 +2420,7 @@ class MainViewModel @Inject constructor(
             )
             } finally {
                 InstallService.stop(svcCtx)
+                ShizukuManager.releaseConnection(directInstallConnectionToken)
             }
         }
     }
@@ -3128,6 +3140,9 @@ class MainViewModel @Inject constructor(
 
             moveInProgress = true
             if (!silent) _moveState.value = MoveState.Moving
+            // T19：提交全程需要 ShizukuManager.installConvertedBundle（真正的 Binder 调用），
+            // 自己持有一份占用，不依赖 MainActivity 的 token 是否还在。
+            val moveConnectionToken = ShizukuManager.acquireConnection()
             try {
                 val result = withContext(Dispatchers.IO) {
                     installedModRepository.checkSubmitAllowed()?.let {
@@ -3227,6 +3242,7 @@ class MainViewModel @Inject constructor(
                 notifyLedgerNotice(message)
             } finally {
                 moveInProgress = false
+                ShizukuManager.releaseConnection(moveConnectionToken)
             }
         }
     }
@@ -5283,7 +5299,11 @@ class MainViewModel @Inject constructor(
             notifyLedgerNotice("装入记录仓储未初始化，无法核对。")
             return
         }
+        // T19：核对全程需要 ShizukuManager.copyGameDataForRecovery（真正的 Binder 调用），
+        // 自己持有一份占用，不依赖 MainActivity 的 token 是否还在。
+        val recoveryConnectionToken = ShizukuManager.acquireConnection()
         installScope.launch {
+            try {
             val result = withContext(Dispatchers.IO) {
                 try {
                     val ctx = appContext ?: return@withContext RecoveryApplyResult.NotApplied(
@@ -5342,6 +5362,9 @@ class MainViewModel @Inject constructor(
             when (result) {
                 is RecoveryApplyResult.Applied -> notifyLedgerNotice("已根据目标内容补齐安装记录。")
                 is RecoveryApplyResult.NotApplied -> notifyLedgerNotice(result.error.message)
+            }
+            } finally {
+                ShizukuManager.releaseConnection(recoveryConnectionToken)
             }
         }
     }
