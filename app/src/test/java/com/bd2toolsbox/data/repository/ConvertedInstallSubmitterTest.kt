@@ -48,6 +48,15 @@ import java.io.File
  */
 class ConvertedInstallSubmitterTest {
 
+    @Test
+    fun aReplacedFileIsNotACompletedSubmissionWhenLedgerOrReconciliationFailed() {
+        val error = OperationError(OperationErrorKind.IO, "ledger failed")
+        assertFalse(ConvertedSubmitResult(true, error, "pending", true).completedSuccessfully)
+        assertFalse(ConvertedSubmitResult(true, null, "pending", true).completedSuccessfully)
+        assertFalse(ConvertedSubmitResult(false, null, "not written", false).completedSuccessfully)
+        assertTrue(ConvertedSubmitResult(true, null, "done", false).completedSuccessfully)
+    }
+
     @get:Rule
     val temp = TemporaryFolder()
 

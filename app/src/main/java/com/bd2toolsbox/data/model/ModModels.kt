@@ -281,7 +281,13 @@ sealed class JobStatus {
 
 data class InstallJob(
     val job: RepackJob,
-    val status: JobStatus = JobStatus.Pending
+    val status: JobStatus = JobStatus.Pending,
+    /**
+     * false = this job writes straight into the game directory (direct converted install),
+     * so it has no Download/Shared output that a later move may pick up. Travels with the
+     * job through every status copy, instead of living in a ViewModel flag that can go stale.
+     */
+    val producesDownload: Boolean = true
 )
 
 data class FailedJobInfo(

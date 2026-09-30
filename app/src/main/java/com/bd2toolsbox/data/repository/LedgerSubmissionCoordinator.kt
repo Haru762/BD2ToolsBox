@@ -48,6 +48,9 @@ internal class LedgerSubmissionCoordinator private constructor() {
     /** 恢复租约持有者；与提交租约分开，避免观察期间普通 put/submit 绕过。 */
     var recoveryOwnerToken: Any? = null
 
+    /** 每次恢复独有的身份，避免旧 finally 释放同一实例后来获得的新租约。 */
+    var recoveryLeaseToken: Any? = null
+
     /** beginRecovery 时 journal 文件的 SHA-256；apply 前必须一致。 */
     var recoveryJournalFingerprint: String? = null
 
@@ -63,6 +66,7 @@ internal class LedgerSubmissionCoordinator private constructor() {
 
     fun clearRecoveryLease() {
         recoveryOwnerToken = null
+        recoveryLeaseToken = null
         recoveryJournalFingerprint = null
         recoveryLedgerFingerprint = null
     }

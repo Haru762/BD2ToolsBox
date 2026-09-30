@@ -51,6 +51,54 @@ class JournalRecoveryApplyTest {
     }
 
     @Test
+    fun aSecondRecoveryOnTheSameRepositoryCannotReplaceAnActiveLease() {
+        plantReplacedWithFacts()
+        val owner = repo()
+        assertNull(owner.beginRecovery())
+        try {
+            assertNotNull("Same-instance recovery must not be reentrant", owner.beginRecovery())
+            assertNotNull("The rejected request must leave the first lease held", repo().beginRecovery())
+        } finally { owner.releaseRecovery() }
+        assertAnotherRepositoryCanRecover()
+    }
+
+    @Test
+    fun aLateOneShotFinallyCannotReleaseANewerRecoveryOnTheSameRepository() {
+        plantReplacedWithFacts()
+        val owner = io.mockk.spyk(repo())
+        var acquiredReplacement = false
+        every { owner.applyContentRecovery(any()) } answers {
+            val result = callOriginal()
+            assertNull(owner.beginRecovery())
+            acquiredReplacement = true
+            result
+        }
+        try {
+            val result = owner.recoverFromSharedTree(temp.newFolder("empty-shared"), temp.newFolder("observed"))
+            assertTrue(result is RecoveryApplyResult.NotApplied)
+            assertTrue(acquiredReplacement)
+            val other = repo()
+            try {
+                assertNotNull("Old finally must not release a newly acquired recovery lease", other.beginRecovery())
+            } finally { other.releaseRecovery() }
+        } finally { owner.releaseRecovery() }
+    }
+
+    @Test
+    fun failedObservationReleasesLeaseForANewRepositoryWithoutClearingEvidence() {
+        plantReplacedWithFacts()
+        val first = repo()
+        val before = first.journalFile().readBytes()
+        assertNull(first.beginRecovery())
+        assertTrue(first.applyContentRecovery(listOf(observed(SHA_B))) is RecoveryApplyResult.NotApplied)
+        val second = repo()
+        try {
+            assertNull("Failure must not strand recovery ownership in an old UI", second.beginRecovery())
+            assertArrayEquals(before, second.journalFile().readBytes())
+        } finally { second.releaseRecovery(); first.releaseRecovery() }
+    }
+
+    @Test
     fun observedLocalFileMatchingPlantedFactsCommitsLedger() {
         val data = temp.newFile("__data")
         data.writeBytes(byteArrayOf(9, 8, 7, 6))

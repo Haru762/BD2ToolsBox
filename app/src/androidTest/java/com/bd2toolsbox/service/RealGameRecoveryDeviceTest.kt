@@ -13,6 +13,7 @@ import com.bd2toolsbox.core.storage.JournalMoveFacts
 import com.bd2toolsbox.core.storage.JournalStage
 import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
+import com.bd2toolsbox.core.storage.MoveInstallStaging
 import com.bd2toolsbox.core.storage.OperationJournalStore
 import com.bd2toolsbox.core.storage.StreamingDigest
 import com.bd2toolsbox.data.model.InstalledModRecord
@@ -161,9 +162,14 @@ class RealGameRecoveryDeviceTest {
                 assertEquals(setOf("__data"), File(shared, "$bundle/$hashDir").listFiles()!!.map { it.name }.toSet())
                 val target = JournalMoveFacts.target(shared, bundle, "$bundle/$hashDir/__data", listOf(frozen.modUri), listOf(frozen))
                 assertEquals(cfg.getString("newSha256"), target.recoveryFacts!!.expectedContentSha256)
-                MoveInstallSubmitter(repo).submit(operation, listOf(target),
-                    moveFiles = { ShizukuManager.moveDownloadToGame() },
-                    commitLedger = { crashBeforeLedger() })
+                MoveInstallStaging(File(root, "move-bound-staging")).prepare(shared, listOf(target)).use { prepared ->
+                    MoveInstallSubmitter(repo).submit(operation, prepared.targets,
+                        moveFiles = {
+                            check(prepared.verifyUnchanged() == null)
+                            ShizukuManager.installConvertedBundle(File(prepared.sourceDir, bundle).absolutePath, bundle)
+                        },
+                        commitLedger = { crashBeforeLedger() })
+                }
             }
             fail("The crash-point submission must not return normally")
         }

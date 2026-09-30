@@ -328,7 +328,7 @@ class PristineVerifier(private val digester: Digester = StreamingDigest.sha256()
         }
 
         if (!trusted.hasContentDigest) {
-            return if (onDisk.length() == trusted.size) Verdict.PRISTINE else Verdict.MODIFIED
+            return if (onDisk.length() == trusted.size) Verdict.UNKNOWN else Verdict.MODIFIED
         }
 
         val actual = digestOrNull(onDisk) ?: return Verdict.UNKNOWN

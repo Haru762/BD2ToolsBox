@@ -389,7 +389,7 @@ class PristineVerifierTest {
      * 以为 catalog 能验内容。
      */
     @Test
-    fun digestlessBaselineFallsBackToNameAndSize() {
+    fun digestlessBaselineCannotCertifySameSizedContent() {
         val root = temporary.newFolder("root")
         val onDisk = makeBundleFile(root, "b", "h1", ByteArray(2966) { 0x41 })
         val verifier = PristineVerifier(RecordingDigester())
@@ -397,7 +397,7 @@ class PristineVerifierTest {
             sha256 = null, size = 2966,
             source = BaselineSource.CATALOG_MANIFEST, expectedHashDir = "h1",
         )
-        assertEquals(Verdict.PRISTINE, verifier.classify(onDisk, catalogOnly))
+        assertEquals(Verdict.UNKNOWN, verifier.classify(onDisk, catalogOnly))
         // 尺寸不同 → MODIFIED
         val bigger = makeBundleFile(root, "b2", "h1", ByteArray(2967) { 0x41 })
         assertEquals(Verdict.MODIFIED, verifier.classify(bigger, catalogOnly))

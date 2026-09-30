@@ -25,7 +25,10 @@ data class ConvertedSubmitResult(
     val error: OperationError?,
     val message: String,
     val requiresReconciliation: Boolean
-)
+) {
+    val completedSuccessfully: Boolean
+        get() = filesReplaced && error == null && !requiresReconciliation
+}
 
 /**
  * 把一次「转换产物 → 游戏目录」的提交按**写前意图 → 换文件 → 记账**的顺序编排，

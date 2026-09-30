@@ -203,9 +203,9 @@ class InstalledLedgerStore(private val ledgerFile: File) {
             )
         }
 
-        // 空白文件按「合法空表」而不是「损坏」：0 字节没有任何**内容**被判废。
-        // 与 `ModRepository.loadModCache` 的既有判断同口径。
-        if (text.isBlank()) return LedgerRead.Empty
+        // A present blank file can be the result of an interrupted legacy write.
+        // Only an actual empty JSON map is evidence of an empty ledger.
+        if (text.isBlank()) return LedgerRead.Corrupt("装入记录为空白，无法确认原有记录")
 
         return try {
             parse(text)
@@ -272,14 +272,19 @@ class InstalledLedgerStore(private val ledgerFile: File) {
      */
     fun preserveCorruptFile(): File? {
         if (!ledgerFile.exists()) return null
-        val target = File(
-            ledgerFile.parentFile,
-            ledgerFile.name + CORRUPT_SUFFIX_PREFIX + CORRUPT_STAMP_FORMAT.format(LocalDateTime.now())
-        )
-        return try {
-            if (ledgerFile.renameTo(target)) target else null
-        } catch (e: Exception) {
-            null
+        val stem = ledgerFile.name + CORRUPT_SUFFIX_PREFIX + CORRUPT_STAMP_FORMAT.format(LocalDateTime.now())
+        var suffix = 0
+        while (true) {
+            val target = File(ledgerFile.parentFile, stem + if (suffix == 0) "" else "-$suffix")
+            try {
+                // No REPLACE_EXISTING: a second repair must not overwrite evidence.
+                java.nio.file.Files.move(ledgerFile.toPath(), target.toPath())
+                return target
+            } catch (_: java.nio.file.FileAlreadyExistsException) {
+                suffix++
+            } catch (_: Exception) {
+                return null
+            }
         }
     }
 

@@ -732,28 +732,33 @@ private fun MoveToGameSection(
 @Composable
 private fun InGameResultSection(
     moveState: MoveState,
-    successFallback: String
+    successFallback: String,
+    anyInstalled: Boolean
 ) {
     val context = LocalContext.current
+    // Direct install can end partially or wholly failed; never paint that as a green success.
+    val failure = moveState as? MoveState.Failed
+    val tint = if (failure != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
 
     Icon(
-        Icons.Default.CheckCircle,
-        contentDescription = "成功",
-        tint = MaterialTheme.colorScheme.primary,
+        if (failure != null) Icons.Default.Error else Icons.Default.CheckCircle,
+        contentDescription = if (failure != null) "未全部装入" else "成功",
+        tint = tint,
         modifier = Modifier.size(36.dp)
     )
     Spacer(Modifier.height(8.dp))
     Text(
-        (moveState as? MoveState.Success)?.message ?: successFallback,
+        failure?.error ?: (moveState as? MoveState.Success)?.message ?: successFallback,
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.primary,
+        color = tint,
         textAlign = TextAlign.Center
     )
     Spacer(Modifier.height(12.dp))
+    // Nothing committed → nothing new to see in game; partial success still offers launch.
     val gameIntent = remember {
         context.packageManager.getLaunchIntentForPackage("com.neowizgames.game.browndust2")
     }
-    if (gameIntent != null) {
+    if (gameIntent != null && anyInstalled) {
         Button(onClick = { context.startActivity(gameIntent) }) {
             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
@@ -950,7 +955,8 @@ fun ParallelInstallDialog(
                                 Spacer(Modifier.height(16.dp))
                                 InGameResultSection(
                                     moveState = moveState,
-                                    successFallback = "已装入游戏目录，重启游戏后生效。"
+                                    successFallback = "已装入游戏目录，重启游戏后生效。",
+                                    anyInstalled = finalResult.successfulJobs > 0
                                 )
                             } else {
                                 Spacer(Modifier.height(16.dp))

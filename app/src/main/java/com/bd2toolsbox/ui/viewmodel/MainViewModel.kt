@@ -51,6 +51,7 @@ import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
 import com.bd2toolsbox.core.storage.ModSnapshotStore
+import com.bd2toolsbox.core.storage.MoveInstallStaging
 import com.bd2toolsbox.core.storage.OperationJournalStore
 import com.bd2toolsbox.data.repository.RecoveryApplyResult
 import com.bd2toolsbox.core.storage.TargetObservation
@@ -70,6 +71,7 @@ import com.bd2toolsbox.data.repository.BundleNameResolver
 import com.bd2toolsbox.data.repository.CharacterMetaRepository
 import com.bd2toolsbox.data.repository.CharacterRepository
 import com.bd2toolsbox.data.repository.ConvertedInstallSubmitter
+import com.bd2toolsbox.data.repository.ConvertedSubmitResult
 import com.bd2toolsbox.data.repository.InstalledModRepository
 import com.bd2toolsbox.data.repository.MoveInstallSubmitter
 import com.bd2toolsbox.data.repository.LedgerTake
@@ -610,9 +612,9 @@ class MainViewModel @Inject constructor(
         // 所有 job 收尾后汇总结果。用 installScope 而不是 viewModelScope：
         // 汇总带着「自动移入游戏」这步，界面销毁就停止收集的话，
         // 转换跑完了却没人做最后那一下，产物白留在 Download/Shared。
-        installScope.launch {
+        installScope.launch(Dispatchers.Main.immediate) {
             installJobs.collect { jobs ->
-                if (jobs.isNotEmpty() &&
+                if (jobs.isNotEmpty() && jobs.all { it.producesDownload } &&
                     jobs.all { it.status is JobStatus.Finished || it.status is JobStatus.Failed }) {
                     summarizeResults()
                 }
@@ -2017,16 +2019,11 @@ class MainViewModel @Inject constructor(
         } else {
             null
         }
-        if (baseline != null && baseline.hasContentDigest) {
-            val verdict = verifier.classify(dest, baseline.copy(expectedHashDir = hashDir))
-            if (verdict != Verdict.PRISTINE) {
-                Log.w(
-                    "MainViewModel",
-                    "游戏目录这份与可信备份不一致，弃用：$bundleName($hashDir) verdict=$verdict"
-                )
-                runCatching { dest.delete() }
-                return null
-            }
+        val verdict = verifier.classify(dest, baseline?.copy(expectedHashDir = hashDir))
+        if (verdict != Verdict.PRISTINE) {
+            Log.w("MainViewModel", "游戏基底缺少可信内容证据或摘要不符，改用可信来源：$bundleName($hashDir) verdict=$verdict")
+            runCatching { dest.delete() }
+            return null
         }
         Log.d("MainViewModel", "复用本地原版 bundle: $bundleName (${dest.length()} 字节)")
         return dest.absolutePath
@@ -2308,7 +2305,9 @@ class MainViewModel @Inject constructor(
         resetUnfinishedBackups()
         _moveState.value = MoveState.Idle
         batchStartTimeMs = System.currentTimeMillis()
-        _installJobs.value = targets.map { InstallJob(RepackJob(it.targetHash!!, listOf(it))) }
+        _installJobs.value = targets.map {
+            InstallJob(RepackJob(it.targetHash!!, listOf(it)), producesDownload = false)
+        }
         _finalInstallResult.value = null
         _showInstallDialog.value = true
 
@@ -2321,6 +2320,7 @@ class MainViewModel @Inject constructor(
             }
             try {
             var ok = 0
+            var reconcile = 0
             val failed = mutableListOf<FailedJobInfo>()
 
             // 先刷一次干净检测：备份原版的前提是「游戏目录里那份现在还是原版」，
@@ -2366,15 +2366,17 @@ class MainViewModel @Inject constructor(
                     Log.d("MainViewModel", "自动备份已关闭，跳过原版备份：$bundleName")
                 }
 
-                val (success, message) = withContext(Dispatchers.IO) {
+                val result = withContext(Dispatchers.IO) {
                     installOneConverted(context, mod, bundleName)
                 }
-                if (success) {
+                if (result.requiresReconciliation) notifyLedgerNotice(result.message)
+                if (result.completedSuccessfully) {
                     ok++
                     updateJobStatus(bundleName, JobStatus.Finished(bundleName))
                 } else {
-                    failed.add(FailedJobInfo(bundleName, message))
-                    updateJobStatus(bundleName, JobStatus.Failed(message, message))
+                    if (result.requiresReconciliation) reconcile++
+                    failed.add(FailedJobInfo(bundleName, result.message))
+                    updateJobStatus(bundleName, JobStatus.Failed(result.message, result.message))
                 }
             }
 
@@ -2390,9 +2392,7 @@ class MainViewModel @Inject constructor(
             // 而这条路是直拷进游戏目录的，Download/Shared 里根本没东西，点了就报
             // 「未找到 Download/Shared 目录」，紧接着 Success 到达又跳成「已装入」。
             // 实测就是用户看到的那个现象。
-            if (ok > 0) {
-                _moveState.value = MoveState.Success("已装入 $ok 个，重启游戏后生效。")
-            }
+            _moveState.value = directInstallOutcome(ok, failed.size, reconcile)
 
             _finalInstallResult.value = FinalInstallResult(
                 successfulJobs = ok,
@@ -2418,16 +2418,19 @@ class MainViewModel @Inject constructor(
         context: Context,
         mod: ModInfo,
         bundleName: String
-    ): Pair<Boolean, String> {
+    ): ConvertedSubmitResult {
+        fun rejected(message: String) = ConvertedSubmitResult(
+            false, OperationError(OperationErrorKind.INVALID_INPUT, message), message, false
+        )
         if (!true) {
-            return false to "装入记录仓储未初始化，拒绝覆盖游戏文件"
+            return rejected("装入记录仓储未初始化，拒绝覆盖游戏文件")
         }
         val hashDir = mod.convertedHashDir
         if (hashDir.isNullOrBlank()) {
-            return false to "缺少 convertedHashDir，拒绝覆盖：$bundleName"
+            return rejected("缺少 convertedHashDir，拒绝覆盖：$bundleName")
         }
         val cache = context.externalCacheDir
-            ?: return false to "没有 externalCacheDir，Shizuku 读不到暂存"
+            ?: return rejected("没有 externalCacheDir，Shizuku 读不到暂存")
         val stagingRoot = File(cache, "converted_staging_owned")
         val now = System.currentTimeMillis()
         val frozen = listOf(
@@ -2445,7 +2448,7 @@ class MainViewModel @Inject constructor(
             copyConvertedSourceInto(context, mod, dest)
         }
         val prepared = when (preparation) {
-            is ConvertedInstallPreparation.Failed -> return false to preparation.error.message
+            is ConvertedInstallPreparation.Failed -> return rejected(preparation.error.message)
             is ConvertedInstallPreparation.Ready -> preparation.prepared
         }
         return try {
@@ -2457,7 +2460,7 @@ class MainViewModel @Inject constructor(
                 null
             }
             if (verdict != null && !verdict.first) {
-                return false to "校验未通过，已跳过：${verdict.second}"
+                return rejected("校验未通过，已跳过：${verdict.second}")
             }
             val result = ConvertedInstallSubmitter(installedModRepository).submit(
                 operationId = "converted-$now-$bundleName",
@@ -2481,7 +2484,7 @@ class MainViewModel @Inject constructor(
                     }
                 }
             )
-            result.filesReplaced to result.message
+            result
         } finally {
             try {
                 prepared.close()
@@ -2524,25 +2527,50 @@ class MainViewModel @Inject constructor(
         private val root: DocumentFile
     ) : DirectoryCopySource {
         val rootId: String get() = root.uri.toString()
-        private val nodes = hashMapOf(rootId to root)
+        private val nodes = hashMapOf(rootId to root.uri)
 
-        override fun listChildren(directoryId: String): List<DirectoryCopyEntry>? {
-            val dir = nodes[directoryId] ?: return null
-            if (!dir.isDirectory) return null
-            val children = dir.listFiles()
-            val out = ArrayList<DirectoryCopyEntry>(children.size)
-            for (child in children) {
-                val name = child.name ?: return null
-                val id = child.uri.toString()
-                nodes[id] = child
-                out.add(DirectoryCopyEntry(id, name, child.isDirectory))
+        override fun listChildren(directoryId: String): List<DirectoryCopyEntry> {
+            val directory = nodes[directoryId] ?: throw java.io.IOException("未知源目录")
+            val docId = DocumentsContract.getDocumentId(directory)
+            val queryUri = DocumentsContract.buildChildDocumentsUriUsingTree(root.uri, docId)
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            try {
+                val cursor = context.contentResolver.query(queryUri, projection, null, null, null)
+                    ?: throw java.io.IOException("源目录查询失败")
+                return cursor.use {
+                    val extras = it.extras
+                    if (extras.getBoolean(DocumentsContract.EXTRA_LOADING, false) ||
+                        !extras.getString(DocumentsContract.EXTRA_ERROR).isNullOrBlank()) {
+                        throw java.io.IOException("源目录尚未完整读取")
+                    }
+                    val idColumn = it.getColumnIndexOrThrow(projection[0])
+                    val nameColumn = it.getColumnIndexOrThrow(projection[1])
+                    val mimeColumn = it.getColumnIndexOrThrow(projection[2])
+                    val out = ArrayList<DirectoryCopyEntry>()
+                    while (it.moveToNext()) {
+                        val childId = it.getString(idColumn) ?: throw java.io.IOException("源条目缺少标识")
+                        val name = it.getString(nameColumn) ?: throw java.io.IOException("源条目缺少名称")
+                        val mime = it.getString(mimeColumn) ?: throw java.io.IOException("源条目缺少类型")
+                        val uri = DocumentsContract.buildDocumentUriUsingTree(root.uri, childId)
+                        val id = uri.toString()
+                        nodes[id] = uri
+                        out.add(DirectoryCopyEntry(id, name, mime == DocumentsContract.Document.MIME_TYPE_DIR))
+                    }
+                    out
+                }
+            } catch (cancelled: java.util.concurrent.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                throw java.io.IOException("源目录读取未完成", failure)
             }
-            return out
         }
 
         override fun openFile(fileId: String): java.io.InputStream? {
-            val doc = nodes[fileId]
-            val uri = doc?.uri ?: Uri.parse(fileId)
+            val uri = nodes[fileId] ?: throw java.io.IOException("未知源文件")
             return context.contentResolver.openInputStream(uri)
         }
     }
@@ -3059,152 +3087,180 @@ class MainViewModel @Inject constructor(
         _moveState.value = MoveState.Idle
     }
 
-    fun moveFilesToGame(silent: Boolean = false) {
-        installScope.launch {
-            if (!silent) _moveState.value = MoveState.Moving
+    // Main-thread ownership is independent of dialog visibility and MoveState resets.
+    private var moveInProgress = false
 
-            if (!true) {
+    fun moveFilesToGame(silent: Boolean = false) {
+        installScope.launch(Dispatchers.Main.immediate) {
+            if (moveInProgress) return@launch
+            if (!true || appContext == null) {
                 _moveState.value = MoveState.Failed("装入记录仓储未初始化，无法安全提交")
                 return@launch
             }
-
-            val operationId = "move-" + System.currentTimeMillis()
-            val journalTargets = journalTargetsForCurrentJobs()
-
-            val submitter = MoveInstallSubmitter(installedModRepository)
-            val result = try {
-                submitter.submit(
-                operationId = operationId,
-                targets = journalTargets,
-                moveFiles = { ShizukuManager.moveDownloadToGame() },
-                commitLedger = {
-                    var ledgerError: OperationError? = null
-                    if (pendingRecordClear) {
-                        ledgerError = withContext(Dispatchers.IO) { installedModRepository.clear() }
-                        ledgerError?.let { reportLedgerWrite(LedgerWrite.Failed(it), "账本清空") }
-                    } else {
-                        ledgerError = recordSuccessfulInstall()
-                        pendingUninstallTargetHash?.let { hash ->
-                            val removal = installedModRepository.removeByTargetHash(hash)
-                            reportLedgerWrite(removal, "卸载后清理账本")
-                            if (removal is LedgerWrite.Failed && ledgerError == null) {
-                                ledgerError = removal.error
-                            }
-                        }
-                    }
-                    ledgerError
-                }
-                )
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                _moveState.value = MoveState.Failed("装入已取消，请先核对游戏文件和安装记录")
-                throw cancelled
-            } catch (failure: Exception) {
-                val message = "装入中断，请先核对游戏文件和安装记录：${failure.message.orEmpty()}"
-                _moveState.value = MoveState.Failed(message)
-                notifyLedgerNotice(message)
+            // Capture on Main, before the first suspension. Closing the dialog or
+            // changing settings must not change either the write set or its ledger.
+            val displayedJobs = _installJobs.value
+            if (displayedJobs.any { !it.producesDownload }) {
+                _moveState.value = MoveState.Failed("这批产物已走直接装入流程，不能再次搬运；如有失败请先核对。")
                 return@launch
             }
-            if (result.requiresReconciliation) notifyLedgerNotice(result.message)
+            val jobs = displayedJobs.filter { it.status is JobStatus.Finished }.map {
+                it.copy(job = it.job.copy(modsToInstall = it.job.modsToInstall.toList()))
+            }
+            val quality = _selectedQuality.value
+            val astc = _useAstc.value
+            val installedAt = System.currentTimeMillis()
+            val clearRestored = pendingRecordClear
+            val removeTarget = pendingUninstallTargetHash
+            val backupEnabled = _backupOriginals.value
+            val selectedBundles = jobs.map { it.job.hashedName }.toSet()
+            val failedBackups = unfinishedBackupsSnapshot().filter { it.hashedName in selectedBundles }
+            val cache = appContext!!.externalCacheDir
+            if (jobs.isEmpty() || cache == null) {
+                _moveState.value = MoveState.Failed("没有可提交的转换产物或无法访问外部暂存目录")
+                return@launch
+            }
+            if (!decideBackupGate(backupEnabled, failedBackups.isEmpty(), onCommitPath = true).allowsWrite) {
+                _moveState.value = MoveState.Failed("原版备份未完成，未覆盖游戏文件：" +
+                    failedBackups.joinToString("、") { it.hashedName })
+                return@launch
+            }
 
-            if (result.filesReplaced) {
-                _finalInstallResult.value = _finalInstallResult.value?.copy(command = null)
-                (_uninstallState.value as? UninstallState.Finished)?.let {
-                    _uninstallState.value = it.copy(command = null)
+            moveInProgress = true
+            if (!silent) _moveState.value = MoveState.Moving
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    installedModRepository.checkSubmitAllowed()?.let {
+                        return@withContext ConvertedSubmitResult(false, it, it.message, true)
+                    }
+                    val shared = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Shared")
+                    val targets = journalTargetsForJobs(shared, jobs, quality, astc, installedAt)
+                    val prepared = MoveInstallStaging(File(cache, "move_staging_owned")).prepare(shared, targets)
+                    try {
+                        prepared.verifyUnchanged()?.let {
+                            return@withContext ConvertedSubmitResult(false, it, it.message, false)
+                        }
+                        // A partial batch uninstall removes only targets actually restored,
+                        // never the whole ledger and never the failed jobs' records.
+                        val removals = prepared.targets.filter {
+                            it.modUris.isEmpty() && (clearRestored || it.bundleName == removeTarget)
+                        }.map { it.bundleName }
+                        val submitted = MoveInstallSubmitter(installedModRepository).submit(
+                            operationId = "move-" + java.util.UUID.randomUUID(),
+                            targets = prepared.targets,
+                            moveFiles = move@{
+                                for (target in prepared.targets) {
+                                    // Before: these exact bytes are what we froze. After: they did not
+                                    // change while being copied. Only this target is hashed each time.
+                                    prepared.verifyTarget(target.bundleName)?.let { return@move false to it.message }
+                                    val copied = ShizukuManager.installConvertedBundle(
+                                        File(prepared.sourceDir, target.bundleName).absolutePath,
+                                        target.bundleName
+                                    )
+                                    if (!copied.first) return@move copied
+                                    prepared.verifyTarget(target.bundleName)?.let { return@move false to it.message }
+                                }
+                                true to "已成功装入游戏目录！"
+                            },
+                            commitLedger = {
+                                var error = recordSuccessfulInstall(prepared.targets)
+                                if (error == null) {
+                                    for (hash in removals) {
+                                        val removal = installedModRepository.removeByTargetHash(hash)
+                                        reportLedgerWrite(removal, "卸载后清理账本")
+                                        if (removal is LedgerWrite.Failed) {
+                                            error = removal.error
+                                            break
+                                        }
+                                    }
+                                }
+                                error
+                            }
+                        )
+                        if (submitted.completedSuccessfully) {
+                            val warnings = prepared.cleanupSources()
+                            if (warnings.isEmpty()) submitted else submitted.copy(
+                                message = submitted.message + "\n部分源文件已变化或无法清理，已保留：\n" + warnings.joinToString("\n")
+                            )
+                        } else submitted
+                    } finally {
+                        try { prepared.close() } catch (cleanup: Exception) {
+                            Log.w("MainViewModel", "本次暂存清理失败，保留以便检查", cleanup)
+                        }
+                    }
                 }
-
-                if (result.error == null && !result.requiresReconciliation) {
-                    pendingRecordClear = false
-                    pendingUninstallTargetHash = null
+                if (result.requiresReconciliation) notifyLedgerNotice(result.message)
+                if (result.filesReplaced) {
+                    _finalInstallResult.value = _finalInstallResult.value?.copy(command = null)
+                    (_uninstallState.value as? UninstallState.Finished)?.let {
+                        _uninstallState.value = it.copy(command = null)
+                    }
+                }
+                if (result.completedSuccessfully) {
+                    if (_installJobs.value === displayedJobs || _installJobs.value.isEmpty()) {
+                        pendingRecordClear = false
+                        pendingUninstallTargetHash = null
+                    }
                     _moveState.value = MoveState.Success(result.message)
                 } else {
                     _moveState.value = MoveState.Failed(result.message)
                 }
-
-                withContext(Dispatchers.IO) { refreshBundleCleanStates() }
-                refreshInstallStates()
-                refreshBackupUsage()
-            } else {
-                _moveState.value = MoveState.Failed(result.message)
+                if (result.filesReplaced) {
+                    try {
+                        withContext(Dispatchers.IO) { refreshBundleCleanStates() }
+                        refreshInstallStates()
+                        refreshBackupUsage()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (refreshFailure: Exception) {
+                        // The durable submission result is already known. A metadata
+                        // refresh failure is not a failed install or a reason to retry.
+                        Log.w("MainViewModel", "装入后状态刷新失败，保留实际提交结果", refreshFailure)
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                _moveState.value = MoveState.Failed("装入已取消，请先核对游戏文件和安装记录")
+                throw cancelled
+            } catch (failure: Exception) {
+                val message = "装入未完成，请先核对游戏文件和安装记录：${failure.message.orEmpty()}"
+                _moveState.value = MoveState.Failed(message)
+                notifyLedgerNotice(message)
+            } finally {
+                moveInProgress = false
             }
         }
     }
 
-    /**
-     * 当前这批装入任务涉及的提交目标（T08 journal 的目标摘要）。
-     *
-     * 只收**已经完成**的 job —— 与 [recordSuccessfulInstall] 的筛选口径一致：
-     * 没跑完的 job 没进过游戏目录，把它们写进「目标已替换」会让恢复核对误报。
-     *
-     * `modUris` 是恢复判据唯一能拿去账本里对的东西，所以取的是**这批 job 要装的全部 mod**，
-     * 而不是只取成功的那些：核对要回答的是「账本有没有漏记这次提交」，
-     * 范围应当与「这次动了哪些 bundle」对齐。
-     */
-    private fun journalTargetsForCurrentJobs(): List<JournalTarget> {
-        val now = System.currentTimeMillis()
-        val quality = _selectedQuality.value
-        val astc = _useAstc.value
-        val downloadShared = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "Shared"
-        )
-        return _installJobs.value
-            .filter { it.status is JobStatus.Finished }
-            .map { installJob ->
-                val hashedName = installJob.job.hashedName
-                val relative = (installJob.status as JobStatus.Finished).relativePath
-                val uris = installJob.job.modsToInstall.map { it.uri.toString() }
-                val upserts = installJob.job.modsToInstall.map { mod ->
-                    LedgerRecord(
-                        modUri = mod.uri.toString(),
-                        modName = mod.name,
-                        familyKey = mod.resolvedFamilyKey ?: hashedName,
-                        snapshotTargetHash = hashedName,
-                        quality = quality,
-                        usedAstc = astc,
-                        installedAt = now
-                    )
-                }
-                JournalMoveFacts.target(
-                    sharedRoot = downloadShared,
-                    hashedName = hashedName,
-                    relativePath = relative,
-                    uris = uris,
-                    upserts = upserts
-                )
-            }
+    /** Runs on IO with a frozen Main-thread snapshot, never reads live UI state. */
+    private fun journalTargetsForJobs(
+        downloadShared: File,
+        jobs: List<InstallJob>,
+        quality: String,
+        astc: Boolean,
+        installedAt: Long
+    ): List<JournalTarget> = jobs.map { installJob ->
+        val hashedName = installJob.job.hashedName
+        val relative = (installJob.status as JobStatus.Finished).relativePath
+        val upserts = installJob.job.modsToInstall.map { mod ->
+            LedgerRecord(
+                modUri = mod.uri.toString(),
+                modName = mod.name,
+                familyKey = mod.resolvedFamilyKey ?: hashedName,
+                snapshotTargetHash = hashedName,
+                quality = quality,
+                usedAstc = astc,
+                installedAt = installedAt
+            )
+        }
+        JournalMoveFacts.target(downloadShared, hashedName, relative, upserts.map { it.modUri }, upserts)
     }
 
-    /**
-     * 把本批成功装入的 job 写进账本 —— 一个 mod 一条。
-     *
-     * @return 写失败时的错误（null = 成功或无事可做），交回 [moveFilesToGame]
-     *   决定要不要保留 journal。
-     */
-    private fun recordSuccessfulInstall(): OperationError? {
-        if (!true) return null
-        val now = System.currentTimeMillis()
-        val quality = _selectedQuality.value
-        val astc = _useAstc.value
-
-        val records = _installJobs.value
-            .filter { it.status is JobStatus.Finished }
-            .flatMap { installJob ->
-                val hash = installJob.job.hashedName
-                installJob.job.modsToInstall.map { mod ->
-                    InstalledModRecord(
-                        modUri = mod.uri.toString(),
-                        modName = mod.name,
-                        // familyKey 降为普通字段，只用于游戏更新后识别「需重新应用」。
-                        // 早先它是主键、一个 bundle 只记一条，导致同包第二个 mod
-                        // 既卸不掉也显示错状态（见 InstalledModRecord 的说明）。
-                        familyKey = mod.resolvedFamilyKey ?: hash,
-                        snapshotTargetHash = hash,
-                        quality = quality,
-                        usedAstc = astc,
-                        installedAt = now
-                    )
-                }
-            }
+    /** Ledger records are exactly the upserts already frozen into the journal. */
+    private fun recordSuccessfulInstall(targets: List<JournalTarget>): OperationError? {
+        val records = targets.flatMap { it.recoveryFacts?.ledgerUpserts.orEmpty() }.map {
+            InstalledModRecord(it.modUri, it.modName, it.familyKey, it.snapshotTargetHash,
+                it.quality, it.usedAstc, it.installedAt)
+        }
         return when (val result = installedModRepository.putAll(records)) {
             is LedgerWrite.Written -> null
             is LedgerWrite.Repaired -> {
@@ -3870,17 +3926,8 @@ class MainViewModel @Inject constructor(
             val sources = _modSourceDirs.value
             val restored = withContext(Dispatchers.IO) {
                 if (store == null) return@withContext emptyList()
-                when (val loaded = store.load(sources.map { it.toString() })) {
+                when (val loaded = store.loadAndMigrate(sources.map { it.toString() })) {
                     is SnapshotLoad.Loaded -> {
-                        if (loaded.wasLegacy) {
-                            try {
-                                val sourceStrs = sources.map { it.toString() }
-                                val write = store.capture(loaded.entries, sourceStrs)
-                                store.commit(write, sourceStrs)
-                            } catch (e: Exception) {
-                                Log.w("MainViewModel", "旧格式快照顺手迁移失败，忽略", e)
-                            }
-                        }
                         if (loaded.droppedEntries > 0) {
                             // 「表读出来了」与「表读出来了但少了几条」是两件事，必须分开可见。
                             // 旧实现的 mapNotNull 把后者静默吞了。
@@ -5238,57 +5285,59 @@ class MainViewModel @Inject constructor(
         }
         installScope.launch {
             val result = withContext(Dispatchers.IO) {
-                val begin = installedModRepository.beginRecovery()
-                if (begin != null) return@withContext RecoveryApplyResult.NotApplied(begin)
-                val ctx = appContext ?: return@withContext RecoveryApplyResult.NotApplied(
-                    OperationError(
-                        kind = OperationErrorKind.INVALID_INPUT,
-                        message = "没有可用的 Context，无法核对。"
+                try {
+                    val ctx = appContext ?: return@withContext RecoveryApplyResult.NotApplied(
+                        OperationError(OperationErrorKind.INVALID_INPUT, "没有可用的 Context，无法核对。")
                     )
-                )
-                val destRoot = File(ctx.externalCacheDir ?: ctx.cacheDir, "recovery-obs")
-                destRoot.mkdirs()
-                val observations = installedModRepository.pendingRecoveryTargets().map { ref ->
-                    val target = ref.target
-                    val destFile = try {
-                        RecoveryObservationLayout.destFile(
-                            destRoot = destRoot,
-                            operationId = ref.operationId,
-                            bundleName = target.bundleName,
-                            hashDir = target.hashDir
-                        )
-                    } catch (e: IllegalArgumentException) {
-                        return@map TargetObservation.ReadFailed(
-                            operationId = ref.operationId,
-                            bundleName = target.bundleName,
-                            hashDir = target.hashDir,
-                            reason = "Path validation failed: " + e.message
-                        )
+                    installedModRepository.recoverContent { targets ->
+                        val destRoot = File(ctx.externalCacheDir ?: ctx.cacheDir, "recovery-obs")
+                        destRoot.mkdirs()
+                        targets.map { ref ->
+                            val target = ref.target
+                            val destFile = try {
+                                RecoveryObservationLayout.destFile(
+                                    destRoot = destRoot,
+                                    operationId = ref.operationId,
+                                    bundleName = target.bundleName,
+                                    hashDir = target.hashDir
+                                )
+                            } catch (e: IllegalArgumentException) {
+                                return@map TargetObservation.ReadFailed(
+                                    operationId = ref.operationId,
+                                    bundleName = target.bundleName,
+                                    hashDir = target.hashDir,
+                                    reason = "Path validation failed: " + e.message
+                                )
+                            }
+                            destFile.parentFile?.mkdirs()
+                            val copied = try {
+                                ShizukuManager.copyGameDataForRecovery(
+                                    target.bundleName, target.hashDir, destFile.absolutePath
+                                )
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (e: Exception) {
+                                false
+                            }
+                            if (!copied) {
+                                TargetObservation.ReadFailed(
+                                    operationId = ref.operationId,
+                                    bundleName = target.bundleName,
+                                    hashDir = target.hashDir,
+                                    reason = "copyGameDataForRecovery failed"
+                                )
+                            } else {
+                                TargetObservations.observeFile(ref.operationId, target.bundleName, target.hashDir, destFile)
+                            }
+                        }
                     }
-
-                    destFile.parentFile?.mkdirs()
-                    
-                    val copied = try {
-                        ShizukuManager.copyGameDataForRecovery(
-                            target.bundleName, target.hashDir, destFile.absolutePath
-                        )
-                    } catch (e: Exception) {
-                        false
-                    }
-                    if (!copied) {
-                        TargetObservation.ReadFailed(
-                            operationId = ref.operationId,
-                            bundleName = target.bundleName,
-                            hashDir = target.hashDir,
-                            reason = "copyGameDataForRecovery failed"
-                        )
-                    } else {
-                        TargetObservations.observeFile(
-                            ref.operationId, target.bundleName, target.hashDir, destFile
-                        )
-                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    RecoveryApplyResult.NotApplied(OperationError(
+                        OperationErrorKind.IO, "核对失败：${failure.message.orEmpty()}"
+                    ))
                 }
-                installedModRepository.applyContentRecovery(observations)
             }
             when (result) {
                 is RecoveryApplyResult.Applied -> notifyLedgerNotice("已根据目标内容补齐安装记录。")

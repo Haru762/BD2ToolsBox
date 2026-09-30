@@ -286,12 +286,15 @@ class InstalledLedgerStoreTest {
         assertTrue("键与 modUri 不一致必须判损坏", store.read() is LedgerRead.Corrupt)
     }
 
-    /** 空白文件按**合法空表**处理（0 字节没有被判废的**内容**）。 */
+    /** An existing blank file may be a truncated ledger, not a valid empty map. */
     @Test
-    fun blankFileReadsAsEmpty() {
+    fun blankFileIsCorruptAndRemainsUntouched() {
         val store = newStore()
-        ledger.writeText("")
-        assertEquals(LedgerRead.Empty, store.read())
+        for (text in listOf("", " \n\t")) {
+            ledger.writeText(text)
+            assertTrue(store.read() is LedgerRead.Corrupt)
+            assertEquals(text, ledger.readText())
+        }
     }
 
     /**

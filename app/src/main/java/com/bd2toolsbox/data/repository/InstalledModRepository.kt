@@ -224,7 +224,7 @@ class InstalledModRepository(private val context: Context) {
         requireNoRecoveryLease()?.let { return@withLock LedgerWrite.Failed(it) }
         val read = readForWrite()
         if (!read.writable) return@withLock LedgerWrite.Failed(read.blocked!!)
-        if (!read.records!!.containsKey(modUri)) return@withLock LedgerWrite.Written
+        if (!read.records!!.containsKey(modUri)) return@withLock unchangedWrite(read)
         save(read, read.records.toMutableMap().apply { remove(modUri) })
     }
 
@@ -289,7 +289,7 @@ class InstalledModRepository(private val context: Context) {
         val read = readForWrite()
         if (!read.writable) return@withLock LedgerWrite.Failed(read.blocked!!)
         val keys = read.records!!.filterValues { it.snapshotTargetHash == targetHash }.keys
-        if (keys.isEmpty()) return@withLock LedgerWrite.Written
+        if (keys.isEmpty()) return@withLock unchangedWrite(read)
         save(read, read.records.toMutableMap().apply { keys.forEach { remove(it) } })
     }
 
@@ -679,10 +679,10 @@ class InstalledModRepository(private val context: Context) {
                 target = journalFile().path
             )
         }
-        if (coordinator.recoveryOwnerToken != null && coordinator.recoveryOwnerToken !== instanceToken) {
+        if (coordinator.recoveryOwnerToken != null) {
             return@withLock OperationError(
                 kind = OperationErrorKind.INVALID_INPUT,
-                message = "恢复租约已被其它实例持有。",
+                message = "已有恢复核对进行中，请等它结束后再试。",
                 target = journalFile().path
             )
         }
@@ -694,9 +694,13 @@ class InstalledModRepository(private val context: Context) {
             )
             is OperationJournalStore.RecoveryVerdict.Unknown -> verdict.error
             is OperationJournalStore.RecoveryVerdict.PendingReconciliation -> {
+                val journal = journalFingerprint()
+                val ledger = ledgerFingerprint()
+                // Publish ownership only after both snapshots succeed.
                 coordinator.recoveryOwnerToken = instanceToken
-                coordinator.recoveryJournalFingerprint = journalFingerprint()
-                coordinator.recoveryLedgerFingerprint = ledgerFingerprint()
+                coordinator.recoveryLeaseToken = Any()
+                coordinator.recoveryJournalFingerprint = journal
+                coordinator.recoveryLedgerFingerprint = ledger
                 null
             }
         }
@@ -712,6 +716,7 @@ class InstalledModRepository(private val context: Context) {
                 )
             )
         }
+        try {
         if (coordinator.recoveryJournalFingerprint != journalFingerprint() ||
             coordinator.recoveryLedgerFingerprint != ledgerFingerprint()
         ) {
@@ -751,6 +756,10 @@ class InstalledModRepository(private val context: Context) {
             )
             is JournalRecoveryProjection.Result.Pending -> applyPendingRecovery(projected, observations)
         }
+        } finally {
+            // Keep pending evidence, not an abandoned owner token.
+            coordinator.clearRecoveryLease()
+        }
     }
 
     fun pendingRecoveryTargets(): List<RecoveryTargetRef> = withLock {
@@ -765,35 +774,41 @@ class InstalledModRepository(private val context: Context) {
         }
     }
 
-    fun recoverFromSharedTree(sharedRoot: File, destRoot: File): RecoveryApplyResult {
-        beginRecovery()?.let { return RecoveryApplyResult.NotApplied(it) }
+    /** One attempt owns observation, apply and release, including suspension/cancellation. */
+    suspend fun recoverContent(
+        observe: suspend (List<RecoveryTargetRef>) -> List<TargetObservation>
+    ): RecoveryApplyResult = recoverOnce { observe(pendingRecoveryTargets()) }
+
+    private inline fun recoverOnce(observe: () -> List<TargetObservation>): RecoveryApplyResult {
+        val lease = withLock {
+            beginRecovery()?.let { return RecoveryApplyResult.NotApplied(it) }
+            requireNotNull(coordinator.recoveryLeaseToken)
+        }
         try {
-            val pending = withLock {
-                when (val read = journalStore.read()) {
-                    is JournalRead.Loaded -> JournalRecoveryProjection.project(read.entries)
-                    else -> JournalRecoveryProjection.Result.Clear
+            val observations = observe()
+            return withLock {
+                if (coordinator.recoveryOwnerToken !== instanceToken || coordinator.recoveryLeaseToken !== lease) {
+                    RecoveryApplyResult.NotApplied(OperationError(
+                        OperationErrorKind.INVALID_INPUT, "本次恢复租约已失效，拒绝应用旧观察结果。"
+                    ))
+                } else {
+                    applyContentRecovery(observations)
                 }
             }
-            if (pending !is JournalRecoveryProjection.Result.Pending) {
-                return RecoveryApplyResult.NotApplied(
-                    OperationError(
-                        kind = OperationErrorKind.INVALID_INPUT,
-                        message = "没有可观察的待核对目标。",
-                        target = journalFile().path
-                    )
-                )
-            }
-            val observations = pending.operations.flatMap { op ->
-                op.targets.map { target ->
-                    RecoveredTargetCopy.copyThenObserve(
-                        sharedRoot, destRoot, op.operationId, target.bundleName, target.hashDir
-                    )
-                }
-            }
-            return applyContentRecovery(observations)
         } finally {
-            // 一次性入口拥有本次租约；失败或观察异常也必须允许新实例重试。
-            releaseRecovery()
+            withLock {
+                if (coordinator.recoveryOwnerToken === instanceToken && coordinator.recoveryLeaseToken === lease) {
+                    coordinator.clearRecoveryLease()
+                }
+            }
+        }
+    }
+
+    fun recoverFromSharedTree(sharedRoot: File, destRoot: File): RecoveryApplyResult = recoverOnce {
+        pendingRecoveryTargets().map { ref ->
+            RecoveredTargetCopy.copyThenObserve(
+                sharedRoot, destRoot, ref.operationId, ref.target.bundleName, ref.target.hashDir
+            )
         }
     }
 
@@ -905,6 +920,12 @@ class InstalledModRepository(private val context: Context) {
      * 返回 [LedgerWrite.Repaired] 的条件是「写成功了，而且这次写之前处置过损坏原件」——
      * 修复消息与写结果一起往上传，不让它只留在日志里。
      */
+    private fun unchangedWrite(read: ReadForWrite): LedgerWrite {
+        val notice = read.repairNotice ?: return LedgerWrite.Written
+        recordError(notice)
+        return LedgerWrite.Repaired(notice, read.preservedAs.orEmpty())
+    }
+
     private fun save(read: ReadForWrite, records: Map<String, InstalledModRecord>): LedgerWrite {
         val dto = records.mapValues { it.value.toLedgerRecord() }
         val error = ledgerStore.save(dto)

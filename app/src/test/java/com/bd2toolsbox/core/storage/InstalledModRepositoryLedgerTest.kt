@@ -69,6 +69,18 @@ class InstalledModRepositoryLedgerTest {
         repo = InstalledModRepository(context)
     }
 
+    @Test
+    fun removingFromCorruptLedgerReportsPreservationForBothDeleteEntrypoints() {
+        for (byTarget in listOf(false, true)) {
+            repo.file().writeText("{broken")
+            val write = if (byTarget) repo.removeByTargetHash("absent") else repo.remove("absent")
+            assertTrue("Preservation must not be reported as a plain no-op", write is LedgerWrite.Repaired)
+            val preserved = File(filesDir, (write as LedgerWrite.Repaired).preservedAs)
+            assertEquals("{broken", preserved.readText())
+            assertNotNull(repo.consumeLastError())
+        }
+    }
+
     /** 同进程重建实例并重读磁盘；不模拟进程死亡，调用方须显式释放旧租约。 */
     private fun reloadedRepo(): InstalledModRepository = InstalledModRepository(context)
 

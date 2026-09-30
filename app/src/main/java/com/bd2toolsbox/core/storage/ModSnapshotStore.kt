@@ -219,7 +219,36 @@ data class PendingWrite(
  * 等于把一次性的混淆结果升格成永久契约 —— 与计划「过渡期可用精确 Gson 注解，最终由
  * T35–T36 移除」直接冲突。旧格式**只读不写**，见 [LegacyObfuscatedSnapshot]。
  */
-class ModSnapshotStore(private val snapshotFile: File) {
+class ModSnapshotStore internal constructor(
+    private val snapshotFile: File,
+    private val readSnapshot: (File) -> String
+) {
+    constructor(snapshotFile: File) : this(snapshotFile, { it.readText() })
+
+    /**
+     * Explicit legacy migration; ordinary load remains read-only.
+     *
+     * The migration is only a format upgrade of what is already on disk, so it must never
+     * compete with live list state: it runs only while no [capture]/[discard] has happened
+     * on this Store (revision == 0), and it writes WITHOUT allocating a revision. A scan
+     * that captured earlier therefore keeps its revision and can still commit afterwards,
+     * and a scan that captures later simply supersedes the migrated file.
+     */
+    @Synchronized
+    fun loadAndMigrate(expectedSourceDirs: List<String>): SnapshotLoad {
+        val loaded = load(expectedSourceDirs)
+        if (loaded is SnapshotLoad.Loaded && loaded.wasLegacy && revision == 0L) {
+            persist(
+                PendingWrite(
+                    revision = revision,
+                    savedAt = System.currentTimeMillis(),
+                    entries = loaded.entries.toList(),
+                    sourceDirs = expectedSourceDirs.toList()
+                )
+            )
+        }
+        return loaded
+    }
 
     /**
      * **0.2.16 release 的真实磁盘形态**（T10 起只读，不写）。
@@ -319,7 +348,11 @@ class ModSnapshotStore(private val snapshotFile: File) {
                 "源目录已变化（快照=${write.sourceDirs.size} 个，当前=${currentSourceDirs.size} 个）"
             )
         }
+        return persist(write)
+    }
 
+    /** Serialization + atomic write only; callers own the revision/source gates. */
+    private fun persist(write: PendingWrite): SnapshotCommit {
         val payload = SnapshotV1(
             version = SCHEMA_VERSION,
             savedAt = write.savedAt,
@@ -382,7 +415,7 @@ class ModSnapshotStore(private val snapshotFile: File) {
         if (!snapshotFile.exists()) return SnapshotLoad.Absent
 
         val text = try {
-            snapshotFile.readText()
+            readSnapshot(snapshotFile)
         } catch (e: Exception) {
             return SnapshotLoad.IoError(
                 OperationError(
