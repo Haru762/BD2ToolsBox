@@ -85,6 +85,10 @@ class PlatformBehaviorTest {
             BundleBackupRepository(ctx),
             PreviewCacheRepository(ctx),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
+            com.bd2toolsbox.data.repository.CharacterMetaRepository.get(ctx),
+            com.bd2toolsbox.data.repository.AvatarRepository.get(ctx),
+            com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx),
+            com.bd2toolsbox.data.repository.UpdateRepository(ctx),
         )
     }
 
@@ -418,7 +422,7 @@ class PlatformBehaviorTest {
      */
     @Test
     fun updateInstallPathUsesFileProviderAndUnknownSourcesGate() {
-        val repo = UpdateRepository.get(context)
+        val repo = com.bd2toolsbox.data.repository.UpdateRepository(context)
         val apk = File(repo.updateDir(), "t15-probe.apk")
         try {
             apk.writeBytes(ByteArray(64) { 1 })
@@ -483,7 +487,7 @@ class PlatformBehaviorTest {
                 received.await(60, java.util.concurrent.TimeUnit.SECONDS)
             )
             assertEquals(id, gotId)
-            assertFalse("失败的下载不能被当成成功", UpdateRepository.get(context).isDownloadSuccessful(id))
+            assertFalse("失败的下载不能被当成成功", com.bd2toolsbox.data.repository.UpdateRepository(context).isDownloadSuccessful(id))
         } finally {
             context.unregisterReceiver(receiver)
             dm.remove(id)

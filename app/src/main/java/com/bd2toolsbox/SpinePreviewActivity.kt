@@ -11,6 +11,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.URLEncoder
+import javax.inject.Inject
 
 /**
  * Spine 动画预览页：WebView 跑 assets 里的 spine-viewer，加载 mod 的
@@ -19,8 +20,10 @@ import java.net.URLEncoder
  * pixi-spine 运行时不随包分发（专有许可与 GPLv3 不兼容），首次预览时从
  * npm CDN 取一次（SpineRuntimeRepository 管）；取到前先显示提示页。
  */
-@AndroidEntryPoint // T16：接入 Hilt 对象图（当前无注入字段，构造注入留给 T17）
+@AndroidEntryPoint // T16：接入 Hilt 对象图；T20 补上字段注入，不再经静态 get(context)
 class SpinePreviewActivity : ComponentActivity() {
+
+    @Inject lateinit var spineRuntimeRepository: SpineRuntimeRepository
 
     private var webView: WebView? = null
 
@@ -52,7 +55,7 @@ class SpinePreviewActivity : ComponentActivity() {
             }
         }
 
-        val runtime = SpineRuntimeRepository.get(this)
+        val runtime = spineRuntimeRepository
         if (runtime.isReady()) {
             loadPreview(runtime.file, skelPath, atlasPath)
         } else {

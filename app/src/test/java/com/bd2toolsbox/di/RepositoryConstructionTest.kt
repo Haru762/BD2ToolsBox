@@ -1,8 +1,12 @@
 package com.bd2toolsbox.di
 
 import android.content.Context
+import com.bd2toolsbox.data.repository.AvatarRepository
+import com.bd2toolsbox.data.repository.Bd2RedeemRepository
 import com.bd2toolsbox.data.repository.BundleBackupRepository
+import com.bd2toolsbox.data.repository.CharacterMetaRepository
 import com.bd2toolsbox.data.repository.CharacterRepository
+import com.bd2toolsbox.data.repository.GamekeeRepository
 import com.bd2toolsbox.data.repository.InstalledModRepository
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
@@ -13,6 +17,7 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import org.junit.After
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -86,6 +91,37 @@ class RepositoryConstructionTest {
         val repo = InstalledModRepository(context)
         assertTrue(repo.file().absolutePath.startsWith(filesDir.absolutePath))
         assertTrue(repo.journalFile().absolutePath.startsWith(filesDir.absolutePath))
+    }
+
+    /**
+     * T20：`CharacterMetaRepository`/`AvatarRepository`/`GamekeeRepository`/`Bd2RedeemRepository`
+     * 仍保留 `private constructor` + `get(context)` 静态入口（供未接入 Hilt 的 Composable
+     * 用），但 `RepositoryModule` 的 `@Provides` 必须委托到同一个实例——否则 DI 图里的
+     * `MainViewModel` 与 Composable 拿到的就是两份不同实例，回到 `GamekeeRepository`
+     * 最初那个被明确指出的问题（「两份缓存」）。
+     */
+    @Test
+    fun newRepositoryModuleProvidersDelegateToTheSameStaticSingleton() {
+        assertSame(
+            "CharacterMetaRepository 的 @Provides 必须是与 get() 同一个实例",
+            CharacterMetaRepository.get(context),
+            RepositoryModule.provideCharacterMetaRepository(context),
+        )
+        assertSame(
+            "AvatarRepository 的 @Provides 必须是与 get() 同一个实例",
+            AvatarRepository.get(context),
+            RepositoryModule.provideAvatarRepository(context),
+        )
+        assertSame(
+            "GamekeeRepository 的 @Provides 必须是与 get() 同一个实例",
+            GamekeeRepository.get(context),
+            RepositoryModule.provideGamekeeRepository(context),
+        )
+        assertSame(
+            "Bd2RedeemRepository 的 @Provides 必须是与 get() 同一个实例",
+            Bd2RedeemRepository.get(context),
+            RepositoryModule.provideBd2RedeemRepository(context),
+        )
     }
 
     /** 调度器模块给出两种不同 qualifier 的调度器，可被测试替换。 */

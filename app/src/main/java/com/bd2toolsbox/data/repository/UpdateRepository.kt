@@ -6,11 +6,14 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import com.google.gson.JsonParser
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * GitHub Releases 的更新检查。
@@ -32,7 +35,8 @@ import java.net.URL
  * 沿用全项目惯例：HttpURLConnection + Gson，不引网络库。这里只读 release 的公开
  * 信息，不发通知、不写任何本地状态。
  */
-class UpdateRepository private constructor(private val appContext: Context) {
+@Singleton
+class UpdateRepository @Inject constructor(@ApplicationContext private val appContext: Context) {
 
     companion object {
         private const val TAG = "UpdateRepository"
@@ -49,14 +53,6 @@ class UpdateRepository private constructor(private val appContext: Context) {
 
         /** 下载 id 的 prefs 键。 */
         private const val KEY_DL_ID = "download_id"
-
-        @Volatile
-        private var instance: UpdateRepository? = null
-
-        fun get(context: Context): UpdateRepository =
-            instance ?: synchronized(this) {
-                instance ?: UpdateRepository(context.applicationContext).also { instance = it }
-            }
 
         /**
          * 版本号比较，a 比 b 新返回正数。

@@ -79,6 +79,10 @@ class MoveInstallWiringTest {
             BundleBackupRepository(context),
             PreviewCacheRepository(context),
             engine,
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
         )
         setField("installScope", scope)
 

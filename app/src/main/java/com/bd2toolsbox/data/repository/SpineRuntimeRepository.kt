@@ -2,11 +2,14 @@ package com.bd2toolsbox.data.repository
 
 import android.content.Context
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Spine 运行时（pixi-spine）的按需下载。
@@ -22,7 +25,8 @@ import java.net.URL
  * 放 filesDir 而不是 cacheDir：它是 1.2 MB 的必需组件，被系统清缓存清掉的话
  * 用户得重新下一次（而这个 CDN 在国内未必通），不值当省这点空间。
  */
-class SpineRuntimeRepository private constructor(private val appContext: Context) {
+@Singleton
+class SpineRuntimeRepository @Inject constructor(@ApplicationContext private val appContext: Context) {
 
     companion object {
         private const val TAG = "SpineRuntime"
@@ -41,13 +45,6 @@ class SpineRuntimeRepository private constructor(private val appContext: Context
          */
         private const val MIN_BYTES = 900_000L
 
-        @Volatile
-        private var instance: SpineRuntimeRepository? = null
-
-        fun get(context: Context): SpineRuntimeRepository =
-            instance ?: synchronized(this) {
-                instance ?: SpineRuntimeRepository(context.applicationContext).also { instance = it }
-            }
     }
 
     /** 落地路径带版本号：换版本时不会拿旧文件当新的用。 */

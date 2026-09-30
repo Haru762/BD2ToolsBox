@@ -95,6 +95,11 @@ class GamekeeRepository private constructor(private val appContext: android.cont
         @Volatile
         private var instance: GamekeeRepository? = null
 
+        /**
+         * T20：仍保留这个入口——`CdkScreen`/`GuideScreen.GuideThumb` 还没有接入 Hilt，
+         * 迁移需要重新设计参数传递，超出 T20 文件范围声明。与 `RepositoryModule` 的
+         * `@Provides` 共用同一份实例。
+         */
         fun get(context: android.content.Context): GamekeeRepository =
             instance ?: synchronized(this) {
                 instance ?: GamekeeRepository(context.applicationContext).also { instance = it }

@@ -113,7 +113,7 @@ class MainActivity : ComponentActivity() {
             if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
             val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
             if (id != -1L &&
-                id == UpdateRepository.get(applicationContext).currentDownloadId()
+                id == updateRepository.currentDownloadId()
             ) {
                 viewModel.onUpdateDownloadComplete(id)
             }
@@ -122,6 +122,9 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private val guideViewModel: GuideViewModel by viewModels()
+
+    // T20：字段注入，不再经静态 UpdateRepository.get(context)
+    @javax.inject.Inject lateinit var updateRepository: UpdateRepository
 
     private val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
 
@@ -992,7 +995,7 @@ class MainActivity : ComponentActivity() {
      * 打开（系统没有授权完成的回调，用户回来后需要再点一次安装）。
      */
     private fun installUpdateApk() {
-        val file = UpdateRepository.get(applicationContext).downloadedApkFile() ?: run {
+        val file = updateRepository.downloadedApkFile() ?: run {
             Toast.makeText(this, "安装包不存在，请重新检查更新", Toast.LENGTH_SHORT).show()
             return
         }

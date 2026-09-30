@@ -53,6 +53,13 @@ class PrepackService : Service() {
     /** T18：Kotlin–Python 引擎（Hilt 单例），代替旧的 ModdingService 静态桥。 */
     @javax.inject.Inject lateinit var modEngine: com.bd2toolsbox.core.engine.ModEngine
 
+    /**
+     * T20：字段注入，不再在 onCreate 里手工 `PreviewCacheRepository(applicationContext)`。
+     * 这个仓库本身无内存态（纯文件系统操作），旧写法没有造成实际缓存分割 bug，但仍属于
+     * T20 要求清理的「已迁移调用链的临时手工 factory / 重复构造」。
+     */
+    @javax.inject.Inject lateinit var previewCache: PreviewCacheRepository
+
     // 这两个 data class 放在类体里而不是 companion 里：嵌套在 companion 中的类，
     // 外部得写 PrepackService.Companion.Target 才引用得到，而放这一层就是自然的
     // PrepackService.Target。Kotlin 的嵌套类默认是静态的，companion 里照样能用。
@@ -152,11 +159,8 @@ class PrepackService : Service() {
      */
     @Volatile
     private var cancelRequested = false
-    private lateinit var previewCache: PreviewCacheRepository
-
     override fun onCreate() {
         super.onCreate()
-        previewCache = PreviewCacheRepository(applicationContext)
         createChannel()
     }
 

@@ -65,6 +65,10 @@ class LocalBaseReuseTest {
             BundleBackupRepository(context),
             PreviewCacheRepository(context),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
         )
         setField("bundleCleanStates", mapOf("b" to BundleCleanState.PRISTINE))
         setField("gameBundleHashes", mapOf("b" to "h1"))

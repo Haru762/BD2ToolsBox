@@ -44,6 +44,14 @@ class CharacterMetaRepository private constructor(private val appContext: Contex
         @Volatile
         private var instance: CharacterMetaRepository? = null
 
+        /**
+         * T20：仍保留这个入口——`CharacterScreen`/`CharacterSheet`/`AvatarImage` 等
+         * Composable 还没有接入 Hilt（它们离最近的 `MainViewModel`实例没有天然注入
+         * 通道，迁移需要引入 `hiltViewModel()`/`EntryPointAccessors` 或重新设计参数传递，
+         * 超出 T20 文件范围声明）。[GameFileAccess.get] 同样的模式：这里的惰性
+         * 单例与 `RepositoryModule` 的 `@Provides` 共用同一份实例，不会因两边各自
+         * 持有而出现两份缓存。
+         */
         fun get(context: Context): CharacterMetaRepository =
             instance ?: synchronized(this) {
                 instance ?: CharacterMetaRepository(context.applicationContext)

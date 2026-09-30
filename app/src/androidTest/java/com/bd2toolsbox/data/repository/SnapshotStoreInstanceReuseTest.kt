@@ -92,6 +92,10 @@ class SnapshotStoreInstanceReuseTest {
             BundleBackupRepository(ctx),
             PreviewCacheRepository(ctx),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
+            com.bd2toolsbox.data.repository.CharacterMetaRepository.get(ctx),
+            com.bd2toolsbox.data.repository.AvatarRepository.get(ctx),
+            com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx),
+            com.bd2toolsbox.data.repository.UpdateRepository(ctx),
         )
     }
 

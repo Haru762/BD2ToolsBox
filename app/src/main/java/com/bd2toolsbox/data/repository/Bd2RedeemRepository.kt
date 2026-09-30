@@ -79,6 +79,10 @@ class Bd2RedeemRepository private constructor(private val appContext: android.co
         @Volatile
         private var instance: Bd2RedeemRepository? = null
 
+        /**
+         * T20：仍保留这个入口——`CdkScreen` 是无 ViewModel 的纯 Composable（属于 T31
+         * 范围），还没有接入 Hilt。与 `RepositoryModule` 的 `@Provides` 共用同一份实例。
+         */
         fun get(context: android.content.Context): Bd2RedeemRepository =
             instance ?: synchronized(this) {
                 instance ?: Bd2RedeemRepository(context.applicationContext).also { instance = it }

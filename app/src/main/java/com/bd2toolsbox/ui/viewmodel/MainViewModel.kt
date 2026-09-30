@@ -122,6 +122,11 @@ class MainViewModel @Inject constructor(
     private val backupRepository: BundleBackupRepository,
     private val previewCacheRepository: PreviewCacheRepository,
     private val modEngine: ModEngine,
+    // T20：清理残留的手工 get(context) 单例，改成与其他仓储同样的构造注入。
+    private val characterMetaRepository: CharacterMetaRepository,
+    private val avatarRepository: AvatarRepository,
+    private val spineRuntimeRepository: SpineRuntimeRepository,
+    private val updateRepository: UpdateRepository,
 ) : ViewModel() {
 
     companion object {
@@ -759,7 +764,7 @@ class MainViewModel @Inject constructor(
             // 顺手把随包的角色附加信息（性别/联动/中文名/头像文件名）建好索引。
             // 它读并解析 52 KB 的 assets json —— 放在这里做掉，界面就不会在
             // 第一次点筛选或画第一个头像时卡一下。
-            val meta = CharacterMetaRepository.get(ctx)
+            val meta = characterMetaRepository
             val (male, female, collab) = meta.counts()
             Log.d(
                 "MainViewModel",
@@ -787,8 +792,7 @@ class MainViewModel @Inject constructor(
      * [AvatarRepository.syncAll] 自己也上了锁。
      */
     fun prefetchAvatars() {
-        val ctx = appContext ?: return
-        val repo = AvatarRepository.get(ctx)
+        val repo = avatarRepository
         if (avatarSyncWatcher == null) {
             // 状态跟着仓库走：重试成功后提示要能自己消失
             avatarSyncWatcher = viewModelScope.launch {
@@ -1047,16 +1051,14 @@ class MainViewModel @Inject constructor(
     val spineRuntimeUsage: StateFlow<Long> = _spineRuntimeUsage.asStateFlow()
 
     fun refreshSpineRuntimeUsage() {
-        val ctx = appContext ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            _spineRuntimeUsage.value = SpineRuntimeRepository.get(ctx).usage()
+            _spineRuntimeUsage.value = spineRuntimeRepository.usage()
         }
     }
 
     fun clearSpineRuntime() {
-        val ctx = appContext ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            SpineRuntimeRepository.get(ctx).clear()
+            spineRuntimeRepository.clear()
             _spineRuntimeUsage.value = 0L
         }
     }
@@ -5147,7 +5149,7 @@ class MainViewModel @Inject constructor(
         _updateChecking.value = true
         viewModelScope.launch {
             try {
-                val repo = UpdateRepository.get(ctx)
+                val repo = updateRepository
                 val release = repo.fetchLatest()
                 when {
                     release == null ->
@@ -5188,7 +5190,7 @@ class MainViewModel @Inject constructor(
     fun downloadUpdate(release: UpdateRepository.Release) {
         val ctx = appContext ?: return
         viewModelScope.launch {
-            val repo = UpdateRepository.get(ctx)
+            val repo = updateRepository
             // 已经下过这个包就直接弹安装，不再重复下载几十 MB
             if (withContext(Dispatchers.IO) { repo.isApkDownloaded(release) }) {
                 _updateApkReady.value =
@@ -5221,7 +5223,7 @@ class MainViewModel @Inject constructor(
                         }
                     }
                 }
-            } else if (withContext(Dispatchers.IO) { UpdateRepository.get(ctx).hasActiveDownload() }) {
+            } else if (withContext(Dispatchers.IO) { updateRepository.hasActiveDownload() }) {
                 toast(ctx, "已有下载在进行中")
             } else {
                 toast(ctx, "这个版本没有可下载的安装包，请到发布页手动下载")
@@ -5233,7 +5235,7 @@ class MainViewModel @Inject constructor(
     fun onUpdateDownloadComplete(id: Long) {
         val ctx = appContext ?: return
         viewModelScope.launch {
-            val repo = UpdateRepository.get(ctx)
+            val repo = updateRepository
             if (id != withContext(Dispatchers.IO) { repo.currentDownloadId() }) return@launch
             val ok = withContext(Dispatchers.IO) { repo.isDownloadSuccessful(id) }
             if (ok) {
@@ -5254,9 +5256,8 @@ class MainViewModel @Inject constructor(
 
     /** 启动时清掉上次更新留下的安装包（装完就没用了，白占几十 MB）。 */
     fun cleanupUpdateApk() {
-        val ctx = appContext ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            UpdateRepository.get(ctx).updateDir().listFiles()?.forEach { it.delete() }
+            updateRepository.updateDir().listFiles()?.forEach { it.delete() }
         }
     }
 

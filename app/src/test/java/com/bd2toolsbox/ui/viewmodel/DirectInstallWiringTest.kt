@@ -76,6 +76,10 @@ class DirectInstallWiringTest {
             BundleBackupRepository(context),
             PreviewCacheRepository(context),
             engine,
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            mockk(relaxed = true),
         ), recordPrivateCalls = true)
         // SAF/primary-storage source read is an Android boundary: copy the host product dir.
         every { vm["copyConvertedSourceInto"](any<Context>(), any<ModInfo>(), any<File>()) } answers {

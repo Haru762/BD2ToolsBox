@@ -79,6 +79,10 @@ class TryUseBackupTrustGateTest {
             SavedStateHandle(), ctx0, character, ModRepository(ctx0, character),
             InstalledModRepository(ctx0), backupRepo, PreviewCacheRepository(ctx0),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
+            com.bd2toolsbox.data.repository.CharacterMetaRepository.get(ctx0),
+            com.bd2toolsbox.data.repository.AvatarRepository.get(ctx0),
+            com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx0),
+            com.bd2toolsbox.data.repository.UpdateRepository(ctx0),
         )
     }
 

@@ -1,7 +1,10 @@
 package com.bd2toolsbox.di
 
 import android.content.Context
+import com.bd2toolsbox.data.repository.AvatarRepository
+import com.bd2toolsbox.data.repository.Bd2RedeemRepository
 import com.bd2toolsbox.data.repository.BundleBackupRepository
+import com.bd2toolsbox.data.repository.CharacterMetaRepository
 import com.bd2toolsbox.data.repository.CharacterRepository
 import com.bd2toolsbox.data.repository.GamekeeRepository
 import com.bd2toolsbox.data.repository.InstalledModRepository
@@ -28,6 +31,13 @@ import javax.inject.Singleton
  *  - `ModRepository` 依赖 `CharacterRepository`，由 Hilt 按图装配同一个单例。
  *  - `BundleBackupRepository` 的 `digester` 用其构造默认值（`StreamingDigest.sha256()`）；
  *    需要 fake 时测试直接 `new`，不经此模块。
+ *  - `SpineRuntimeRepository`/`UpdateRepository`（T20）已完全迁移为构造注入，自带
+ *    `@Inject constructor`，Hilt 直接识别，不需要在此模块重复声明 `@Provides`。
+ *  - `CharacterMetaRepository`/`AvatarRepository`/`GamekeeRepository`/`Bd2RedeemRepository`
+ *    （T20）仍保留 `private constructor` + `get(context)` 静态入口——还有 Composable
+ *    （`CharacterScreen`/`AvatarImage`/`CdkScreen`/`GuideScreen.GuideThumb`）没有接入
+ *    Hilt，两边必须是**同一个**单例，否则会出现两份缓存。下面四个 `@Provides`
+ *    均委托到 `get()` 的惰性单例。
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -60,15 +70,23 @@ object RepositoryModule {
     fun providePreviewCacheRepository(@ApplicationContext context: Context): PreviewCacheRepository =
         PreviewCacheRepository(context)
 
-    /**
-     * 攻略阅读器的仓储（GuideViewModel 注入）。
-     *
-     * 委托给旧的 `GamekeeRepository.get()`，而不是直接 `new`——`CdkScreen` / `GuideScreen`
-     * 的 Composable 里还在用 `get()` 取同一实例（不经 Hilt），两边必须是**同一个**单例，
-     * 否则会出现两份缓存。等后续把这两个 Composable 也改成注入后，可改成直接构造。
-     */
+    @Provides
+    @Singleton
+    fun provideCharacterMetaRepository(@ApplicationContext context: Context): CharacterMetaRepository =
+        CharacterMetaRepository.get(context)
+
+    @Provides
+    @Singleton
+    fun provideAvatarRepository(@ApplicationContext context: Context): AvatarRepository =
+        AvatarRepository.get(context)
+
     @Provides
     @Singleton
     fun provideGamekeeRepository(@ApplicationContext context: Context): GamekeeRepository =
         GamekeeRepository.get(context)
+
+    @Provides
+    @Singleton
+    fun provideBd2RedeemRepository(@ApplicationContext context: Context): Bd2RedeemRepository =
+        Bd2RedeemRepository.get(context)
 }
