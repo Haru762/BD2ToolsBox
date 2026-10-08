@@ -15,6 +15,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * 棕尘2官方兑换码接口（官方兑换页 redeem.bd2.pmang.cloud 背后的 AWS 网关）。
@@ -43,7 +46,8 @@ import java.net.URL
  * 官方没有「查询兑换历史」的端点，成功记录由 App 记在 filesDir 的 JSON 里。
  * 沿用全项目惯例：HttpURLConnection + Gson，不引网络库。
  */
-class Bd2RedeemRepository private constructor(private val appContext: android.content.Context) {
+@Singleton
+class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private val appContext: android.content.Context) {
 
     companion object {
         private const val TAG = "Bd2RedeemRepository"
@@ -75,18 +79,6 @@ class Bd2RedeemRepository private constructor(private val appContext: android.co
             "ValidationFailed", "InvalidCode", "ExpiredCode", "AlreadyUsed",
             "ExceededUses", "UnavailableCode", "IncorrectUser"
         )
-
-        @Volatile
-        private var instance: Bd2RedeemRepository? = null
-
-        /**
-         * T20：仍保留这个入口——`CdkScreen` 是无 ViewModel 的纯 Composable（属于 T31
-         * 范围），还没有接入 Hilt。与 `RepositoryModule` 的 `@Provides` 共用同一份实例。
-         */
-        fun get(context: android.content.Context): Bd2RedeemRepository =
-            instance ?: synchronized(this) {
-                instance ?: Bd2RedeemRepository(context.applicationContext).also { instance = it }
-            }
     }
 
     // ---------------------------------------------------------------- 账号与记录（本地）

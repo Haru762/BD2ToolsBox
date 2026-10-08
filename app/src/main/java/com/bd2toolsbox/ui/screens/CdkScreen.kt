@@ -28,8 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.data.model.CdkItem
 import com.bd2toolsbox.data.model.RedeemOutcome
 import com.bd2toolsbox.data.model.RedeemRecord
-import com.bd2toolsbox.data.repository.Bd2RedeemRepository
-import com.bd2toolsbox.data.repository.GamekeeRepository
+import com.bd2toolsbox.di.rememberUiRepositories
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -50,8 +49,9 @@ import kotlin.coroutines.cancellation.CancellationException
 fun CdkScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val repo = remember(context) { GamekeeRepository.get(context) }
-    val redeemRepo = remember(context) { Bd2RedeemRepository.get(context) }
+    val repositories = rememberUiRepositories()
+    val repo = repositories.gamekeeRepository()
+    val redeemRepo = repositories.bd2RedeemRepository()
     val clipboard = LocalClipboardManager.current
 
     var items by remember { mutableStateOf<List<CdkItem>?>(null) }

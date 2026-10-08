@@ -22,6 +22,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * GameKee「棕色尘埃2」分区（https://www.gamekee.com/zsca2）攻略数据的读取与缓存。
@@ -55,7 +58,8 @@ import java.util.concurrent.ConcurrentHashMap
  * 沿用全项目的选择：不引 OkHttp/Retrofit/Coil，[HttpURLConnection] + Gson 够用，
  * 缩略图下载照抄 [AvatarRepository] 的三层结构（内存 → 磁盘 → 网络）。
  */
-class GamekeeRepository private constructor(private val appContext: android.content.Context) {
+@Singleton
+class GamekeeRepository @Inject constructor(@param:ApplicationContext private val appContext: android.content.Context) {
 
     companion object {
         private const val TAG = "GamekeeRepository"
@@ -91,19 +95,6 @@ class GamekeeRepository private constructor(private val appContext: android.cont
 
         /** 列表分页大小。gamekee 页面端也是 10 条一页。 */
         const val PAGE_SIZE = 10
-
-        @Volatile
-        private var instance: GamekeeRepository? = null
-
-        /**
-         * T20：仍保留这个入口——`CdkScreen`/`GuideScreen.GuideThumb` 还没有接入 Hilt，
-         * 迁移需要重新设计参数传递，超出 T20 文件范围声明。与 `RepositoryModule` 的
-         * `@Provides` 共用同一份实例。
-         */
-        fun get(context: android.content.Context): GamekeeRepository =
-            instance ?: synchronized(this) {
-                instance ?: GamekeeRepository(context.applicationContext).also { instance = it }
-            }
 
         /** 把图片地址补全成可加载的绝对地址。
          * `//cdn...` 补 https；已是 http:// 的升级成 https —— WebView 默认禁止

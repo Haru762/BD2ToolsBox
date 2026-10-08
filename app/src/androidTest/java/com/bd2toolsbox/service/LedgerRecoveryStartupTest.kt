@@ -77,12 +77,13 @@ class LedgerRecoveryStartupTest {
     /** T17：用指定 context 直接构造 MainViewModel（appContext 与仓储均构造注入）。 */
     private fun newViewModel(ctx: android.content.Context): MainViewModel {
         val character = CharacterRepository(ctx)
+        val metadata = com.bd2toolsbox.data.repository.CharacterMetaRepository(ctx)
         return MainViewModel(
             SavedStateHandle(), ctx, character, ModRepository(ctx, character),
             InstalledModRepository(ctx), BundleBackupRepository(ctx), PreviewCacheRepository(ctx),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
-            com.bd2toolsbox.data.repository.CharacterMetaRepository.get(ctx),
-            com.bd2toolsbox.data.repository.AvatarRepository.get(ctx),
+            metadata,
+            com.bd2toolsbox.data.repository.AvatarRepository(ctx, metadata),
             com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx),
             com.bd2toolsbox.data.repository.UpdateRepository(ctx),
         )

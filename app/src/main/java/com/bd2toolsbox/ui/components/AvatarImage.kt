@@ -21,11 +21,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.bd2toolsbox.data.repository.AvatarRepository
+import com.bd2toolsbox.di.rememberUiRepositories
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -55,8 +54,7 @@ fun CharacterAvatar(
     size: Dp = 40.dp,
     cornerRadius: Dp = 8.dp
 ) {
-    val context = LocalContext.current
-    val repo = remember(context) { AvatarRepository.get(context) }
+    val repo = rememberUiRepositories().avatarRepository()
 
     // 初值走 peek 那条不建表、不解码的快路：附加数据表已就绪且图已解码时，
     // 首帧就能直接画出来，来回滚动不会每次先闪一下占位图。
@@ -105,8 +103,7 @@ fun SkinThumbnail(
     cornerRadius: Dp = 6.dp,
     contentDescription: String? = null
 ) {
-    val context = LocalContext.current
-    val repo = remember(context) { AvatarRepository.get(context) }
+    val repo = rememberUiRepositories().avatarRepository()
 
     var image by remember(fileId) { mutableStateOf<ImageBitmap?>(null) }
 

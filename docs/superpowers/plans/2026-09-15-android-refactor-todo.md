@@ -14,6 +14,8 @@
 
 > **当前续跑（2026-10-08，目标至 T25，尚未达到）：** T21 独立任务内核已实现并通过定向 JVM **61/0/0/0**，保持 IMPLEMENTED_NOT_VERIFIED；T19/T20 前置未闭合，不勾完成。当前 ADB 就绪设备为 0，T18 新版原生 arm64、T19 真实 Shizuku 场景及 T20 既有缺口仍须补齐；T22–T25 BLOCKED / 尚未实施。原验收条件不放宽。详见 [T21 证据](../../refactor/evidence/T21.md) 与 [当前证据索引](../../refactor/evidence/README.md)。
 
+**2026-10-08 后续增量：** T20 四个剩余仓库及其 5 个 UI 文件已完成应用图迁移，定向 JVM 20/0/0/0，设备测试源码编译成功；新装配的设备与 minified Release 验收仍未运行。缺设备不阻断可独立验证的本地实现，但不允许勾选尚未验收的任务。见 [T20 §6](../../refactor/evidence/T20.md#6-2026-10-08移除剩余静态仓库入口)。
+
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
 > - **T08 完成（仅原验收范围）。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，Release 补账后第二次冷启动不再提示核对，游戏文件已回滚。更早失败保留。arm64 不在 T08 验收里，也未跑（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
 > - **T10 IMPLEMENTED_NOT_VERIFIED**：当前包 6de58b5c 的 x86_64 已补齐日志缺失（PID 30218，包含 扫描未完成，保留上次列表），grant-while-renamed.txt 和 grant-held-ui.xml 证明改名时授权保持且 UI 两名称同在。复算快照 SHA-256 6942e6e0aef8d2ad02c51fc443bf7e59504e8537b31241c247a1567c7a061a08。snapshot-compatibility 的 uiColdStartVerified=false 不改。arm64 未跑。见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)。
@@ -969,6 +971,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.ShizukuConnectionLifecycleTes
 ### T20 — 完成 DI 装配收尾和冷启动回归
 
 - [ ] **T20 完成**
+
+**2026-10-08 状态：IMPLEMENTED_NOT_VERIFIED。** 四个剩余静态仓库入口已移除，5 个 UI 文件接入生产 Hilt 应用图；本地定向测试通过，设备与混淆 Release 验收待补。见 [T20 §6](../../refactor/evidence/T20.md#6-2026-10-08移除剩余静态仓库入口)。
 
 **优先级：** P1　**前置：** T16、T17、T18、T19
 

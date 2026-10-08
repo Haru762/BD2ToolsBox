@@ -12,7 +12,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -22,7 +21,7 @@ import com.bd2toolsbox.data.model.ModInfo
 import com.bd2toolsbox.data.model.ModInstallState
 import com.bd2toolsbox.data.model.ModKind
 import com.bd2toolsbox.data.model.categoryOf
-import com.bd2toolsbox.data.repository.CharacterMetaRepository
+import com.bd2toolsbox.di.rememberUiRepositories
 import com.bd2toolsbox.ui.components.CharacterAvatar
 import com.bd2toolsbox.ui.components.SkinThumbnail
 
@@ -82,8 +81,7 @@ fun CharacterSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        val context = LocalContext.current
-        val meta = remember(context) { CharacterMetaRepository.get(context) }
+        val meta = rememberUiRepositories().characterMetaRepository()
         val nameCn = remember(characterName) {
             meta.forCharacter(characterName)?.nameCn.orEmpty()
         }
@@ -252,8 +250,7 @@ private fun SkinRow(
     onInstall: () -> Unit,
     onRemove: () -> Unit
 ) {
-    val context = LocalContext.current
-    val meta = remember(context) { CharacterMetaRepository.get(context) }
+    val meta = rememberUiRepositories().characterMetaRepository()
     // 卡片是点开才建的（一次最多十几行），不像 95 行的列表那么怕卡首帧，
     // 所以这里可以直接查、必要时顺手把表建起来。
     val fileId = entry.primary.resolvedFamilyKey

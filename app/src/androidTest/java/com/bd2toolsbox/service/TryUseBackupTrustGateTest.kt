@@ -75,12 +75,13 @@ class TryUseBackupTrustGateTest {
     private val backupRepo = BundleBackupRepository(ctx0)
     private val vm: MainViewModel = run {
         val character = CharacterRepository(ctx0)
+        val metadata = com.bd2toolsbox.data.repository.CharacterMetaRepository(ctx0)
         MainViewModel(
             SavedStateHandle(), ctx0, character, ModRepository(ctx0, character),
             InstalledModRepository(ctx0), backupRepo, PreviewCacheRepository(ctx0),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
-            com.bd2toolsbox.data.repository.CharacterMetaRepository.get(ctx0),
-            com.bd2toolsbox.data.repository.AvatarRepository.get(ctx0),
+            metadata,
+            com.bd2toolsbox.data.repository.AvatarRepository(ctx0, metadata),
             com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx0),
             com.bd2toolsbox.data.repository.UpdateRepository(ctx0),
         )

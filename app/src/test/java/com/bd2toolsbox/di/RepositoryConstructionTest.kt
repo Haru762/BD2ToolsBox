@@ -17,7 +17,6 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import org.junit.After
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -72,6 +71,10 @@ class RepositoryConstructionTest {
         // 真实业务类可用 fake 摘要器测试（不碰真 SHA-256）。
         val fakeDigester = Digester { file -> "fake-" + file.name }
         assertNotNull(BundleBackupRepository(context, fakeDigester))
+        val metadata = CharacterMetaRepository(context)
+        assertNotNull(AvatarRepository(context, metadata))
+        assertNotNull(GamekeeRepository(context))
+        assertNotNull(Bd2RedeemRepository(context))
     }
 
     /** RepositoryModule 的 @Provides 都能以注入 Context 产出可用仓储（与手写 new 同效）。 */
@@ -91,37 +94,6 @@ class RepositoryConstructionTest {
         val repo = InstalledModRepository(context)
         assertTrue(repo.file().absolutePath.startsWith(filesDir.absolutePath))
         assertTrue(repo.journalFile().absolutePath.startsWith(filesDir.absolutePath))
-    }
-
-    /**
-     * T20：`CharacterMetaRepository`/`AvatarRepository`/`GamekeeRepository`/`Bd2RedeemRepository`
-     * 仍保留 `private constructor` + `get(context)` 静态入口（供未接入 Hilt 的 Composable
-     * 用），但 `RepositoryModule` 的 `@Provides` 必须委托到同一个实例——否则 DI 图里的
-     * `MainViewModel` 与 Composable 拿到的就是两份不同实例，回到 `GamekeeRepository`
-     * 最初那个被明确指出的问题（「两份缓存」）。
-     */
-    @Test
-    fun newRepositoryModuleProvidersDelegateToTheSameStaticSingleton() {
-        assertSame(
-            "CharacterMetaRepository 的 @Provides 必须是与 get() 同一个实例",
-            CharacterMetaRepository.get(context),
-            RepositoryModule.provideCharacterMetaRepository(context),
-        )
-        assertSame(
-            "AvatarRepository 的 @Provides 必须是与 get() 同一个实例",
-            AvatarRepository.get(context),
-            RepositoryModule.provideAvatarRepository(context),
-        )
-        assertSame(
-            "GamekeeRepository 的 @Provides 必须是与 get() 同一个实例",
-            GamekeeRepository.get(context),
-            RepositoryModule.provideGamekeeRepository(context),
-        )
-        assertSame(
-            "Bd2RedeemRepository 的 @Provides 必须是与 get() 同一个实例",
-            Bd2RedeemRepository.get(context),
-            RepositoryModule.provideBd2RedeemRepository(context),
-        )
     }
 
     /** 调度器模块给出两种不同 qualifier 的调度器，可被测试替换。 */

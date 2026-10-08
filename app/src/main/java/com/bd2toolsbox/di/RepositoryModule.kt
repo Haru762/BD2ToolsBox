@@ -1,12 +1,8 @@
 package com.bd2toolsbox.di
 
 import android.content.Context
-import com.bd2toolsbox.data.repository.AvatarRepository
-import com.bd2toolsbox.data.repository.Bd2RedeemRepository
 import com.bd2toolsbox.data.repository.BundleBackupRepository
-import com.bd2toolsbox.data.repository.CharacterMetaRepository
 import com.bd2toolsbox.data.repository.CharacterRepository
-import com.bd2toolsbox.data.repository.GamekeeRepository
 import com.bd2toolsbox.data.repository.InstalledModRepository
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
@@ -33,11 +29,8 @@ import javax.inject.Singleton
  *    需要 fake 时测试直接 `new`，不经此模块。
  *  - `SpineRuntimeRepository`/`UpdateRepository`（T20）已完全迁移为构造注入，自带
  *    `@Inject constructor`，Hilt 直接识别，不需要在此模块重复声明 `@Provides`。
- *  - `CharacterMetaRepository`/`AvatarRepository`/`GamekeeRepository`/`Bd2RedeemRepository`
- *    （T20）仍保留 `private constructor` + `get(context)` 静态入口——还有 Composable
- *    （`CharacterScreen`/`AvatarImage`/`CdkScreen`/`GuideScreen.GuideThumb`）没有接入
- *    Hilt，两边必须是**同一个**单例，否则会出现两份缓存。下面四个 `@Provides`
- *    均委托到 `get()` 的惰性单例。
+ *  - T20 的四个 UI 仓储也已改为构造注入；叶节点通过 UiRepositories 取得同一图的实例，
+ *    本模块不再委托到进程级静态 get()，也不重复提供构造绑定。
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -69,24 +62,4 @@ object RepositoryModule {
     @Singleton
     fun providePreviewCacheRepository(@ApplicationContext context: Context): PreviewCacheRepository =
         PreviewCacheRepository(context)
-
-    @Provides
-    @Singleton
-    fun provideCharacterMetaRepository(@ApplicationContext context: Context): CharacterMetaRepository =
-        CharacterMetaRepository.get(context)
-
-    @Provides
-    @Singleton
-    fun provideAvatarRepository(@ApplicationContext context: Context): AvatarRepository =
-        AvatarRepository.get(context)
-
-    @Provides
-    @Singleton
-    fun provideGamekeeRepository(@ApplicationContext context: Context): GamekeeRepository =
-        GamekeeRepository.get(context)
-
-    @Provides
-    @Singleton
-    fun provideBd2RedeemRepository(@ApplicationContext context: Context): Bd2RedeemRepository =
-        Bd2RedeemRepository.get(context)
 }

@@ -2,6 +2,9 @@ package com.bd2toolsbox.data.repository
 
 import android.content.Context
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import org.json.JSONObject
 
 /**
@@ -25,7 +28,8 @@ import org.json.JSONObject
  * Spatti、Darian Silverstein 等），它们没有性别与头像，按「未知」处理 ——
  * 所以性别筛选是「筛出确定是男/女的」，不是「非男即女」。
  */
-class CharacterMetaRepository private constructor(private val appContext: Context) {
+@Singleton
+class CharacterMetaRepository @Inject constructor(@param:ApplicationContext private val appContext: Context) {
 
     companion object {
         private const val TAG = "CharacterMeta"
@@ -40,23 +44,6 @@ class CharacterMetaRepository private constructor(private val appContext: Contex
         private const val ILLUST_BASE =
             "https://raw.githubusercontent.com/myssal/Brown-Dust-2-Asset/" +
                     "refs/heads/master/ui/illust/illust_inven_char/"
-
-        @Volatile
-        private var instance: CharacterMetaRepository? = null
-
-        /**
-         * T20：仍保留这个入口——`CharacterScreen`/`CharacterSheet`/`AvatarImage` 等
-         * Composable 还没有接入 Hilt（它们离最近的 `MainViewModel`实例没有天然注入
-         * 通道，迁移需要引入 `hiltViewModel()`/`EntryPointAccessors` 或重新设计参数传递，
-         * 超出 T20 文件范围声明）。[GameFileAccess.get] 同样的模式：这里的惰性
-         * 单例与 `RepositoryModule` 的 `@Provides` 共用同一份实例，不会因两边各自
-         * 持有而出现两份缓存。
-         */
-        fun get(context: Context): CharacterMetaRepository =
-            instance ?: synchronized(this) {
-                instance ?: CharacterMetaRepository(context.applicationContext)
-                    .also { instance = it }
-            }
     }
 
     /** 一套皮肤的附加信息。 */

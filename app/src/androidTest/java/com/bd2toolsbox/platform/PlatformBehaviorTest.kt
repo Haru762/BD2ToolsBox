@@ -76,6 +76,7 @@ class PlatformBehaviorTest {
      */
     private fun newViewModel(ctx: Context): MainViewModel {
         val character = CharacterRepository(ctx)
+        val metadata = com.bd2toolsbox.data.repository.CharacterMetaRepository(ctx)
         return MainViewModel(
             SavedStateHandle(),
             ctx,
@@ -85,8 +86,8 @@ class PlatformBehaviorTest {
             BundleBackupRepository(ctx),
             PreviewCacheRepository(ctx),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
-            com.bd2toolsbox.data.repository.CharacterMetaRepository.get(ctx),
-            com.bd2toolsbox.data.repository.AvatarRepository.get(ctx),
+            metadata,
+            com.bd2toolsbox.data.repository.AvatarRepository(ctx, metadata),
             com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx),
             com.bd2toolsbox.data.repository.UpdateRepository(ctx),
         )

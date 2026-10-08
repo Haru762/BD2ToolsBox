@@ -17,7 +17,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,6 +27,7 @@ import com.bd2toolsbox.data.model.ModInstallState
 import com.bd2toolsbox.data.model.categoryOf
 import com.bd2toolsbox.data.model.isUnknownCharacter
 import com.bd2toolsbox.data.repository.CharacterMetaRepository
+import com.bd2toolsbox.di.rememberUiRepositories
 import com.bd2toolsbox.ui.components.CharacterAvatar
 import kotlinx.coroutines.launch
 
@@ -81,8 +81,7 @@ fun CharacterScreen(
     avatarSyncFailed: Boolean = false,
     onRetryAvatarSync: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val meta = remember(context) { CharacterMetaRepository.get(context) }
+    val meta = rememberUiRepositories().characterMetaRepository()
 
     val shown = remember(entries, filter, meta) {
         when (filter) {
@@ -220,8 +219,7 @@ private fun initialOf(name: String): Char {
 
 @Composable
 private fun CharacterRow(entry: CharacterEntry, onClick: () -> Unit) {
-    val context = LocalContext.current
-    val meta = remember(context) { CharacterMetaRepository.get(context) }
+    val meta = rememberUiRepositories().characterMetaRepository()
     // peek 而非 forCharacter：这里在 composition 里，不能为了一个中文名去读 52 KB 的
     // assets json。表由筛选/头像那条路在协程里建好，之后这里就是 O(1) 命中。
     val nameCn = remember(entry.name) { meta.peekCharacter(entry.name)?.nameCn.orEmpty() }

@@ -23,6 +23,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * 角色头像 / 皮肤缩略图的下载与缓存。
@@ -51,8 +54,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * 不引第三方图片库（Coil / Glide）：需求就是这一处、百来张小图（立绘半身像约 75 KB），
  * 而它们会往 build 里拽一串新依赖。这点代码够用，并发数与降采样也都能自己定。
  */
-class AvatarRepository private constructor(
-    private val appContext: Context,
+@Singleton
+class AvatarRepository @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     private val characterMetaRepository: CharacterMetaRepository,
 ) {
 
@@ -104,22 +108,6 @@ class AvatarRepository private constructor(
          */
         private const val CACHE_DIR = "avatars_v2"
         private const val LEGACY_CACHE_DIR = "avatars"
-
-        @Volatile
-        private var instance: AvatarRepository? = null
-
-        /**
-         * T20：仍保留这个入口——`CharacterScreen`/`AvatarImage` 还没有接入 Hilt，
-         * 迁移需要重新设计参数传递，超出 T20 文件范围声明。与 `RepositoryModule` 的
-         * `@Provides` 共用同一份实例。
-         */
-        fun get(context: Context): AvatarRepository =
-            instance ?: synchronized(this) {
-                instance ?: AvatarRepository(
-                    context.applicationContext,
-                    CharacterMetaRepository.get(context),
-                ).also { instance = it }
-            }
     }
 
     private val meta get() = characterMetaRepository

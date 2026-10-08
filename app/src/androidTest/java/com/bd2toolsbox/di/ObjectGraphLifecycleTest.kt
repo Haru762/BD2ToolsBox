@@ -5,9 +5,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bd2toolsbox.MainActivity
-import com.bd2toolsbox.data.repository.AvatarRepository
-import com.bd2toolsbox.data.repository.CharacterMetaRepository
-import com.bd2toolsbox.data.repository.GamekeeRepository
+import dagger.hilt.android.EntryPointAccessors
 import com.bd2toolsbox.ui.viewmodel.GuideViewModel
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
@@ -52,13 +50,9 @@ class ObjectGraphLifecycleTest {
         return (field.get(activity) as Lazy<GuideViewModel>).value
     }
 
-    /**
-     * `GuideViewModel`（GamekeeRepository 构造注入）与仍未接入 Hilt 的
-     * `GamekeeRepository.get()` 静态入口（`CdkScreen`/`GuideScreen.GuideThumb` 用）
-     * 共享同一个应用级实例——不会因为两条装配路径分裂出两份缓存。
-     */
+    /** GuideViewModel 与 UI 入口共享生产 Hilt 图中的同一仓储。 */
     @Test
-    fun guideViewModelAndStaticGetAccessorShareTheSameGamekeeRepository() {
+    fun guideViewModelAndUiEntryPointShareTheSameGamekeeRepository() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
             scenario.onActivity { activity ->
@@ -67,31 +61,36 @@ class ObjectGraphLifecycleTest {
                     .apply { isAccessible = true }
                 val injected = repoField.get(guideViewModel)
                 assertSame(
-                    "GuideViewModel 构造注入的 GamekeeRepository 必须与 get() 静态入口同一个",
-                    GamekeeRepository.get(activity.applicationContext),
+                    "GuideViewModel 与 UI 必须共享同一应用图的 GamekeeRepository",
+                    EntryPointAccessors.fromApplication(activity, UiRepositories::class.java).gamekeeRepository(),
                     injected,
                 )
             }
         }
     }
 
-    /**
-     * T20 新增：`CharacterMetaRepository`/`AvatarRepository` 的 `@Provides` 委托
-     * 与静态 `get()` 入口共享同一实例（`CharacterScreen`/`AvatarImage` 仍走 `get()`）。
-     * 与 JVM 的 `RepositoryConstructionTest` 同一不变量，这里在真实 Hilt 对象图上核实。
-     */
+    /** Activity 重建不替换仓储，也不把 Activity Context 存进长寿命仓储。 */
     @Test
-    fun avatarAndCharacterMetaRepositoriesShareTheSameInstanceAcrossEntryPoints() {
-        val ctx = appContext
-        assertSame(
-            "CharacterMetaRepository 的静态 get() 必须是进程内唯一实例",
-            CharacterMetaRepository.get(ctx),
-            CharacterMetaRepository.get(ctx),
-        )
-        assertSame(
-            "AvatarRepository 的静态 get() 必须是进程内唯一实例",
-            AvatarRepository.get(ctx),
-            AvatarRepository.get(ctx),
-        )
+    fun repositoriesSurviveActivityRecreationWithoutRetainingActivityContext() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            val before = EntryPointAccessors.fromApplication(appContext, UiRepositories::class.java)
+            val repositories = listOf(
+                before.characterMetaRepository(), before.avatarRepository(),
+                before.gamekeeRepository(), before.bd2RedeemRepository()
+            )
+            scenario.recreate()
+            scenario.onActivity { activity ->
+                val after = EntryPointAccessors.fromApplication(activity, UiRepositories::class.java)
+                val current = listOf(
+                    after.characterMetaRepository(), after.avatarRepository(),
+                    after.gamekeeRepository(), after.bd2RedeemRepository()
+                )
+                repositories.zip(current).forEach { (old, new) ->
+                    assertSame(old, new)
+                    val contextField = new.javaClass.getDeclaredField("appContext").apply { isAccessible = true }
+                    assertSame(activity.applicationContext, contextField.get(new))
+                }
+            }
+        }
     }
 }

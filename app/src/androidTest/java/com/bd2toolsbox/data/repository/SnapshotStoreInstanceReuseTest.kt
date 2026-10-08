@@ -83,6 +83,7 @@ class SnapshotStoreInstanceReuseTest {
     // T17：appContext 与仓储改为构造注入。测试直接用指定 context 构造 VM（不再反射 set）。
     private fun newViewModel(ctx: Context): MainViewModel {
         val character = CharacterRepository(ctx)
+        val metadata = CharacterMetaRepository(ctx)
         return MainViewModel(
             SavedStateHandle(),
             ctx,
@@ -92,8 +93,8 @@ class SnapshotStoreInstanceReuseTest {
             BundleBackupRepository(ctx),
             PreviewCacheRepository(ctx),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
-            com.bd2toolsbox.data.repository.CharacterMetaRepository.get(ctx),
-            com.bd2toolsbox.data.repository.AvatarRepository.get(ctx),
+            metadata,
+            com.bd2toolsbox.data.repository.AvatarRepository(ctx, metadata),
             com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx),
             com.bd2toolsbox.data.repository.UpdateRepository(ctx),
         )

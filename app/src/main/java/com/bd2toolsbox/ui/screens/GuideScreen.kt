@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.bd2toolsbox.data.model.GuideArticle
 import com.bd2toolsbox.data.model.GuideCategory
-import com.bd2toolsbox.data.repository.GamekeeRepository
+import com.bd2toolsbox.di.rememberUiRepositories
 import com.bd2toolsbox.ui.viewmodel.GuideViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -584,8 +584,7 @@ private fun ArticleRow(article: GuideArticle, onClick: () -> Unit) {
 /** 列表缩略图。拿不到图（无缩略 / 离线）就用一个书页图标占位，不阻塞列表。 */
 @Composable
 private fun GuideThumb(article: GuideArticle) {
-    val context = LocalContext.current
-    val repo = remember(context) { GamekeeRepository.get(context) }
+    val repo = rememberUiRepositories().gamekeeRepository()
     val bitmap by produceState<ImageBitmap?>(initialValue = null, article) {
         value = repo.loadThumb(article)
     }
