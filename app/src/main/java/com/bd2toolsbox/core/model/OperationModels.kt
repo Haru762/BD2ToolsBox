@@ -30,31 +30,43 @@ data class OperationId(val value: String) {
     }
 }
 
+/** 宿主启动前登记的任务参数；目标是领域标识，不是可直接删除的文件路径。 */
+data class OperationRequest(
+    val id: OperationId,
+    val kind: OperationKind,
+    val targets: List<String>
+) {
+    init {
+        require(targets.isNotEmpty()) { "任务缺少目标参数" }
+        require(targets.all { it.isNotBlank() && it == it.trim() }) { "目标标识不能为空或带首尾空白" }
+        require(targets.distinct().size == targets.size) { "同一任务不能重复登记目标" }
+    }
+}
+
+sealed class OperationAdmission {
+    data class Accepted(val id: OperationId) : OperationAdmission()
+    data class Rejected(val conflictingId: OperationId, val error: OperationError) : OperationAdmission()
+}
+
 /** 一个操作走到哪一步。终态由 [isTerminal] 判定。 */
 enum class OperationStage(val id: String) {
-    /** 已排队，还没开始读任何东西。 */
     QUEUED("queued"),
-
-    /** 正在枚举条目（列目录、遍历树）。 */
+    PREPARING("preparing"),
+    RUNNING("running"),
     ENUMERATING("enumerating"),
-
-    /** 正在解析/解析度计算（文件名解析、清单解析、解包）。 */
     PARSING("parsing"),
-
-    /** 正在提交结果（落盘、写索引、写游戏目录）。 */
     COMMITTING("committing"),
-
-    /** 结束且成功。 */
     COMPLETED("completed"),
-
-    /** 结束且失败。 */
+    PARTIALLY_FAILED("partially-failed"),
     FAILED("failed"),
+    CANCELLED("cancelled"),
+    INTERRUPTED("interrupted");
 
-    /** 结束且被取消 —— 是终止，不等于失败。 */
-    CANCELLED("cancelled");
-
-    /** 终态：不再推进，也不可取消。 */
-    val isTerminal: Boolean get() = this == COMPLETED || this == FAILED || this == CANCELLED
+    val isTerminal: Boolean
+        get() = when (this) {
+            COMPLETED, PARTIALLY_FAILED, FAILED, CANCELLED, INTERRUPTED -> true
+            else -> false
+        }
 }
 
 /**
@@ -69,8 +81,11 @@ enum class OperationKind(
     val id: String,
     /** 该操作在正常路径上是否允许取消（终态一律不可取消，见 [OperationStage.isTerminal]）。 */
     val cancellable: Boolean,
-    /** 正常路径的阶段序列；[OperationStage.FAILED] / [OperationStage.CANCELLED] 是任何阶段的旁路终态。 */
-    val stages: List<OperationStage>
+    /** 正常路径；细分的枚举/解析阶段可由对应执行器使用。 */
+    val stages: List<OperationStage> = listOf(
+        OperationStage.QUEUED, OperationStage.PREPARING, OperationStage.RUNNING,
+        OperationStage.COMMITTING, OperationStage.COMPLETED
+    )
 ) {
     /** 扫描 mod **来源目录**（SAF）。产物是「发现了哪些 mod」。 */
     SCAN_MOD_SOURCES(
@@ -78,8 +93,11 @@ enum class OperationKind(
         cancellable = true,
         stages = listOf(
             OperationStage.QUEUED,
+            OperationStage.PREPARING,
+            OperationStage.RUNNING,
             OperationStage.ENUMERATING,
             OperationStage.PARSING,
+            OperationStage.COMMITTING,
             OperationStage.COMPLETED
         )
     ),
@@ -90,6 +108,8 @@ enum class OperationKind(
         cancellable = true,
         stages = listOf(
             OperationStage.QUEUED,
+            OperationStage.PREPARING,
+            OperationStage.RUNNING,
             OperationStage.ENUMERATING,
             OperationStage.COMMITTING,
             OperationStage.COMPLETED
@@ -102,21 +122,26 @@ enum class OperationKind(
         cancellable = true,
         stages = listOf(
             OperationStage.QUEUED,
+            OperationStage.PREPARING,
+            OperationStage.RUNNING,
             OperationStage.PARSING,
             OperationStage.COMMITTING,
             OperationStage.COMPLETED
         )
-    );
+    ),
+
+    INSTALL("install", cancellable = true),
+    UNINSTALL("uninstall", cancellable = true),
+    PREVIEW("preview", cancellable = true),
+    CLEAR_CACHE("clear-cache", cancellable = true);
 
     init {
-        require(stages.isNotEmpty()) { "$id 的阶段序列不能为空" }
+        require(stages.firstOrNull() == OperationStage.QUEUED) { "$id 的阶段序列必须从 QUEUED 开始" }
         require(stages.last() == OperationStage.COMPLETED) {
             "$id 的阶段序列必须以 COMPLETED 收尾，实际是 ${stages.last()}"
         }
-        // FAILED / CANCELLED 是任何阶段的**旁路**终态，不进正常路径序列；
-        // COMPLETED 本身是终态，作为正常路径的收尾是唯一允许出现的位置（即末尾）。
-        require(stages.none { it == OperationStage.FAILED || it == OperationStage.CANCELLED }) {
-            "$id 的阶段序列不得含旁路终态（FAILED / CANCELLED）"
+        require(stages.dropLast(1).none { it.isTerminal }) {
+            "$id 的阶段序列不得含旁路终态"
         }
     }
 }
@@ -152,6 +177,9 @@ enum class OperationErrorKind(val retryable: Boolean) {
 
     /** I/O 失败（磁盘满、文件被占用、单文件读失败）。 */
     IO(true),
+
+    /** 资源正被另一任务占用，待其结束后可重新提交。 */
+    BUSY(true),
 
     /** 被取消。是终止，不是错误 —— 重试与否由调用方按业务决定。 */
     CANCELLED(false),
@@ -234,22 +262,26 @@ data class OperationState(
     val id: OperationId,
     val kind: OperationKind,
     val stage: OperationStage,
-    /** 阶段是否仍可取消：终态一律不可取消，其余继承 [OperationKind.cancellable]。 */
-    val cancellable: Boolean = kind.cancellable && !stage.isTerminal,
-    /** 已经**成功提交**的目标。 */
     val committedTargets: List<String> = emptyList(),
-    /** 失败的目标（逐目标说清）。 */
     val failedTargets: List<TargetOutcome> = emptyList(),
-    /** 操作级错误（不属于某个具体目标）。目标级错误放 [failedTargets]。 */
-    val error: OperationError? = null
+    val error: OperationError? = null,
+    val skippedTargets: List<String> = emptyList(),
+    val totalTargets: Int = committedTargets.size + failedTargets.size + skippedTargets.size,
+    val cancellationRequested: Boolean = false,
+    val progressMessage: String = ""
 ) {
     init {
-        val committed = committedTargets.toSet()
-        val overlap = failedTargets.map { it.target }.filter { it in committed }
-        require(overlap.isEmpty()) { "同一目标不能既是已提交又是失败：$overlap" }
+        val outcomes = committedTargets + failedTargets.map { it.target } + skippedTargets
+        require(outcomes.distinct().size == outcomes.size) { "同一目标只能有一个结果" }
+        require(failedTargets.all { it.status == TargetStatus.FAILED }) { "失败列表只能包含失败目标" }
+        require(totalTargets >= outcomes.size) { "已报告结果不能超过任务目标数" }
     }
 
-    /** 是否已到终态。 */
+    /** 请求可以在提交时登记，但不能立即中断正在落盘的临界区。 */
+    val cancellable: Boolean
+        get() = kind.cancellable && !isTerminal && stage != OperationStage.COMMITTING && !cancellationRequested
+
+    val completedTargets: Int get() = committedTargets.size + failedTargets.size + skippedTargets.size
     val isTerminal: Boolean get() = stage.isTerminal
 }
 

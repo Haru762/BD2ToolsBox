@@ -12,6 +12,8 @@
 
 **状态：** 用户已确认需求边界；本清单共 **62 个主任务、10 个阶段**。下方 2026-09-18 追加记录保留为历史（当时曾写「G1 已收口、G2 已完成 T11」），但以文首的当前状态更正为准；不把当前基线构建或测试结果等同于重构、设备验收或发布完成。
 
+> **当前续跑（2026-10-08，目标至 T25，尚未达到）：** T21 独立任务内核已实现并通过定向 JVM **61/0/0/0**，保持 IMPLEMENTED_NOT_VERIFIED；T19/T20 前置未闭合，不勾完成。当前 ADB 就绪设备为 0，T18 新版原生 arm64、T19 真实 Shizuku 场景及 T20 既有缺口仍须补齐；T22–T25 BLOCKED / 尚未实施。原验收条件不放宽。详见 [T21 证据](../../refactor/evidence/T21.md) 与 [当前证据索引](../../refactor/evidence/README.md)。
+
 > **当前状态更正（2026-09-21）：** 以各任务最新证据为准。本更正不删改原需求、不降低验收标准、不勾选未完成项。
 > - **T08 完成（仅原验收范围）。** x86_64 单目标 converted `200114` 与 move `200548` 杀进程补账 PASS，Release 补账后第二次冷启动不再提示核对，游戏文件已回滚。更早失败保留。arm64 不在 T08 验收里，也未跑（见 [T08.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T08.md>)）。
 > - **T10 IMPLEMENTED_NOT_VERIFIED**：当前包 6de58b5c 的 x86_64 已补齐日志缺失（PID 30218，包含 扫描未完成，保留上次列表），grant-while-renamed.txt 和 grant-held-ui.xml 证明改名时授权保持且 UI 两名称同在。复算快照 SHA-256 6942e6e0aef8d2ad02c51fc443bf7e59504e8537b31241c247a1567c7a061a08。snapshot-compatibility 的 uiColdStartVerified=false 不改。arm64 未跑。见 [T10.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T10.md>)。
@@ -34,7 +36,7 @@
 | 预定实施工作区 | [D:/bd2 mod/worktrees/bdroid-android-refactor](<D:/bd2 mod/worktrees/bdroid-android-refactor>)；只在 T01 获准后创建，不让其他窗口另建一个未记录的副本 |
 | 分支 | refactor/android-architecture；本版核对时尚未创建，续跑时必须重新检查 |
 | 核对时起点 | main / b83c1c076e95942b317649273fba559d9d3af5ca，App 0.2.16 / versionCode17；它是历史记录，不代替开工时核对 |
-| 当前进度 | T01–T07、T09 DONE；T08 IN_PROGRESS、T10 IMPLEMENTED_NOT_VERIFIED、T11 本地验收 DONE；T12 DONE（2026-09-26，含已接受限制）；T13 IN_PROGRESS（详见文首「当前状态更正」）。实施 worktree 位于 D:/bd2 mod/worktrees/bdroid-android-refactor，HEAD 72420bf（T11 代码提交 53959b3 + 状态登记提交 72420bf），当前补齐 T08/T10 验收缺口，T12（G2）保持进行中，不推进 T13 |
+| 当前进度 | 2026-10-08：T21 独立内核 IMPLEMENTED_NOT_VERIFIED；T18/T19/T20 既有验收缺口未闭合，T22–T25 BLOCKED / 尚未实施。实施 worktree 与分支不变，本轮基点 `6865a44`。当前准确进度、验证范围和续跑门槛见 [证据索引](../../refactor/evidence/README.md) 与 [T21.md](../../refactor/evidence/T21.md)，不从旧 HEAD 或旧测试数字推断完成。 |
 | 实施范围 | Android 及其必要 Python/JNI 接口；不重写 converter/winui，不清理 MOD 素材、游戏数据、发布归档或其他工作区 |
 
 先阅读第 1–3 节与 G0。新建流程和续跑流程分开：首次按 T01 检查并创建；若目标分支/目录已存在，创建命令应停止。只有核对 worktree 登记、真实仓库根、分支、HEAD、已有变更和任务证据均属于本轮后才能续跑，不能覆盖、删除或换一个目录绕过冲突。不要两个窗口同时修改同一个实施目录。
@@ -1008,6 +1010,8 @@ if ($SearchExit -gt 1) { throw 'Source query failed; this is not a clean scan' }
 ### T21 — 建立有明确所有者的任务协调器和状态机
 
 - [ ] **T21 完成**
+
+**2026-10-08 状态：IMPLEMENTED_NOT_VERIFIED。** 独立内核 JVM 61/0/0/0；T19/T20 前置未闭合，生产 Service/journal 接线留待原 T22–T25，不以单测替代设备验收。见 [T21 证据](../../refactor/evidence/T21.md)。
 
 **优先级：** P0　**前置：** T08、T19、T20
 

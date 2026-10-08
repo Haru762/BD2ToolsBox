@@ -189,6 +189,7 @@ class OperationContractTest {
             OperationErrorKind.INVALID_INPUT to false,
             OperationErrorKind.UNSUPPORTED to false,
             OperationErrorKind.IO to true,
+            OperationErrorKind.BUSY to true,
             OperationErrorKind.CANCELLED to false,
             OperationErrorKind.UNKNOWN to false
         )
@@ -228,18 +229,18 @@ class OperationContractTest {
     }
 
     @Test
-    fun terminalStagesAreExactlyCompletedFailedCancelled() {
+    fun terminalStagesIncludePartialFailureAndInterruption() {
         val terminalIds = OperationStage.values().filter { it.isTerminal }.map { it.id }.toSet()
-        assertEquals(setOf("completed", "failed", "cancelled"), terminalIds)
+        assertEquals(setOf("completed", "partially-failed", "failed", "cancelled", "interrupted"), terminalIds)
     }
 
     @Test
-    fun terminalStagesAreNeverCancellable() {
+    fun terminalAndCommitStagesAreNeverImmediatelyCancellable() {
         for (stage in OperationStage.values()) {
             val state = OperationState(OperationId("op-1"), OperationKind.PREPACK, stage)
             assertEquals(
                 "阶段 $stage 的可取消性不对",
-                !stage.isTerminal && OperationKind.PREPACK.cancellable,
+                !stage.isTerminal && stage != OperationStage.COMMITTING && OperationKind.PREPACK.cancellable,
                 state.cancellable
             )
             assertEquals(stage.isTerminal, state.isTerminal)
@@ -294,6 +295,52 @@ class OperationContractTest {
         assertEquals(listOf("bundle-a"), partial.committedTargets)
         assertEquals(listOf("bundle-b"), partial.failedTargets.map { it.target })
         assertFalse(partial.isTerminal)
+    }
+
+    @Test
+    fun requestRejectsMissingAmbiguousOrDuplicateTargets() {
+        for (targets in listOf(emptyList(), listOf(""), listOf(" bundle-a"), listOf("bundle-a", "bundle-a"))) {
+            assertThrows(IllegalArgumentException::class.java) {
+                OperationRequest(OperationId("first"), OperationKind.INSTALL, targets)
+            }
+        }
+    }
+
+    @Test
+    fun skippedTargetsCannotBeCountedAsCommittedOrFailed() {
+        assertThrows(IllegalArgumentException::class.java) {
+            OperationState(
+                OperationId("first"), OperationKind.INSTALL, OperationStage.RUNNING,
+                committedTargets = listOf("bundle-a"), skippedTargets = listOf("bundle-a")
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            OperationState(
+                OperationId("first"), OperationKind.INSTALL, OperationStage.RUNNING,
+                failedTargets = listOf(TargetOutcome("bundle-a", TargetStatus.SKIPPED))
+            )
+        }
+    }
+
+    @Test
+    fun reportedProgressCannotExceedRequestedTotal() {
+        assertThrows(IllegalArgumentException::class.java) {
+            OperationState(
+                OperationId("first"), OperationKind.INSTALL, OperationStage.RUNNING,
+                committedTargets = listOf("bundle-a"), totalTargets = 0
+            )
+        }
+    }
+
+    @Test
+    fun acceptedCancellationIsNotOfferedToUiAgain() {
+        val state = OperationState(
+            OperationId("first"), OperationKind.INSTALL, OperationStage.RUNNING,
+            totalTargets = 1, cancellationRequested = true
+        )
+        assertFalse(state.cancellable)
+        assertFalse(state.isTerminal)
+        assertEquals(0, state.completedTargets)
     }
 
     @Test
@@ -591,6 +638,9 @@ class OperationContractTest {
         val ROOTS: List<Class<*>> = listOf(
             // core.model
             OperationId::class.java,
+            OperationRequest::class.java,
+            OperationAdmission.Accepted::class.java,
+            OperationAdmission.Rejected::class.java,
             OperationKind::class.java,
             OperationStage::class.java,
             OperationError::class.java,
