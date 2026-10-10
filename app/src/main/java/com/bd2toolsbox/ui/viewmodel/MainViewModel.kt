@@ -50,11 +50,14 @@ import com.bd2toolsbox.core.storage.ConvertedInstallStaging
 import com.bd2toolsbox.core.storage.JournalMoveFacts
 import com.bd2toolsbox.core.operations.OperationRecovery
 import com.bd2toolsbox.core.operations.RecoveryDisposition
+import com.bd2toolsbox.core.model.ThemeMode
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
 import com.bd2toolsbox.core.storage.ModSnapshotStore
 import com.bd2toolsbox.core.storage.OperationJournalStore
+import com.bd2toolsbox.core.storage.SettingsRepository
+import com.bd2toolsbox.core.storage.SharedPreferencesSettingsStore
 import com.bd2toolsbox.data.repository.RecoveryApplyResult
 import com.bd2toolsbox.core.storage.TargetObservation
 import com.bd2toolsbox.core.storage.TargetObservations
@@ -230,6 +233,25 @@ class MainViewModel @Inject constructor(
     private val _selectedMods = MutableStateFlow<Set<Uri>>(emptySet())
     val selectedMods: StateFlow<Set<Uri>> = _selectedMods.asStateFlow()
 
+    /** T27：用户设置的唯一读写入口（保留 SharedPreferences 键值）。 */
+    private val settingsRepository: SettingsRepository by lazy {
+        SettingsRepository(
+            SharedPreferencesSettingsStore(
+                appContext.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ),
+            AppTheme.entries.map { it.name }.toSet()
+        )
+    }
+
+    /** T27：明/暗/跟随系统。缺失默认 LIGHT；接入主题由 T39/T47。 */
+    private val _themeMode = MutableStateFlow(ThemeMode.LIGHT)
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        settingsRepository.saveAppearance(settingsRepository.appearance().copy(themeMode = mode))
+    }
+
     private val _useAstc = MutableStateFlow(false)
 
     /** 装入前是否自动备份原版 bundle，让卸载能本地秒还原而不必重新下载。默认开。 */
@@ -249,8 +271,7 @@ class MainViewModel @Inject constructor(
 
     fun setAppTheme(theme: AppTheme) {
         _appTheme.value = theme
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            ?.edit()?.putString("app_theme", theme.name)?.apply()
+        settingsRepository.saveAppearance(settingsRepository.appearance().copy(colorPreset = theme.name))
     }
 
     /**
@@ -275,8 +296,7 @@ class MainViewModel @Inject constructor(
     fun setWallpaperScrim(v: Float) {
         val clamped = v.coerceIn(0f, 1f)
         _wallpaperScrim.value = clamped
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            ?.edit()?.putFloat("wallpaper_scrim", clamped)?.apply()
+        settingsRepository.saveAppearance(settingsRepository.appearance().copy(scrim = clamped))
     }
 
     /** 选好壁纸后调用。会尝试拿持久化读权限，拿不到也照存 —— 本次运行仍能显示。 */
@@ -294,8 +314,9 @@ class MainViewModel @Inject constructor(
             }
         }
         _wallpaperUri.value = uri
-        ctx?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            ?.edit()?.putString("wallpaper_uri", uri?.toString())?.apply()
+        settingsRepository.saveAppearance(
+            settingsRepository.appearance().copy(wallpaperUri = uri?.toString())
+        )
     }
 
     /** 备份占用（字节数, 个数），供设置区显示。 */
@@ -464,30 +485,31 @@ class MainViewModel @Inject constructor(
 
     /** 读回全部用户设置项。 */
     private fun restoreSettings(prefs: android.content.SharedPreferences) {
-        _useAstc.value = prefs.getBoolean("use_astc", false)
-        _backupOriginals.value = prefs.getBoolean("backup_originals", true)
-        _dynamicColor.value = prefs.getBoolean("dynamic_color", false)
+        val appearance = settingsRepository.appearance()
+        _useAstc.value = settingsRepository.useAstc()
+        _backupOriginals.value = settingsRepository.backupOriginals()
+        _dynamicColor.value = appearance.dynamicColor
         // 画质只认 SD/HD；历史版本存过 FHD（与 HD 同源的假档位），读回归一成 HD
-        _selectedQuality.value = prefs.getString("selected_quality", "HD")
-            ?.takeIf { it == "SD" || it == "HD" } ?: "HD"
-        _appTheme.value = AppTheme.fromName(prefs.getString("app_theme", null))
-        _onboardingDone.value = prefs.getBoolean("onboarding_done", false)
-        _wallpaperScrim.value = prefs.getFloat("wallpaper_scrim", 0.82f)
+        _selectedQuality.value = settingsRepository.quality()
+        _appTheme.value = AppTheme.fromName(appearance.colorPreset)
+        _themeMode.value = appearance.themeMode
+        _onboardingDone.value = settingsRepository.onboardingDone()
+        _wallpaperScrim.value = appearance.scrim
     }
 
     /** 恢复壁纸，但只在持久读权限还在时 —— 权限被系统回收后那个 URI 读不出图，
      *  界面会是一片空白背景，不如退回纯色（顺手把死键清掉）。 */
     private fun restoreWallpaper(prefs: android.content.SharedPreferences) {
-        prefs.getString("wallpaper_uri", null)?.let { saved ->
+        settingsRepository.appearance().wallpaperUri?.let { saved ->
             try {
                 val uri = Uri.parse(saved)
                 val readable = appContext!!.contentResolver.persistedUriPermissions.any {
                     it.uri == uri && it.isReadPermission
                 }
                 if (readable) _wallpaperUri.value = uri
-                else prefs.edit().remove("wallpaper_uri").apply()
+                else settingsRepository.clearWallpaperUri()
             } catch (e: Exception) {
-                prefs.edit().remove("wallpaper_uri").apply()
+                settingsRepository.clearWallpaperUri()
             }
         }
     }
@@ -500,13 +522,7 @@ class MainViewModel @Inject constructor(
      *  全部目录都被撤销时界面直接回到欢迎页 / 空列表，看起来像「mod 全没了」，
      *  用户无从知道其实是授权没了、重新选一次目录就好。 */
     private fun restoreModSourceDirs(prefs: android.content.SharedPreferences) {
-        val saved = prefs.getString("mod_source_dirs", null)
-        val legacy = prefs.getString("mod_source_dir_uri", null)
-        val raw: List<String> = when {
-            saved != null -> saved.split(DIR_SEPARATOR).filter { it.isNotBlank() }
-            legacy != null -> listOf(legacy)
-            else -> emptyList()
-        }
+        val raw: List<String> = settingsRepository.sourceDirs()
         val granted = appContext!!.contentResolver.persistedUriPermissions
         val alive = raw.mapNotNull { s ->
             try {
@@ -522,10 +538,9 @@ class MainViewModel @Inject constructor(
             Log.w("MainViewModel", "${lost.size} 个 mod 文件夹的访问授权已失效，已移出列表")
             _lostSourceDirsNotice.value = lost
         }
-        if (alive.size != raw.size || saved == null) {
-            // 顺手清掉旧的单目录键，并落一次新格式
-            prefs.edit().remove("mod_source_dir_uri").apply()
-            persistModSourceDirs()
+        if (alive.size != raw.size) {
+            // 有目录被移除（或完成了旧单键迁移）：落一次新格式
+            settingsRepository.setSourceDirs(alive.map { it.toString() })
         }
     }
 
@@ -706,26 +721,22 @@ class MainViewModel @Inject constructor(
     private fun persistModSourceDirs() {
         // 换行分隔而不是 JSON：URI 规范要求换行必须转义，所以它绝不会出现在值里，
         // 这么写就不必为一个字符串列表专门养一个 Gson 实例。
-        val blob = _modSourceDirs.value.joinToString(DIR_SEPARATOR) { it.toString() }
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            ?.edit()?.putString("mod_source_dirs", blob)?.apply()
+        settingsRepository.setSourceDirs(_modSourceDirs.value.map { it.toString() })
     }
 
     fun setUseAstc(useAstc: Boolean) {
         _useAstc.value = useAstc
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)?.edit()?.putBoolean("use_astc", useAstc)?.apply()
+        settingsRepository.setUseAstc(useAstc)
     }
 
     fun setBackupOriginals(enabled: Boolean) {
         _backupOriginals.value = enabled
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            ?.edit()?.putBoolean("backup_originals", enabled)?.apply()
+        settingsRepository.setBackupOriginals(enabled)
     }
 
     fun setDynamicColor(enabled: Boolean) {
         _dynamicColor.value = enabled
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            ?.edit()?.putBoolean("dynamic_color", enabled)?.apply()
+        settingsRepository.saveAppearance(settingsRepository.appearance().copy(dynamicColor = enabled))
     }
 
     /** 重算备份占用（遍历备份目录，放 IO 线程）。 */
@@ -1072,8 +1083,7 @@ class MainViewModel @Inject constructor(
 
     fun completeOnboarding() {
         _onboardingDone.value = true
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            ?.edit()?.putBoolean("onboarding_done", true)?.apply()
+        settingsRepository.setOnboardingDone(true)
     }
 
     /** 设置里「重看使用引导」。只改内存状态，不动 prefs —— 看完照样算看过。 */
@@ -1083,7 +1093,7 @@ class MainViewModel @Inject constructor(
 
     fun setSelectedQuality(quality: String) {
         _selectedQuality.value = quality
-        appContext?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)?.edit()?.putString("selected_quality", quality)?.apply()
+        settingsRepository.setQuality(quality)
     }
 
     // ------------------------------------------------ 一键卸载

@@ -1241,6 +1241,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.core.operations.OperationHostLifecycl
 
 - [ ] **T27 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `core/storage/SettingsRepository` + `SettingsStore` + `core/model/AppearanceSettings`（ThemeMode LIGHT/DARK/SYSTEM、预设名、dynamicColor、壁纸 URI、遮罩），`MainViewModel` 设置读写全部改走它；迁移/回退（旧单目录键、缺 theme_mode、未知预设、损坏遮罩、非法画质）由定向 JVM 13/0/0/0、全量 JVM 606/0/0/0 固定。**SettingsViewModel/WorkbenchSheet 接线与主题模式接入 UI 未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T27 证据](../../refactor/evidence/T27.md)。
+
 **优先级：** P1　**前置：** T20
 
 **文件范围（实施工作区）：**
