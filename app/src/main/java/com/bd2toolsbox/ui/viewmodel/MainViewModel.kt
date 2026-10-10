@@ -48,6 +48,8 @@ import com.bd2toolsbox.core.storage.CatalogAnchor
 import com.bd2toolsbox.core.storage.ConvertedInstallPreparation
 import com.bd2toolsbox.core.storage.ConvertedInstallStaging
 import com.bd2toolsbox.core.storage.JournalMoveFacts
+import com.bd2toolsbox.core.operations.OperationRecovery
+import com.bd2toolsbox.core.operations.RecoveryDisposition
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
@@ -862,6 +864,14 @@ class MainViewModel @Inject constructor(
         _recoveryVerdict.asStateFlow()
 
     /**
+     * T25：启动核对的细分结论（中断 / 已替换待核对 / 已提交 / 未知）。
+     * 与 [recoveryVerdict] 同一次启动检查产出；UI 尚未消费，保留为恢复入口。
+     */
+    private val _recoveryDispositions = MutableStateFlow<List<RecoveryDisposition>>(emptyList())
+    val recoveryDispositions: StateFlow<List<RecoveryDisposition>> =
+        _recoveryDispositions.asStateFlow()
+
+    /**
      * 启动时核对一次「文件已换、账本未存」的窗口，并把结论交给 UI。
      *
      * **只读**：不改账本、不改 journal、不改游戏目录（见
@@ -884,6 +894,13 @@ class MainViewModel @Inject constructor(
             )
         }
         _recoveryVerdict.value = verdict
+        // T25：同一次启动检查里再给一份按操作细分的处置（只读 journal，不重放）。
+        _recoveryDispositions.value = try {
+            OperationRecovery(installedModRepository).classify()
+        } catch (e: Exception) {
+            Log.w("MainViewModel", "启动恢复分类失败", e)
+            emptyList()
+        }
         when (verdict) {
             is OperationJournalStore.RecoveryVerdict.PendingReconciliation -> {
                 Log.w(

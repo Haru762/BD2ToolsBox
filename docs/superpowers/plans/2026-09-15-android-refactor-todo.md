@@ -1168,6 +1168,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.integration.PrepackCacheIntegrationTest
 
 - [ ] **T25 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `core/operations/OperationRecovery`（四态分类：中断/待核对/已提交/未知 + 清理路径归属校验），启动检查补分类 StateFlow；定向 JVM 11/0/0/0、全量 JVM 593/0/0/0。**真实杀进程再启动未验证、`Bd2Application` 未接入、UI 未消费**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T25 证据](../../refactor/evidence/T25.md)。
+
 **优先级：** P0　**前置：** T22、T23、T24
 
 **文件范围（实施工作区）：**
