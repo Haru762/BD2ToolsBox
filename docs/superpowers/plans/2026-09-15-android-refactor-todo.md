@@ -1353,6 +1353,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.feature.preview.PreviewWorkflowTest' 
 
 - [ ] **T30 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 请求代次控制落地：新增 `feature/guides/RequestGeneration`，`GuideViewModel` 的正文与搜索/列表均接入（只有仍对应当前意图的结果可提交，关闭/退出即作废）；定向 JVM 7/0/0/0 + 渲染 golden 9/0/0/0、全量 JVM 626/0/0/0，并有红绿证伪（移除判定后 3 条竞态用例变红）。**GamekeeApi/GuideCacheStore/GuideHtmlRenderer 拆分与 GuideScreen 接入未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T30 证据](../../refactor/evidence/T30.md)。
+
 **优先级：** P1　**前置：** T20、T05
 
 **文件范围（实施工作区）：**

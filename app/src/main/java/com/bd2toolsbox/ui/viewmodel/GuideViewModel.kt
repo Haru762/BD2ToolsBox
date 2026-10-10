@@ -7,6 +7,7 @@ import com.bd2toolsbox.data.model.GuideArticle
 import com.bd2toolsbox.data.model.GuideCategory
 import com.bd2toolsbox.data.model.GuideDetail
 import com.bd2toolsbox.data.repository.GamekeeRepository
+import com.bd2toolsbox.feature.guides.RequestGeneration
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -105,6 +106,12 @@ class GuideViewModel @Inject constructor(
 
     /** 阅读层里点站内链接跳走的文章，返回键先逐层退回这里。 */
     private val detailHistory = ArrayDeque<GuideDetail>()
+
+    /** T30：正文请求代次 —— 只有仍对应当前阅读意图的结果可提交。 */
+    private val detailGeneration = RequestGeneration()
+
+    /** T30：搜索/列表请求代次 —— 退出搜索或重新搜索后，旧页结果不得覆盖新状态。 */
+    private val searchGeneration = RequestGeneration()
 
     // ---------------------------------------------------------------- 缓存
 
@@ -224,6 +231,8 @@ class GuideViewModel @Inject constructor(
 
     private fun loadSearchPage(reset: Boolean) {
         val pageToLoad = if (reset) 1 else searchPage
+        // T30：reset 开启新一代；加载更多沿用当前代。回来时代次不符则不提交。
+        val token = if (reset) searchGeneration.next() else searchGeneration.current()
         if (reset) {
             _listLoading.value = true
             _listError.value = null
@@ -233,16 +242,20 @@ class GuideViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val page = repo.searchArticles(searchKeyword, pageToLoad)
+                if (!searchGeneration.isCurrent(token)) return@launch
                 _articles.value = if (reset) page.articles else _articles.value + page.articles
                 _endReached.value = !page.hasMore
                 searchPage = pageToLoad + 1
             } catch (e: Exception) {
                 Log.w(TAG, "搜索失败", e)
+                if (!searchGeneration.isCurrent(token)) return@launch
                 if (reset) _articles.value = emptyList()
                 _listError.value = e.message ?: "加载失败"
             } finally {
-                _listLoading.value = false
-                _loadingMore.value = false
+                if (searchGeneration.isCurrent(token)) {
+                    _listLoading.value = false
+                    _loadingMore.value = false
+                }
             }
         }
     }
@@ -275,6 +288,10 @@ class GuideViewModel @Inject constructor(
         _searchQuery.value = ""
         if (!searching) return
         searching = false
+        // T30：作废在途搜索页，避免退出后旧结果又填回列表
+        searchGeneration.invalidate()
+        _listLoading.value = false
+        _loadingMore.value = false
         if (_selectedNode.value == NODE_RECENT) {
             _articles.value = _tree.value.recent
             _selectedName.value = "最近更新"
@@ -294,12 +311,17 @@ class GuideViewModel @Inject constructor(
         if (keepCurrentInHistory && current is DetailState.Ready) {
             detailHistory.addLast(current.detail)
         }
+        // T30：每次打开开启新一代；旧请求迟到时不提交（也不会重开已关闭的文章）。
+        val token = detailGeneration.next()
         _detail.value = DetailState.Loading(article)
         viewModelScope.launch {
             try {
-                _detail.value = DetailState.Ready(repo.loadArticleDetail(article), fromCache = false)
+                val detail = repo.loadArticleDetail(article)
+                if (!detailGeneration.isCurrent(token)) return@launch
+                _detail.value = DetailState.Ready(detail, fromCache = false)
             } catch (e: Exception) {
                 Log.w(TAG, "正文加载失败: ${article.id}", e)
+                if (!detailGeneration.isCurrent(token)) return@launch
                 _detail.value = DetailState.Failed(article, e.message ?: "加载失败")
             }
         }
@@ -310,6 +332,8 @@ class GuideViewModel @Inject constructor(
      * 返回 true 表示消费了这次返回（还有东西可退）。
      */
     fun backFromArticle(): Boolean {
+        // T30：无论退回还是关闭，都作废在途正文请求
+        detailGeneration.invalidate()
         val prev = detailHistory.removeLastOrNull()
         if (prev != null) {
             _detail.value = DetailState.Ready(prev, fromCache = true)
@@ -321,6 +345,7 @@ class GuideViewModel @Inject constructor(
     }
 
     fun dismissArticle() {
+        detailGeneration.invalidate()
         detailHistory.clear()
         _detail.value = DetailState.Closed
     }
