@@ -41,6 +41,9 @@ import com.bd2toolsbox.data.model.ModInstallState
 import com.bd2toolsbox.data.model.ModKind
 import android.net.Uri
 import com.bd2toolsbox.data.model.ModCategory
+import com.bd2toolsbox.feature.mods.BundleGroup
+import com.bd2toolsbox.feature.mods.CharacterGroup
+import com.bd2toolsbox.feature.mods.ModListProjection
 import com.bd2toolsbox.data.model.categoryOf
 import com.bd2toolsbox.data.model.isUnknownCharacter
 import com.bd2toolsbox.data.model.ResolutionState
@@ -78,37 +81,15 @@ fun ModScreen(
         .filter { kindFilter == null || it.kind == kindFilter }
     val stateFilter by viewModel.stateFilter.collectAsState()
     // —— 四区划分：正常 / 异常 / 待更新 / 未识别 ——
-    // 异常（扫描判出 defect）与未识别（角色表查不到）都不跟正常条目混排：异常的要提示
-    // 用户删源文件、未识别的等角色表更新自动归位，各自成区、默认收起、沉在列表顶部。
-    // 「待更新」（游戏更新后内层 hash 目录名落后于当前 catalog）同样另成一区、默认
-    // 收起：它不是坏，改名即可治愈，但装进去照样不生效，所以也不能混在正常条目里被勾选。
-    // 分区对象是 modsList —— 搜索与状态筛选后的同一份数据 —— 搜索命中某条异常 mod 时
-    // 它留在顶部区而不是漏进下方分组，四区的过滤口径才不会错位。
-    val outdatedMods = remember(modsList) {
-        modsList.filter { it.defect == null && it.outdatedCurrentHash != null }
-    }
-    val abnormalMods = remember(modsList) { modsList.filter { it.defect != null } }
-    val unknownMods = remember(modsList) {
-        modsList.filter {
-            it.defect == null && it.outdatedCurrentHash == null && isUnknownCharacter(it.character)
-        }
-    }
-    val normalMods = remember(modsList) {
-        modsList.filter {
-            it.defect == null && it.outdatedCurrentHash == null && !isUnknownCharacter(it.character)
-        }
-    }
-    // 状态筛选 chip 的计数只认正常条目 —— 异常/待更新/未识别已经有自己的区，把它们算进
-    // 「生效中 N」之类的数字只会让 chip 与「这页能勾选的 mod」对不上。
-    val normalAllMods = remember(allMods) {
-        allMods.filter {
-            it.defect == null && it.outdatedCurrentHash == null && !isUnknownCharacter(it.character)
-        }
-    }
-    // 一级按角色、二级按目标 bundle 的两级结构，只喂 normal —— 另两区已分流，
-    // 组内再带它们等于把同一批条目渲染两遍。
-    // 分组本身不便宜（301 条要过好几遍），而列表在选中、滚动时会频繁重组，所以缓存住。
-    val characterGroups = remember(normalMods) { buildCharacterGroups(normalMods) }
+    // T28：划分与角色分组已抽成纯投影（feature/mods/ModUiState.kt），可在 JVM 单测里验证；
+    // 这里只消费结果，不再在 Composable 里写筛选逻辑。
+    val sections = remember(modsList, allMods) { ModListProjection.sections(modsList, allMods) }
+    val abnormalMods = sections.abnormal
+    val outdatedMods = sections.outdated
+    val unknownMods = sections.unknown
+    val normalMods = sections.normal
+    val normalAllMods = sections.normalAll
+    val characterGroups = sections.characterGroups
 
     // —— 顶部折叠区：交互状态与新增提醒 ——
     // 展开状态放 LazyColumn 外 remember：列表滚动/重组时不会跟着重建，
@@ -1354,82 +1335,10 @@ fun ShimmerModCard() {
  * 仍保留 bundle 这一层（而不是让「类别」取代它）是因为它有功能含义：同一个 bundle 只能装
  * 一个 mod，组内互斥，卸载与全选都挂在这里。而且同一角色同一类别下往往就有多个 bundle
  * （Justia 的过场动画有 6 个，对应 6 套皮肤）。
- */
-private data class BundleGroup(
-    val hash: String,
-    val category: ModCategory,
-    /** 二级标题显示的皮肤名。角色名已在一级标题里，这里不重复。 */
-    val costume: String,
-    val mods: List<ModInfo>,
-    /**
-     * 这个 bundle 在整份列表里一共有多少个 mod 指向它（含其他角色的）。
-     * 大于 [mods] 的个数时说明是共用 bundle，要在界面上说清，
-     * 否则用户会以为「卸载」只影响眼前这一个角色。
-     */
-    val totalInBundle: Int
-)
-
-/** 一级：一个角色名下的所有 bundle 组。 */
-private data class CharacterGroup(
-    val character: String,
-    val isUnknown: Boolean,
-    val groups: List<BundleGroup>
-) {
-    val total: Int get() = groups.sumOf { it.mods.size }
-}
-
-/**
- * 把平铺的 mod 列表整理成「角色 → 目标 bundle」两级。
  *
- * 起因是 PC 页在真实收藏下会有近千条平铺（实测 951 个 mod / 9.7 GB），
- * 除了搜索没有任何找东西的办法。
- *
- * 排序：角色按名字，未识别的一律垫底；角色内先按类别（过场动画→立绘→心契之约→其他）
- * 再按皮肤名，这样同类别的自然聚成一段，配合分隔条就有了类别层次。
+ * T28：类型与分组逻辑已迁到 [com.bd2toolsbox.feature.mods.BundleGroup] /
+ * [com.bd2toolsbox.feature.mods.ModListProjection]。
  */
-private fun buildCharacterGroups(mods: List<ModInfo>): List<CharacterGroup> {
-    if (mods.isEmpty()) return emptyList()
-
-    fun hashOf(m: ModInfo): String = when (m.resolutionState) {
-        ResolutionState.KNOWN, ResolutionState.MISC -> m.targetHash ?: "未知"
-        ResolutionState.UNKNOWN -> "未知"
-        ResolutionState.INVALID -> "无效"
-    }
-    fun charOf(m: ModInfo): String =
-        if (isUnknownCharacter(m.character)) "未识别" else m.character.trim()
-
-    // 每个 bundle 总共被多少个 mod 指向 —— 用来判断是不是跨角色共用
-    val bundleTotals = mods.groupingBy { hashOf(it) }.eachCount()
-
-    val perCharacter = LinkedHashMap<String, MutableList<BundleGroup>>()
-    for ((key, list) in mods.groupBy { charOf(it) to hashOf(it) }) {
-        val (charName, hash) = key
-        val rep = list.first()
-        perCharacter.getOrPut(charName) { mutableListOf() }.add(
-            BundleGroup(
-                hash = hash,
-                category = categoryOf(rep.type, rep.costume),
-                costume = rep.costume?.trim().orEmpty().ifBlank { hash },
-                mods = list,
-                totalInBundle = bundleTotals[hash] ?: list.size
-            )
-        )
-    }
-
-    return perCharacter.map { (name, groups) ->
-        CharacterGroup(
-            character = name,
-            isUnknown = name == "未识别",
-            groups = groups.sortedWith(
-                compareBy({ it.category.ordinal }, { it.costume.lowercase() })
-            )
-        )
-    }.sortedWith(
-        // 未识别垫底；其余按名字。用 lowercase 而不是默认排序，
-        // 否则大小写混排会让同一角色的不同写法离得很远
-        compareBy({ if (it.isUnknown) 1 else 0 }, { it.character.lowercase() })
-    )
-}
 
 /** 一级标题：角色名 + 条目数。会吸顶，所以要不透明背景。 */
 @Composable

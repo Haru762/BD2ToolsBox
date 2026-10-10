@@ -1278,6 +1278,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.SettingsMigrationTest'
 
 - [ ] **T28 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 四区划分/搜索/筛选/角色分组/可勾选集合抽成 `feature/mods/ModUiState.kt` 的纯 `ModListProjection`，`ModScreen` 改为消费它；定向 JVM 13/0/0/0、全量 JVM 619/0/0/0。**`ModLibraryViewModel`/`ModRoute`/`ModScreen` 页面拆分与 SavedStateHandle 未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T28 证据](../../refactor/evidence/T28.md)。
+
 **优先级：** P1　**前置：** T22、T23、T27
 
 **文件范围（实施工作区）：**
