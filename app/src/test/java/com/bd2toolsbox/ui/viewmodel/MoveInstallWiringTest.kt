@@ -105,6 +105,7 @@ class MoveInstallWiringTest {
             mockk(relaxed = true),
             executor,
             uninstallExecutor,
+            mockk(relaxed = true), // scan executor is not used by move-install tests
         )
         setField("installScope", scope)
 

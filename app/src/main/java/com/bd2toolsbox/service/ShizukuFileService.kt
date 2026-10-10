@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.bd2toolsbox.IFileService
 import com.bd2toolsbox.core.fileaccess.AtomicFileWriter
+import com.bd2toolsbox.feature.mods.BundleListingSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -16,6 +17,9 @@ import java.io.IOException
  * 都经这里的 [copyFile] / [copyDirectory] / [listBundleDirectoryPaged] 完成。
  */
 class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
+
+    /** T23：按路径缓存的列举快照，避免分页时每页重扫整个目录。 */
+    private val listing = BundleListingSnapshot()
 
     override fun copyFile(sourcePath: String, destPath: String): Boolean = try {
         val dest = File(destPath)
@@ -74,45 +78,22 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
         }
 
         return try {
-            // Shared/{bundleName}/{hash}/__data；一个 bundle 只取第一个含 __data 的 hash 目录。
-            // size 是 __data 实际字节数，供「干净检测」与 catalog 的官方大小比对 ——
-            // 重打包产物沿用原版路径结构（目录名相同），只有大小能区分原版和装着 mod。
-            // 分页：先全量收进内存（服务进程侧无 binder 限制），再切 [offset, offset+limit)
-            // 出去 —— 调用方循环拉到「ok:true 且返回条数 < limit」即最后一页。单页必须显著
-            // 小于 binder 1MB 事务上限：500 条 × ~120B ≈ 60KB，余量充足。
-            //
-            // 子目录 listFiles() 返 null 不能静默跳过（旧实现用 `?.forEach` 跳过，相当于
-            // 把「这个 bundle 目录读失败」当成「这个 bundle 没有内容」，两者对干净检测的
-            // 含义不同）：读失败的 bundle 目录直接让整次列举失败。
-            val all = JSONArray()
-            val topLevel = sharedDir.listFiles()
-                ?: return failure("Cannot list shared directory (listFiles returned null): $sharedDirPath")
-            for (bundleDir in topLevel) {
-                if (!bundleDir.isDirectory) continue
-                val hashDirs = bundleDir.listFiles()
-                    ?: return failure("Cannot list bundle directory (listFiles returned null): ${bundleDir.absolutePath}")
-                for (hashDir in hashDirs) {
-                    if (!hashDir.isDirectory) continue
-                    val dataFile = File(hashDir, "__data")
-                    if (dataFile.isFile) {
-                        all.put(JSONObject().apply {
-                            put("name", bundleDir.name)
-                            put("hash", hashDir.name)
-                            put("size", dataFile.length())
-                        })
-                        break
-                    }
-                }
+            // T23：分页不再每页重扫整个目录。BundleListingSnapshot 按路径缓存枚举结果，
+            // offset==0 时重建快照，后续页复用同一份；枚举语义（失败不等于空表）不变。
+            val page = listing.page(sharedDir, offset, limit)
+            val entries = JSONArray()
+            for (entry in page) {
+                entries.put(JSONObject().apply {
+                    put("name", entry.name)
+                    put("hash", entry.hash)
+                    put("size", entry.sizeBytes)
+                })
             }
-            val total = all.length()
-            val page = JSONArray()
-            var i = offset
-            while (i < total && i < offset + limit) {
-                page.put(all.get(i))
-                i++
-            }
-            Log.d(TAG, "Listed bundles $offset..${i - 1} of $total from $sharedDirPath")
-            JSONObject().put("ok", true).put("entries", page).toString()
+            Log.d(TAG, "Listed bundles offset=$offset count=${page.size} from $sharedDirPath")
+            JSONObject().put("ok", true).put("entries", entries).toString()
+        } catch (e: IOException) {
+            Log.w(TAG, "Cannot list bundle directory $sharedDirPath: ${e.message}")
+            failure(e.message ?: "Cannot list $sharedDirPath")
         } catch (e: Exception) {
             Log.e(TAG, "Error listing bundle directory $sharedDirPath", e)
             failure("Exception while listing $sharedDirPath: ${e.message}")

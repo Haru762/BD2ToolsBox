@@ -75,6 +75,9 @@ import com.bd2toolsbox.data.repository.ConvertedSubmitResult
 import com.bd2toolsbox.data.repository.InstalledModRepository
 import com.bd2toolsbox.feature.install.InstallExecutor
 import com.bd2toolsbox.feature.install.UninstallExecutor
+import com.bd2toolsbox.feature.mods.ScanCheck
+import com.bd2toolsbox.feature.mods.ScanExecutor
+import com.bd2toolsbox.feature.mods.ScanRun
 import com.bd2toolsbox.data.repository.LedgerTake
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
@@ -130,6 +133,7 @@ class MainViewModel @Inject constructor(
     private val updateRepository: UpdateRepository,
     private val installExecutor: InstallExecutor,
     private val uninstallExecutor: UninstallExecutor,
+    private val scanExecutor: ScanExecutor,
 ) : ViewModel() {
 
     companion object {
@@ -1221,16 +1225,15 @@ class MainViewModel @Inject constructor(
                 withContext(Dispatchers.Main) { toast(context, FGS_REFUSED_MESSAGE) }
                 return@launch
             }
-            // T19：扫描全程在 installScope——界面销毁也不能让连接断。自己持有一份占用，不再
-            // 依赖 MainActivity 的 token 是否还在。
-            val scanConnectionToken = ShizukuManager.acquireConnection()
+            // T19：扫描全程在 installScope——界面销毁也不能让连接断。
+            // T23：连接占用改由 ScanExecutor.run 内部持有，ViewModel 不再自己 acquire/release。
             try {
                 // Shizuku 服务跑在 shell UID，写不了 app 的内部 cacheDir（/data/data/…），
                 // 扫描临时文件得放 externalCacheDir
                 val shizukuCacheDir = (context.externalCacheDir ?: context.cacheDir).absolutePath
 
-                val (success, scanned, failed) = withContext(Dispatchers.IO) {
-                    ShizukuManager.executeBundleScan(
+                val outcome = withContext(Dispatchers.IO) {
+                    scanExecutor.run(
                         outputDir = context.filesDir.absolutePath,
                         cacheDir = shizukuCacheDir,
                         checkResult = checkResult
@@ -1249,27 +1252,26 @@ class MainViewModel @Inject constructor(
                     }
                 }
 
-                _bundleScanState.value = if (success) {
-                    BundleScanState.Finished(
-                        scannedCount = scanned,
-                        failedCount = failed,
-                        message = "扫描完成：成功 $scanned 个，失败 $failed 个。"
-                    )
-                } else {
-                    BundleScanState.Failed("建立文件索引失败。")
-                }
-                if (success) {
-                    // 摘要通知留着给用户看（可划掉）；失败走 stop 直接收掉
-                    ScanService.finish(svcCtx, scanned, failed)
-                } else {
-                    ScanService.stop(svcCtx)
+                when (outcome) {
+                    is ScanRun.Finished -> {
+                        _bundleScanState.value = BundleScanState.Finished(
+                            scannedCount = outcome.scanned,
+                            failedCount = outcome.failed,
+                            message = "扫描完成：成功 ${outcome.scanned} 个，失败 ${outcome.failed} 个。"
+                        )
+                        // 摘要通知留着给用户看（可划掉）；失败走 stop 直接收掉
+                        ScanService.finish(svcCtx, outcome.scanned, outcome.failed)
+                    }
+                    is ScanRun.Failed -> {
+                        _bundleScanState.value = BundleScanState.Failed(outcome.message)
+                        ScanService.stop(svcCtx)
+                    }
                 }
             } catch (e: Exception) {
                 _bundleScanState.value = BundleScanState.Failed(e.message ?: "Unknown error")
                 ScanService.stop(svcCtx)
             } finally {
                 ShizukuManager.markScanRunning(false)
-                ShizukuManager.releaseConnection(scanConnectionToken)
                 // 扫描产出新索引，收尾初始化并触发一轮 mod 重扫。回 viewModelScope：
                 // 里面的刷新本来就挂在界面上，界面没了就不必跑（下次冷启动会重来）
                 viewModelScope.launch { finishInitialization() }
@@ -1355,27 +1357,23 @@ class MainViewModel @Inject constructor(
                     toast(context, "预解包尚未完成，请等待其结束后再建立文件索引")
                     return@launch
                 }
-                if (!ShizukuManager.isAvailable()) {
-                    toast(context, "Shizuku 未运行，请先在 Shizuku 中启动服务")
-                    return@launch
+                // T23：检查编排收进 ScanExecutor；这里只把四种结果映射成用户可见反馈。
+                // 失败原因不再笼统地归为「游戏没装」：未连接/读取失败/已最新在用户眼里
+                // 完全不同，笼统提示会让人白跑一趟重装游戏（真机实测：预解包期间误报）。
+                val check = withContext(Dispatchers.IO) {
+                    scanExecutor.check(context.filesDir.absolutePath)
                 }
-                val checkResult = withContext(Dispatchers.IO) {
-                    ShizukuManager.checkLocalBundles(
-                        outputDir = context.filesDir.absolutePath
-                    ) { }
-                }
-                when {
-                    // 失败原因不再笼统地归为「游戏没装」：绑定失败/目录列举失败/
-                    // 目录为空在用户眼里完全不同，笼统提示会让人白跑一趟重装游戏
-                    // （真机实测：预解包期间误报，用户以为要重装）。
-                    checkResult == null ->
+                when (check) {
+                    is ScanCheck.NotConnected ->
+                        toast(context, "Shizuku 未运行，请先在 Shizuku 中启动服务")
+                    is ScanCheck.Failed ->
                         toast(context, "读取游戏资源目录失败：请确认游戏已安装、Shizuku 正在运行且已授权")
-                    checkResult.needsScanCount == 0 ->
+                    is ScanCheck.UpToDate ->
                         toast(context, "游戏资源索引已是最新，无需重扫")
-                    else -> {
-                        pendingCheckResult = checkResult
+                    is ScanCheck.NeedsScan -> {
+                        pendingCheckResult = check.checkResult
                         _bundleScanState.value =
-                            BundleScanState.Confirmation(checkResult.needsScanCount)
+                            BundleScanState.Confirmation(check.checkResult.needsScanCount)
                     }
                 }
             } catch (e: Exception) {

@@ -1089,6 +1089,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.InstallServiceLifecycleTest' 
 
 - [ ] **T23 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 分页快照修复（`BundleListingSnapshot`，`offset==0` 重建、后续页复用，消除 N 页 N 次完整枚举）与游戏 bundle 索引扫描编排抽取（`ScanExecutor`，四种检查结果 + 占用自持）完成，定向 JVM 14/0/0/0、全量 JVM 574/0/0/0。**来源 MOD 扫描循环仍在 ViewModel、ScanService 仍未驱动 executor**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T23 证据](../../refactor/evidence/T23.md)。
+
 **优先级：** P0　**前置：** T21、T18
 
 **文件范围（实施工作区）：**

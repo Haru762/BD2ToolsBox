@@ -71,6 +71,7 @@ class LocalBaseReuseTest {
             mockk(relaxed = true),
             mockk(relaxed = true), // move executor is not used by base selection
             mockk(relaxed = true), // uninstall executor is not used by base selection
+            mockk(relaxed = true), // scan executor is not used by base selection
         )
         setField("bundleCleanStates", mapOf("b" to BundleCleanState.PRISTINE))
         setField("gameBundleHashes", mapOf("b" to "h1"))
