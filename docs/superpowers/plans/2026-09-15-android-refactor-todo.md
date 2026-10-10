@@ -1130,6 +1130,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.ScanServiceTest' -Abi 'x86_64
 
 - [ ] **T24 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 目标筛选与空间计划抽取为 `PrepackExecutor`（两者同源，修掉计划 `todo` 把负缓存算成待办的不一致），定向 JVM 8/0/0/0、全量 JVM 582/0/0/0。**静态 `pendingTargets` 未任务 ID 化、PrepackService 仍未驱动 executor**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T24 证据](../../refactor/evidence/T24.md)。
+
 **优先级：** P0　**前置：** T21、T18
 
 **文件范围（实施工作区）：**

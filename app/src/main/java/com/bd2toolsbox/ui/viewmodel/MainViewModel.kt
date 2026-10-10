@@ -78,6 +78,7 @@ import com.bd2toolsbox.feature.install.UninstallExecutor
 import com.bd2toolsbox.feature.mods.ScanCheck
 import com.bd2toolsbox.feature.mods.ScanExecutor
 import com.bd2toolsbox.feature.mods.ScanRun
+import com.bd2toolsbox.feature.preview.PrepackExecutor
 import com.bd2toolsbox.data.repository.LedgerTake
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
@@ -134,6 +135,7 @@ class MainViewModel @Inject constructor(
     private val installExecutor: InstallExecutor,
     private val uninstallExecutor: UninstallExecutor,
     private val scanExecutor: ScanExecutor,
+    private val prepackExecutor: PrepackExecutor,
 ) : ViewModel() {
 
     companion object {
@@ -933,33 +935,13 @@ class MainViewModel @Inject constructor(
     fun preparePrepack() {
         val context = appContext ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            val converted = _modsList.value.filter {
-                it.kind == ModKind.CONVERTED_BUNDLE && it.convertedHashDir != null
-            }
-            var cached = 0
-            var todoBytes = 0L
-            for (m in converted) {
-                val name = m.targetHash ?: continue
-                val hash = m.convertedHashDir ?: continue
-                val size = m.convertedDataSize ?: 0L
-                if (size > 0 && previewCacheRepository.isValid(name, hash, size)) cached++
-                else todoBytes += size
-            }
-            val measured = previewCacheRepository.measuredExpansionRatio()
-            val ratio = measured ?: 1.6
             val free = try {
                 (context.getExternalFilesDir(null) ?: context.filesDir).freeSpace
             } catch (e: Exception) {
                 0L
             }
-            _prepackPlan.value = PrepackPlan(
-                total = converted.size,
-                alreadyCached = cached,
-                todo = converted.size - cached,
-                estimatedBytes = (todoBytes * ratio).toLong(),
-                freeBytes = free,
-                ratioFromSamples = measured != null
-            )
+            // T24：计划与实际目标同源（PrepackExecutor），负缓存不再被算成待办。
+            _prepackPlan.value = prepackExecutor.plan(_modsList.value, free)
         }
     }
 
@@ -985,23 +967,14 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val targets = _modsList.value.filter {
-                    it.kind == ModKind.CONVERTED_BUNDLE && it.convertedHashDir != null
-                }.mapNotNull { m ->
-                    val n = m.targetHash ?: return@mapNotNull null
-                    val h = m.convertedHashDir ?: return@mapNotNull null
-                    val s = m.convertedDataSize
-                    // 有效缓存跳过；负缓存（解包成功但没有 skel/atlas 的立绘/UI 类）
-                    // 也要跳过 —— 否则它们永远不满足 isValid，每轮预解包都从头重解
-                    // （真机「总是回到开始那二十几个包」的根因）
-                    if (s > 0 && previewCacheRepository.isValid(n, h, s)) return@mapNotNull null
-                    if (s > 0 && previewCacheRepository.isKnownNoPreview(n, h, s)) return@mapNotNull null
+                // T24：目标筛选收进 PrepackExecutor，与计划同源。
+                val targets = prepackExecutor.selectTargets(_modsList.value).map {
                     PrepackService.Target(
-                        treeUri = m.uri.toString(),
-                        bundleName = n,
-                        hashDir = h,
-                        size = s,
-                        displayName = m.name
+                        treeUri = it.treeUri,
+                        bundleName = it.bundleName,
+                        hashDir = it.hashDir,
+                        size = it.size,
+                        displayName = it.displayName
                     )
                 }
                 if (targets.isEmpty()) return@launch

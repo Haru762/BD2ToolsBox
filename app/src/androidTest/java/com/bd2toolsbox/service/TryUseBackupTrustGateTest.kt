@@ -88,6 +88,7 @@ class TryUseBackupTrustGateTest {
             com.bd2toolsbox.feature.install.InstallExecutor(installed, com.bd2toolsbox.core.fileaccess.GameFileAccess.get()),
             com.bd2toolsbox.feature.install.UninstallExecutor(installed),
             com.bd2toolsbox.feature.mods.ScanExecutor(com.bd2toolsbox.core.fileaccess.GameFileAccess.get()),
+            com.bd2toolsbox.feature.preview.PrepackExecutor(com.bd2toolsbox.data.repository.PreviewCacheRepository(ctx0)),
         )
     }
 
