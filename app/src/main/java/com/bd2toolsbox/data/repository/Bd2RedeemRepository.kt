@@ -417,7 +417,11 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
             }
         } catch (e: Exception) {
             Log.w(TAG, "兑换响应解析失败: $body", e)
-            RedeemOutcome(code, false, "官方返回了意外的格式，兑换结果未知", retryable = true)
+            // T31：响应到了但解析不了 —— 兑换结果**未知**，不能当可重试失败或终局失败。
+            RedeemOutcome(
+                code, false, "官方返回了意外的格式，兑换结果未知",
+                retryable = true, errorCode = "UnknownResult"
+            )
         }
     }
 

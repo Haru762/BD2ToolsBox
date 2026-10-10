@@ -1395,6 +1395,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.data.repository.GamekeeBattleV2Renderer
 
 - [ ] **T31 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/cdk/RedeemSummary`（六态 + `summarizeRedemption`，空集合不算全部成功）、`CdkUiState`、`CdkViewModel`（批量/单码共用 Mutex）；`Bd2RedeemRepository` 解析失败补 `UnknownResult`。定向 JVM 9/0/0/0、全量 JVM 635/0/0/0。**`CdkScreen` 接线未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T31 证据](../../refactor/evidence/T31.md)。
+
 **优先级：** P1　**前置：** T20、T08
 
 **文件范围（实施工作区）：**
