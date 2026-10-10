@@ -75,14 +75,17 @@ class BackupFailureSummaryTest {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val character = CharacterRepository(ctx)
         val metadata = com.bd2toolsbox.data.repository.CharacterMetaRepository(ctx)
+        val installed = InstalledModRepository(ctx)
         MainViewModel(
             SavedStateHandle(), ctx, character, ModRepository(ctx, character),
-            InstalledModRepository(ctx), BundleBackupRepository(ctx), PreviewCacheRepository(ctx),
+            installed, BundleBackupRepository(ctx), PreviewCacheRepository(ctx),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
             metadata,
             com.bd2toolsbox.data.repository.AvatarRepository(ctx, metadata),
             com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx),
             com.bd2toolsbox.data.repository.UpdateRepository(ctx),
+            com.bd2toolsbox.feature.install.InstallExecutor(installed, com.bd2toolsbox.core.fileaccess.GameFileAccess.get()),
+            com.bd2toolsbox.feature.install.UninstallExecutor(installed),
         )
     }
 

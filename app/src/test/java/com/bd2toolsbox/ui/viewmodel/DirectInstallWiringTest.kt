@@ -80,6 +80,8 @@ class DirectInstallWiringTest {
             mockk(relaxed = true),
             mockk(relaxed = true),
             mockk(relaxed = true),
+            mockk(relaxed = true), // move executor is not used by direct-install tests
+            mockk(relaxed = true), // uninstall executor is not used by direct-install tests
         ), recordPrivateCalls = true)
         // SAF/primary-storage source read is an Android boundary: copy the host product dir.
         every { vm["copyConvertedSourceInto"](any<Context>(), any<ModInfo>(), any<File>()) } answers {

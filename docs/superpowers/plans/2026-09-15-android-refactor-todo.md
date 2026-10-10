@@ -1050,6 +1050,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.operations.OperationCoordinatorTes
 
 - [ ] **T22 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED。** 已把转换产物提交链与单个 mod 移除的账本判定抽成 `InstallExecutor` / `UninstallExecutor` 并接回 `MainViewModel`；定向 JVM 30/0/0/0、全量 JVM 560/0/0/0、androidTest 源码编译通过。**Service 仍未驱动 executor**（循环仍在 ViewModel），设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T22 证据](../../refactor/evidence/T22.md)。
+
 **优先级：** P0　**前置：** T21、T18、T09
 
 **文件范围（实施工作区）：**

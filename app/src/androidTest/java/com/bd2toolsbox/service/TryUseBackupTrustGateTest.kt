@@ -76,14 +76,17 @@ class TryUseBackupTrustGateTest {
     private val vm: MainViewModel = run {
         val character = CharacterRepository(ctx0)
         val metadata = com.bd2toolsbox.data.repository.CharacterMetaRepository(ctx0)
+        val installed = InstalledModRepository(ctx0)
         MainViewModel(
             SavedStateHandle(), ctx0, character, ModRepository(ctx0, character),
-            InstalledModRepository(ctx0), backupRepo, PreviewCacheRepository(ctx0),
+            installed, backupRepo, PreviewCacheRepository(ctx0),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
             metadata,
             com.bd2toolsbox.data.repository.AvatarRepository(ctx0, metadata),
             com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx0),
             com.bd2toolsbox.data.repository.UpdateRepository(ctx0),
+            com.bd2toolsbox.feature.install.InstallExecutor(installed, com.bd2toolsbox.core.fileaccess.GameFileAccess.get()),
+            com.bd2toolsbox.feature.install.UninstallExecutor(installed),
         )
     }
 

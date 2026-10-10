@@ -36,6 +36,7 @@ import com.bd2toolsbox.core.model.InstalledModRef
 import com.bd2toolsbox.core.model.ModScanProgress
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
+import com.bd2toolsbox.core.model.OperationId
 import com.bd2toolsbox.core.model.PlannedMod
 import com.bd2toolsbox.core.model.PrepackPlan
 import com.bd2toolsbox.core.model.PreviewAssets
@@ -51,7 +52,6 @@ import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
 import com.bd2toolsbox.core.storage.ModSnapshotStore
-import com.bd2toolsbox.core.storage.MoveInstallStaging
 import com.bd2toolsbox.core.storage.OperationJournalStore
 import com.bd2toolsbox.data.repository.RecoveryApplyResult
 import com.bd2toolsbox.core.storage.TargetObservation
@@ -73,7 +73,8 @@ import com.bd2toolsbox.data.repository.CharacterRepository
 import com.bd2toolsbox.data.repository.ConvertedInstallSubmitter
 import com.bd2toolsbox.data.repository.ConvertedSubmitResult
 import com.bd2toolsbox.data.repository.InstalledModRepository
-import com.bd2toolsbox.data.repository.MoveInstallSubmitter
+import com.bd2toolsbox.feature.install.InstallExecutor
+import com.bd2toolsbox.feature.install.UninstallExecutor
 import com.bd2toolsbox.data.repository.LedgerTake
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
@@ -127,6 +128,8 @@ class MainViewModel @Inject constructor(
     private val avatarRepository: AvatarRepository,
     private val spineRuntimeRepository: SpineRuntimeRepository,
     private val updateRepository: UpdateRepository,
+    private val installExecutor: InstallExecutor,
+    private val uninstallExecutor: UninstallExecutor,
 ) : ViewModel() {
 
     companion object {
@@ -3142,70 +3145,20 @@ class MainViewModel @Inject constructor(
 
             moveInProgress = true
             if (!silent) _moveState.value = MoveState.Moving
-            // T19：提交全程需要 ShizukuManager.installConvertedBundle（真正的 Binder 调用），
-            // 自己持有一份占用，不依赖 MainActivity 的 token 是否还在。
-            val moveConnectionToken = ShizukuManager.acquireConnection()
             try {
-                val result = withContext(Dispatchers.IO) {
-                    installedModRepository.checkSubmitAllowed()?.let {
-                        return@withContext ConvertedSubmitResult(false, it, it.message, true)
-                    }
+                val executed = withContext(Dispatchers.IO) {
                     val shared = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Shared")
                     val targets = journalTargetsForJobs(shared, jobs, quality, astc, installedAt)
-                    val prepared = MoveInstallStaging(File(cache, "move_staging_owned")).prepare(shared, targets)
-                    try {
-                        prepared.verifyUnchanged()?.let {
-                            return@withContext ConvertedSubmitResult(false, it, it.message, false)
-                        }
-                        // A partial batch uninstall removes only targets actually restored,
-                        // never the whole ledger and never the failed jobs' records.
-                        val removals = prepared.targets.filter {
-                            it.modUris.isEmpty() && (clearRestored || it.bundleName == removeTarget)
-                        }.map { it.bundleName }
-                        val submitted = MoveInstallSubmitter(installedModRepository).submit(
-                            operationId = "move-" + java.util.UUID.randomUUID(),
-                            targets = prepared.targets,
-                            moveFiles = move@{
-                                for (target in prepared.targets) {
-                                    // Before: these exact bytes are what we froze. After: they did not
-                                    // change while being copied. Only this target is hashed each time.
-                                    prepared.verifyTarget(target.bundleName)?.let { return@move false to it.message }
-                                    val copied = ShizukuManager.installConvertedBundle(
-                                        File(prepared.sourceDir, target.bundleName).absolutePath,
-                                        target.bundleName
-                                    )
-                                    if (!copied.first) return@move copied
-                                    prepared.verifyTarget(target.bundleName)?.let { return@move false to it.message }
-                                }
-                                true to "已成功装入游戏目录！"
-                            },
-                            commitLedger = {
-                                var error = recordSuccessfulInstall(prepared.targets)
-                                if (error == null) {
-                                    for (hash in removals) {
-                                        val removal = installedModRepository.removeByTargetHash(hash)
-                                        reportLedgerWrite(removal, "卸载后清理账本")
-                                        if (removal is LedgerWrite.Failed) {
-                                            error = removal.error
-                                            break
-                                        }
-                                    }
-                                }
-                                error
-                            }
-                        )
-                        if (submitted.completedSuccessfully) {
-                            val warnings = prepared.cleanupSources()
-                            if (warnings.isEmpty()) submitted else submitted.copy(
-                                message = submitted.message + "\n部分源文件已变化或无法清理，已保留：\n" + warnings.joinToString("\n")
-                            )
-                        } else submitted
-                    } finally {
-                        try { prepared.close() } catch (cleanup: Exception) {
-                            Log.w("MainViewModel", "本次暂存清理失败，保留以便检查", cleanup)
-                        }
-                    }
+                    val removals = targets.filter {
+                        it.modUris.isEmpty() && (clearRestored || it.bundleName == removeTarget)
+                    }.map { it.bundleName }.toSet()
+                    installExecutor.move(
+                        OperationId("move-" + java.util.UUID.randomUUID()), shared,
+                        File(cache, "move_staging_owned"), targets, removals
+                    )
                 }
+                executed.ledgerNotices.forEach { reportLedgerWrite(it.result, it.action) }
+                val result = executed.submission
                 if (result.requiresReconciliation) notifyLedgerNotice(result.message)
                 if (result.filesReplaced) {
                     _finalInstallResult.value = _finalInstallResult.value?.copy(command = null)
@@ -3244,7 +3197,6 @@ class MainViewModel @Inject constructor(
                 notifyLedgerNotice(message)
             } finally {
                 moveInProgress = false
-                ShizukuManager.releaseConnection(moveConnectionToken)
             }
         }
     }
@@ -3271,25 +3223,6 @@ class MainViewModel @Inject constructor(
             )
         }
         JournalMoveFacts.target(downloadShared, hashedName, relative, upserts.map { it.modUri }, upserts)
-    }
-
-    /** Ledger records are exactly the upserts already frozen into the journal. */
-    private fun recordSuccessfulInstall(targets: List<JournalTarget>): OperationError? {
-        val records = targets.flatMap { it.recoveryFacts?.ledgerUpserts.orEmpty() }.map {
-            InstalledModRecord(it.modUri, it.modName, it.familyKey, it.snapshotTargetHash,
-                it.quality, it.usedAstc, it.installedAt)
-        }
-        return when (val result = installedModRepository.putAll(records)) {
-            is LedgerWrite.Written -> null
-            is LedgerWrite.Repaired -> {
-                reportLedgerWrite(result, "装入记账")
-                null
-            }
-            is LedgerWrite.Failed -> {
-                reportLedgerWrite(result, "装入记账")
-                result.error
-            }
-        }
     }
 
     /** 不重新扫描 mod 目录，只按最新的检测结果刷新状态徽章。 */
@@ -3338,8 +3271,9 @@ class MainViewModel @Inject constructor(
         // 早先是 detachMod(familyKey, uri)，而账本按 familyKey「一包一条」记 ——
         // 卸同包第二个 mod 时按它自己的 familyKey 查不到记录，detachMod 返回空，
         // 就被当成「该包已无 mod」而整包还原，把同包其他 mod 一起卸了。
-        installedModRepository.remove(mod.uri.toString())?.let { reportLedgerWrite(it, "账本移除") }
-        val remainingUris = installedModRepository.listByTargetHash(targetHash).map { it.modUri }
+        val removal = uninstallExecutor.removeSingleModRecord(mod.uri.toString(), targetHash)
+        removal.notices.forEach { reportLedgerWrite(it.result, it.action) }
+        val remainingUris = removal.remainingModUris
 
         if (remainingUris.isEmpty()) {
             // 该 bundle 已无 mod —— 还原成官方原版
@@ -3353,7 +3287,7 @@ class MainViewModel @Inject constructor(
         if (keep.isEmpty()) {
             // 记录还在但源文件都没了，重打包无从下手，只能还原原版
             Log.w("MainViewModel", "包 $targetHash 尚有 ${remainingUris.size} 条记录但源文件均缺失，改为还原原版")
-            installedModRepository.removeByTargetHash(targetHash)?.let { reportLedgerWrite(it, "账本清理") }
+            uninstallExecutor.clearTargetLedger(targetHash).forEach { reportLedgerWrite(it.result, it.action) }
             initiateUninstall(context, targetHash)
             refreshInstallStates()
             return

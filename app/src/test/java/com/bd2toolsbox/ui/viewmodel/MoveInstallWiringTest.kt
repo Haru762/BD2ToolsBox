@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Environment
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.bd2toolsbox.core.fileaccess.GameFileAccess
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
 import com.bd2toolsbox.core.storage.JvmTestStagingIdentity
@@ -17,6 +18,8 @@ import com.bd2toolsbox.data.repository.CharacterRepository
 import com.bd2toolsbox.data.repository.InstalledModRepository
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
+import com.bd2toolsbox.feature.install.InstallExecutor
+import com.bd2toolsbox.feature.install.UninstallExecutor
 import com.bd2toolsbox.service.ShizukuManager
 import io.mockk.*
 import kotlinx.coroutines.*
@@ -38,6 +41,9 @@ class MoveInstallWiringTest {
     private lateinit var scope: CoroutineScope
     private lateinit var vm: MainViewModel
     private lateinit var repo: InstalledModRepository
+    private lateinit var access: GameFileAccess
+    private lateinit var executor: InstallExecutor
+    private lateinit var uninstallExecutor: UninstallExecutor
     private lateinit var engine: com.bd2toolsbox.core.engine.ModEngine
     private lateinit var shared: File
     private lateinit var game: File
@@ -70,6 +76,20 @@ class MoveInstallWiringTest {
         val character = CharacterRepository(context)
         engine = mockk<com.bd2toolsbox.core.engine.ModEngine>(relaxed = true)
         every { engine.getBundleMeta(any(), any(), any()) } returns null
+        // T22：真正的提交链在 InstallExecutor 里，它通过可注入的 GameFileAccess 写入，
+        // 不再直接调 ShizukuManager 静态桥。这里只替换 Binder/文件边界。
+        access = mockk()
+        val token = Any()
+        every { access.acquire() } returns token
+        every { access.release(any()) } just Runs
+        coEvery { access.installConvertedBundle(any(), any()) } coAnswers {
+            copyCalls++
+            beforeCopy()
+            File(firstArg<String>()).copyRecursively(File(game, secondArg<String>()), overwrite = true)
+            true to "copied"
+        }
+        executor = InstallExecutor(repo, access)
+        uninstallExecutor = UninstallExecutor(repo)
         vm = MainViewModel(
             SavedStateHandle(),
             context,
@@ -83,6 +103,8 @@ class MoveInstallWiringTest {
             mockk(relaxed = true),
             mockk(relaxed = true),
             mockk(relaxed = true),
+            executor,
+            uninstallExecutor,
         )
         setField("installScope", scope)
 
@@ -99,13 +121,7 @@ class MoveInstallWiringTest {
         coEvery { ShizukuManager.listGameBundles() } returns null
         // T19: production `moveFilesToGame` no longer calls the whole-tree
         // `moveDownloadToGame` endpoint (removed from ShizukuManager) — every real
-        // commit path goes through per-target `installConvertedBundle` below.
-        coEvery { ShizukuManager.installConvertedBundle(any(), any()) } coAnswers {
-            copyCalls++
-            beforeCopy()
-            File(firstArg<String>()).copyRecursively(File(game, secondArg<String>()), overwrite = true)
-            true to "copied"
-        }
+        // commit path goes through per-target `installConvertedBundle` in InstallExecutor.
         jobs().value = listOf(job("selected"))
         data(shared, "selected", "approved")
     }
@@ -257,6 +273,9 @@ class MoveInstallWiringTest {
         val failingRepo = spyk(repo)
         every { failingRepo.putAll(any()) } returns LedgerWrite.Failed(OperationError(OperationErrorKind.IO, "disk full"))
         setField("installedModRepository", failingRepo)
+        // T22：真正的提交走 installExecutor，它持有自己的一份仓储引用；
+        // 只换 VM 的字段够不着它，必须把 executor 手里的也换成同一个故障仓储。
+        InstallExecutor::class.java.getDeclaredField("repository").apply { isAccessible = true }.set(executor, failingRepo)
         vm.moveFilesToGame()
         joinMove()
         assertTrue(vm.moveState.value.toString(), vm.moveState.value is MoveState.Failed)
@@ -293,7 +312,7 @@ class MoveInstallWiringTest {
     @Test fun aLaterBundleCopyFailureRetainsTheEntirePendingBatch() = runTest(dispatcher) {
         jobs().value = listOf(job("selected"), job("second"))
         data(shared, "second", "second output")
-        coEvery { ShizukuManager.installConvertedBundle(any(), "second") } returns (false to "Binder disconnected")
+        coEvery { access.installConvertedBundle(any(), "second") } returns (false to "Binder disconnected")
         vm.moveFilesToGame()
         joinMove()
         assertTrue(vm.moveState.value.toString(), vm.moveState.value is MoveState.Failed)
@@ -309,7 +328,7 @@ class MoveInstallWiringTest {
     @Test fun tamperingALaterStagedTargetStopsBeforeItsCopy() = runTest(dispatcher) {
         jobs().value = listOf(job("selected"), job("second"))
         data(shared, "second", "second output")
-        coEvery { ShizukuManager.installConvertedBundle(any(), "selected") } coAnswers {
+        coEvery { access.installConvertedBundle(any(), "selected") } coAnswers {
             copyCalls++
             File(firstArg<String>()).copyRecursively(File(game, "selected"), overwrite = true)
             val staged = File(File(firstArg<String>()).parentFile, "second/hash/__data")

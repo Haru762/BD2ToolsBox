@@ -84,12 +84,13 @@ class SnapshotStoreInstanceReuseTest {
     private fun newViewModel(ctx: Context): MainViewModel {
         val character = CharacterRepository(ctx)
         val metadata = CharacterMetaRepository(ctx)
+        val installed = InstalledModRepository(ctx)
         return MainViewModel(
             SavedStateHandle(),
             ctx,
             character,
             ModRepository(ctx, character),
-            InstalledModRepository(ctx),
+            installed,
             BundleBackupRepository(ctx),
             PreviewCacheRepository(ctx),
             com.bd2toolsbox.core.engine.ChaquopyModEngine(),
@@ -97,6 +98,8 @@ class SnapshotStoreInstanceReuseTest {
             com.bd2toolsbox.data.repository.AvatarRepository(ctx, metadata),
             com.bd2toolsbox.data.repository.SpineRuntimeRepository(ctx),
             com.bd2toolsbox.data.repository.UpdateRepository(ctx),
+            com.bd2toolsbox.feature.install.InstallExecutor(installed, com.bd2toolsbox.core.fileaccess.GameFileAccess.get()),
+            com.bd2toolsbox.feature.install.UninstallExecutor(installed),
         )
     }
 

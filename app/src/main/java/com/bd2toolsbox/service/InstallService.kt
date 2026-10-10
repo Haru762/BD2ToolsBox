@@ -36,10 +36,9 @@ class InstallService : Service() {
 
     companion object {
         private const val TAG = "InstallService"
-        private const val CHANNEL_ID = "install"
-
+        const val CHANNEL_ID = "install"
         /** 和 PrepackService 的 1001 分开，两者可能同时挂着。 */
-        private const val NOTIFICATION_ID = 1002
+        const val NOTIFICATION_ID = 1002
 
         const val ACTION_START = "com.bd2toolsbox.action.INSTALL_START"
         const val ACTION_UPDATE = "com.bd2toolsbox.action.INSTALL_UPDATE"
