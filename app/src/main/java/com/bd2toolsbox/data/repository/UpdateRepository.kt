@@ -255,10 +255,12 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
      * 不做选择界面——用户装的是什么包是明确的，替他选对就行。
      */
     private fun pickApkAsset(release: Release): ApkAsset? {
-        val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
-        return release.apkAssets.firstOrNull { abi.isNotEmpty() && it.name.contains(abi) }
-            ?: release.apkAssets.firstOrNull { it.name.contains("universal") }
-            ?: release.apkAssets.firstOrNull()
+        // T32：按设备 ABI 选包；没有匹配资产就返回 null（明确失败），
+        // 不回退 universal、不退回错误架构。选择规则见 ApkSelector。
+        return com.bd2toolsbox.feature.update.ApkSelector.select(
+            release.apkAssets,
+            Build.SUPPORTED_ABIS.toList()
+        )
     }
 
     private fun parseApkAssets(root: com.google.gson.JsonObject): List<ApkAsset> = try {

@@ -1433,6 +1433,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.feature.cdk.CdkViewModelTest'
 
 - [ ] **T32 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/update/ApkSelector`（按 ABI 顺序选包、独立 token 匹配、无匹配明确失败、不回退 universal），`UpdateRepository.pickApkAsset` 改用它并删掉两级兜底。定向 JVM 11/0/0/0、全量 JVM 646/0/0/0。**UpdateViewModel 与 MainActivity 拆分未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T32 证据](../../refactor/evidence/T32.md)。
+
 **优先级：** P1　**前置：** T20、T15
 
 **文件范围（实施工作区）：**
