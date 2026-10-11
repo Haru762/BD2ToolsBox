@@ -15,6 +15,8 @@ import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import com.bd2toolsbox.core.python.PythonRuntime
 import com.bd2toolsbox.MainActivity
+import com.bd2toolsbox.feature.preview.PrepackExecutor
+import com.bd2toolsbox.feature.preview.PrepackTarget
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -59,10 +61,7 @@ class PrepackService : Service() {
      * T20 要求清理的「已迁移调用链的临时手工 factory / 重复构造」。
      */
     @javax.inject.Inject lateinit var previewCache: PreviewCacheRepository
-
-    // 这两个 data class 放在类体里而不是 companion 里：嵌套在 companion 中的类，
-    // 外部得写 PrepackService.Companion.Target 才引用得到，而放这一层就是自然的
-    // PrepackService.Target。Kotlin 的嵌套类默认是静态的，companion 里照样能用。
+    @javax.inject.Inject lateinit var prepackExecutor: PrepackExecutor
 
     /**
      * 一次预解包的进度。null 表示没在跑。
@@ -81,13 +80,6 @@ class PrepackService : Service() {
     )
 
     /** 待解包的一项。[treeUri] 是产物文件夹（bundle 名那层）的 SAF URI。 */
-    data class Target(
-        val treeUri: String,
-        val bundleName: String,
-        val hashDir: String,
-        val size: Long,
-        val displayName: String
-    )
 
     companion object {
         private const val TAG = "PrepackService"
@@ -103,6 +95,9 @@ class PrepackService : Service() {
         const val ACTION_START = "com.bd2toolsbox.action.PREPACK_START"
         const val ACTION_CANCEL = "com.bd2toolsbox.action.PREPACK_CANCEL"
 
+        /** 任务 ID（T24）：交接时校验，避免「后一次 start 的列表被当成前一次的」 */
+        private const val EXTRA_TASK_ID = "taskId"
+
         private val _progress = MutableStateFlow<Progress?>(null)
         val progress: StateFlow<Progress?> = _progress.asStateFlow()
 
@@ -114,14 +109,28 @@ class PrepackService : Service() {
          * onStartCommand 取走后置空；START_NOT_STICKY 不会被系统重启，没有「重启后
          * 丢失」的窗口。
          */
+        /**
+         * 待办目标的进程内交接（T24：**带任务 ID**）。
+         *
+         * 以前只有一个裸列表：如果 start 成功但 onStartCommand 晚到，期间又来了
+         * 第二次 start，服务取到的是**后一次**的列表却以为是前一次的 —— 任务与
+         * 参数错配。现在连 ID 一起存，取走时校验 ID 一致，不一致就丢弃（宁可让用户
+         * 重按一次，也不能拿错参数去写缓存）。
+         */
         @Volatile
-        private var pendingTargets: List<Target>? = null
+        private var pendingRun: PendingRun? = null
+
+        /** 一次待执行的预解包：任务 ID + 目标。 */
+        data class PendingRun(val id: String, val targets: List<PrepackTarget>)
 
         /** 返回 false 表示系统拒绝启动前台服务（与 InstallService.start 同口径，T15）。 */
-        fun start(context: Context, targets: List<Target>): Boolean {
+        fun start(context: Context, targets: List<PrepackTarget>, taskId: String = java.util.UUID.randomUUID().toString()): Boolean {
             if (targets.isEmpty()) return true
-            pendingTargets = targets
-            val intent = Intent(context, PrepackService::class.java).apply { action = ACTION_START }
+            pendingRun = PendingRun(taskId, targets)
+            val intent = Intent(context, PrepackService::class.java).apply {
+                action = ACTION_START
+                putExtra(EXTRA_TASK_ID, taskId)
+            }
             // API 26+ 起后台启动的服务必须用 startForegroundService，且服务要在 5 秒内
             // 调 startForeground。正常由用户点击触发、app 在前台；但点完立刻切走时
             // Android 12+ 仍会抛 ForegroundServiceStartNotAllowedException。
@@ -130,7 +139,7 @@ class PrepackService : Service() {
                 true
             } catch (e: Exception) {
                 // 目标没被服务取走，清掉，免得下一次 start 带上这批旧目标
-                pendingTargets = null
+                pendingRun = null
                 Log.w(TAG, "前台服务启动被拒: ${e.message}")
                 false
             }
@@ -182,7 +191,18 @@ class PrepackService : Service() {
 
         // 目标从 companion 取（见 start() 的注释，Intent 装不下大批量）。取走即清，
         // 重复的 start 意图不会把同一批目标解两遍。
-        val targets = pendingTargets.also { pendingTargets = null }.orEmpty()
+        val pending = pendingRun
+        pendingRun = null
+        // T24：交接与本次启动必须是同一个任务 —— 否则宁可让用户重按一次，
+        // 也不能拿错参数去写缓存（后一次 start 的列表被当成前一次的）。
+        val intentTaskId = intent?.getStringExtra(EXTRA_TASK_ID)
+        if (pending != null && intentTaskId != null && pending.id != intentTaskId) {
+            Log.w(TAG, "任务 ID 不匹配（交接 ${pending.id}，启动 $intentTaskId），丢弃本次交接")
+            startForeground(NOTIFICATION_ID, buildNotification(0, 0, ""))
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        val targets = pending?.targets.orEmpty()
         if (targets.isEmpty()) {
             // 经 startForegroundService 拉起的服务必须先挂通知再退，否则系统按
             // 「5 秒内没 startForeground」直接判死。这里挂上随即收掉，通知一闪而过。
@@ -207,7 +227,7 @@ class PrepackService : Service() {
         return START_NOT_STICKY
     }
 
-    private suspend fun run(targets: List<Target>) {
+    private suspend fun run(targets: List<PrepackTarget>) {
         cancelRequested = false
         val ctx = applicationContext
         try {
@@ -284,27 +304,19 @@ class PrepackService : Service() {
                         // python 线程上，不能查协程 isActive，读旗标）
                         cancelRequested
                     }
-                    // 合并/负缓存/丢弃的三选一判定不在这里做，交给 [PrepackCommitPolicy]。
-                    // 判定本身不是 Android 逻辑，抽出去之后「预解包完成后缓存里到底留下
-                    // 什么」才能用真实仓储 + 真实文件断言 —— Service 在 JVM 单测里起不来。
-                    val decision = PrepackCommitPolicy.decide(
+                    // T24：判定与落地交给执行器（服务只负责跑）。
+                    prepackExecutor.commit(
+                        target = t,
                         unpackOk = ok,
-                        srcSize = t.size,
                         fileNames = outDir.listFiles()
                             ?.filter { it.isFile }
                             ?.map { it.name }
                             .orEmpty()
                     )
-                    PrepackCommitPolicy.apply(
-                        previewCache, t.bundleName, t.hashDir, t.size, decision
-                    )
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    // 中途出错同样按「丢弃」处理：清掉半成品，不记负缓存，留重试机会
-                    PrepackCommitPolicy.apply(
-                        previewCache, t.bundleName, t.hashDir, t.size,
-                        PrepackCommitPolicy.Decision.DISCARD
-                    )
+                    // 中途出错同样按「丢弃」处理（T24：走执行器）
+                    prepackExecutor.discard(t)
                 } finally {
                     if (tmp.exists()) tmp.delete()
                 }

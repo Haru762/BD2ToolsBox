@@ -1,4 +1,4 @@
-package com.bd2toolsbox.service
+package com.bd2toolsbox.feature.preview
 
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
 

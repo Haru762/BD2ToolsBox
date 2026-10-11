@@ -2,8 +2,8 @@ package com.bd2toolsbox.integration
 
 import android.content.Context
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
-import com.bd2toolsbox.service.PrepackCommitPolicy
-import com.bd2toolsbox.service.PrepackCommitPolicy.Decision
+import com.bd2toolsbox.feature.preview.PrepackCommitPolicy
+import com.bd2toolsbox.feature.preview.PrepackCommitPolicy.Decision
 import io.mockk.*
 import org.junit.After
 import org.junit.Before

@@ -1039,16 +1039,9 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // T24：目标筛选收进 PrepackExecutor，与计划同源。
-                val targets = prepackExecutor.selectTargets(_modsList.value).map {
-                    PrepackService.Target(
-                        treeUri = it.treeUri,
-                        bundleName = it.bundleName,
-                        hashDir = it.hashDir,
-                        size = it.size,
-                        displayName = it.displayName
-                    )
-                }
+                // T24：目标筛选收进 PrepackExecutor，与计划同源；执行器产出的
+                // PrepackTarget 直接就是服务要的类型（不再是两套同形类型互转）。
+                val targets = prepackExecutor.selectTargets(_modsList.value)
                 if (targets.isEmpty()) return@launch
                 Log.d("MainViewModel", "交给前台服务预解包 ${targets.size} 个")
                 if (!PrepackService.start(context, targets)) {

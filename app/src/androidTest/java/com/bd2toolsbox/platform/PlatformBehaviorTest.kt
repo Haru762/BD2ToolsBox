@@ -255,7 +255,7 @@ class PlatformBehaviorTest {
         val refusing = refusingContext()
         assertFalse("InstallService.start 被拒必须返回 false", InstallService.start(refusing, 1))
         assertFalse("ScanService.start 被拒必须返回 false", ScanService.start(refusing, 1))
-        val target = PrepackService.Target("content://t15/tree/x", "b", "h", 1L, "t15")
+        val target = com.bd2toolsbox.feature.preview.PrepackTarget("content://t15/tree/x", "b", "h", 1L, "t15")
         assertFalse("PrepackService.start 被拒必须返回 false", PrepackService.start(refusing, listOf(target)))
         SystemClock.sleep(1_000)
         for (cls in listOf(InstallService::class.java, ScanService::class.java, PrepackService::class.java)) {

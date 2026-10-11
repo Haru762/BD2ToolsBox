@@ -56,6 +56,26 @@ class PrepackExecutor @Inject constructor(
     }
 
     /**
+     * 解包结果的落盘判定（T24）：合并 / 记负缓存 / 丢弃三选一。
+     *
+     * 由**服务**在解包后调用 —— 服务负责「跑」，判定与落地归执行器。
+     * 判定本身不碰 Android（只读文件名与缓存仓储），所以能在 JVM 用例里直接断言
+     * 「预解包完成后缓存里到底留下什么」。
+     */
+    fun commit(target: PrepackTarget, unpackOk: Boolean, fileNames: Collection<String>) {
+        val decision = PrepackCommitPolicy.decide(unpackOk, target.size, fileNames)
+        PrepackCommitPolicy.apply(cache, target.bundleName, target.hashDir, target.size, decision)
+    }
+
+    /** 出错/取消时的丢弃路径：清掉半成品，不记负缓存，留重试机会。 */
+    fun discard(target: PrepackTarget) {
+        PrepackCommitPolicy.apply(
+            cache, target.bundleName, target.hashDir, target.size,
+            PrepackCommitPolicy.Decision.DISCARD
+        )
+    }
+
+    /**
      * 空间计划。`todo` 与 [selectTargets] 同源；`alreadyCached` 只数有效缓存，
      * 负缓存既不算缓存也不算待办（`alreadyCached + todo <= total`）。
      * 膨胀比优先用已有缓存实测值，无样本退回 1.6。
