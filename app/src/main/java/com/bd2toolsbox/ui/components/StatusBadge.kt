@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bd2toolsbox.data.model.ModInstallState
 
 /**
  * 状态语义（T41）。**状态标签与操作按钮是两回事**：
@@ -29,13 +30,19 @@ enum class StatusTone(val label: String) {
     ERROR("错误");
 
     companion object {
-        /** 安装状态的语义映射（唯一落点，页面不各自判断）。 */
-        fun forInstallState(state: String?): StatusTone = when (state) {
-            "INSTALLED" -> SUCCESS
-            "NOT_INSTALLED" -> NEUTRAL
-            "NEEDS_REAPPLY", "MODIFIED" -> WARNING
-            "FAILED", "INVALID" -> ERROR
-            else -> INFO
+        /**
+         * 安装状态的语义映射（**唯一落点**，页面不各自判断）。
+         *
+         * 这里接的是真实枚举 [ModInstallState]，不是猜出来的字符串名 —— 早先的版本按
+         * `"INSTALLED"/"NEEDS_REAPPLY"` 这类字符串匹配，而真实枚举是
+         * `STALE`/`MODIFIED_BY_OTHER`/`UNVERIFIED`，一个都对不上，映射实际从未生效。
+         */
+        fun forInstallState(state: ModInstallState): StatusTone = when (state) {
+            ModInstallState.INSTALLED -> SUCCESS
+            ModInstallState.STALE -> WARNING
+            ModInstallState.MODIFIED_BY_OTHER -> WARNING
+            ModInstallState.UNVERIFIED -> INFO
+            ModInstallState.NOT_INSTALLED -> NEUTRAL
         }
     }
 }

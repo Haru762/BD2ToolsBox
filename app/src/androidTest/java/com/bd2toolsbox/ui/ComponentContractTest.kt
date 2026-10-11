@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bd2toolsbox.data.model.ModInstallState
 import com.bd2toolsbox.ui.components.AppDialog
 import com.bd2toolsbox.ui.components.StatusBadge
 import com.bd2toolsbox.ui.components.StatusTone
@@ -46,11 +47,16 @@ class ComponentContractTest {
 
     @Test
     fun installStateToneMappingIsCentralised() {
-        assertEquals(StatusTone.SUCCESS, StatusTone.forInstallState("INSTALLED"))
-        assertEquals(StatusTone.NEUTRAL, StatusTone.forInstallState("NOT_INSTALLED"))
-        assertEquals(StatusTone.WARNING, StatusTone.forInstallState("NEEDS_REAPPLY"))
-        assertEquals(StatusTone.ERROR, StatusTone.forInstallState("FAILED"))
-        assertEquals(StatusTone.INFO, StatusTone.forInstallState(null))
+        // 真实枚举（不是猜出来的字符串名）：早先的字符串版与真实枚举一个都对不上，
+        // 映射实际从未生效 —— 这条用例现在直接钉真实枚举。
+        assertEquals(StatusTone.SUCCESS, StatusTone.forInstallState(ModInstallState.INSTALLED))
+        assertEquals(StatusTone.NEUTRAL, StatusTone.forInstallState(ModInstallState.NOT_INSTALLED))
+        assertEquals(StatusTone.WARNING, StatusTone.forInstallState(ModInstallState.STALE))
+        assertEquals(
+            StatusTone.WARNING,
+            StatusTone.forInstallState(ModInstallState.MODIFIED_BY_OTHER)
+        )
+        assertEquals(StatusTone.INFO, StatusTone.forInstallState(ModInstallState.UNVERIFIED))
     }
 
     @Test

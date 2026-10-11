@@ -47,6 +47,9 @@ import com.bd2toolsbox.feature.mods.ModListProjection
 import com.bd2toolsbox.data.model.categoryOf
 import com.bd2toolsbox.data.model.isUnknownCharacter
 import com.bd2toolsbox.data.model.ResolutionState
+import com.bd2toolsbox.ui.components.ModActionButtons
+import com.bd2toolsbox.ui.components.StatusBadge
+import com.bd2toolsbox.ui.components.StatusTone
 import com.bd2toolsbox.ui.viewmodel.MainViewModel
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.launch
@@ -1136,6 +1139,12 @@ fun ModCard(
             )
         }
 
+        // T42：预览与「更多」是**可见入口**，长按保留为熟手捷径但不再是唯一入口。
+        // 两枚按钮互不重叠：点预览不改变选择，点更多不启动预览。
+        ModActionButtons(
+            onPreview = onPreview,
+            onMore = { menuOpen = true }
+        )
         ModCardMenu(
             expanded = menuOpen,
             onDismiss = { menuOpen = false },
@@ -1236,35 +1245,23 @@ private fun formatSize(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-/** mod 在游戏里的当前状态。未装入时不显示，避免上百个条目上全是徽章。 */
+/**
+ * mod 在游戏里的当前状态（T41）。未装入时不显示，避免上百个条目上全是徽章。
+ *
+ * 配色与语义都走 [StatusBadge] + [StatusTone]：以前这里是自算的
+ * `color.copy(alpha = 0.14f)` 底色 + 硬编码文案，与其它页面的状态标签是两套事实。
+ */
 @Composable
 private fun InstallStateBadge(state: ModInstallState) {
-    val (label, color) = when (state) {
-        ModInstallState.INSTALLED ->
-            "生效中" to MaterialTheme.colorScheme.primary
-        ModInstallState.STALE ->
-            "需重新应用" to MaterialTheme.colorScheme.error
-        ModInstallState.MODIFIED_BY_OTHER ->
-            "被其他工具修改" to MaterialTheme.colorScheme.tertiary
-        ModInstallState.UNVERIFIED ->
-            "未校验" to MaterialTheme.colorScheme.onSurfaceVariant
+    val label = when (state) {
+        ModInstallState.INSTALLED -> "生效中"
+        ModInstallState.STALE -> "需重新应用"
+        ModInstallState.MODIFIED_BY_OTHER -> "被其他工具修改"
+        ModInstallState.UNVERIFIED -> "未校验"
         ModInstallState.NOT_INSTALLED -> return
     }
-
     Spacer(Modifier.width(6.dp))
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(color.copy(alpha = 0.14f))
-            .padding(horizontal = 6.dp, vertical = 1.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            maxLines = 1
-        )
-    }
+    StatusBadge(text = label, tone = StatusTone.forInstallState(state))
 }
 
 @Composable
