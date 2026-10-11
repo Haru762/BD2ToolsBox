@@ -14,10 +14,13 @@ import com.bd2toolsbox.data.model.ModKind
 import com.bd2toolsbox.data.model.ResolutionState
 import com.bd2toolsbox.data.model.ResolvedTarget
 import com.bd2toolsbox.core.engine.ModEngine
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.google.gson.reflect.TypeToken
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -73,7 +76,8 @@ class ModRepository(
         private val MOD_ASSET_EXTENSIONS = setOf("skel", "json", "atlas", "png", "jpg", "jpeg")
     }
 
-    private val gson = Gson()
+    private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
+    private val modCacheSerializer = MapSerializer(String.serializer(), ModCacheInfo.serializer())
 
     // ---------------------------------------------------------------- 数据形状
 
@@ -576,15 +580,18 @@ class ModRepository(
         val file = modCacheFile()
         if (!file.exists()) return ModCache(0L, emptyMap())
         return try {
-            val root = JsonParser.parseString(file.readText()).asJsonObject
-            if (root.get("schemaVersion")?.takeIf { it.isJsonPrimitive }?.asInt != MOD_CACHE_SCHEMA) {
+            val root = Json.parseToJsonElement(file.readText()) as? JsonObject
+                ?: return ModCache(0L, emptyMap())
+            val schema = (root["schemaVersion"] as? JsonPrimitive)?.takeIf { !it.isString }
+                ?.content?.toIntOrNull()
+            if (schema != MOD_CACHE_SCHEMA) {
                 return ModCache(0L, emptyMap())
             }
-            val stamp = root.get("indexStamp")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+            val stamp = (root["indexStamp"] as? JsonPrimitive)?.takeIf { !it.isString }
+                ?.content?.toLongOrNull() ?: 0L
             if (stamp != currentIndexStamp()) return ModCache(0L, emptyMap())
-            val entries = root.get("entries")?.takeIf { it.isJsonObject }?.asJsonObject ?: return ModCache(0L, emptyMap())
-            val type = object : TypeToken<Map<String, ModCacheInfo>>() {}.type
-            ModCache(stamp, gson.fromJson(entries, type) ?: emptyMap())
+            val entries = root["entries"] as? JsonObject ?: return ModCache(0L, emptyMap())
+            ModCache(stamp, json.decodeFromJsonElement(modCacheSerializer, entries))
         } catch (e: Exception) {
             e.printStackTrace()
             ModCache(0L, emptyMap())
@@ -593,16 +600,17 @@ class ModRepository(
 
     private fun saveModCache(cache: Map<String, ModCacheInfo>, indexStamp: Long) {
         try {
-            val root = JsonObject().apply {
-                addProperty("schemaVersion", MOD_CACHE_SCHEMA)
-                addProperty("indexStamp", indexStamp)
-                add("entries", gson.toJsonTree(cache))
+            val root = buildJsonObject {
+                put("schemaVersion", MOD_CACHE_SCHEMA)
+                put("indexStamp", indexStamp)
+                put("entries", json.encodeToJsonElement(modCacheSerializer, cache))
             }
+            val text = root.toString()
             val tmp = File(context.filesDir, MOD_CACHE_FILENAME + ".part")
-            tmp.writeText(gson.toJson(root))
+            tmp.writeText(text)
             if (!tmp.renameTo(modCacheFile())) {
                 // 极少数文件系统 rename 失败，退回直写
-                modCacheFile().writeText(gson.toJson(root))
+                modCacheFile().writeText(text)
                 tmp.delete()
             }
         } catch (e: Exception) {

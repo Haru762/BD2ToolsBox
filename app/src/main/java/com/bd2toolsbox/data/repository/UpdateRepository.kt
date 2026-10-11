@@ -5,7 +5,10 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.util.Log
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -119,8 +122,8 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
     }
 
     private fun parseRelease(body: String): Release? = try {
-        val root = JsonParser.parseString(body).takeIf { it.isJsonObject }?.asJsonObject
-        val version = root?.get("tag_name")?.takeIf { it.isJsonPrimitive }?.asString
+        val root = Json.parseToJsonElement(body) as? JsonObject
+        val version = (root?.get("tag_name") as? JsonPrimitive)?.content
             .orEmpty().trim().removePrefix("v").removePrefix("V").trim()
         when {
             root == null || version.isEmpty() -> {
@@ -130,8 +133,8 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
             else -> Release(
                 version = version,
                 // body 可能是 JsonNull（release 没写说明），那也算空串
-                notes = root.get("body")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty(),
-                htmlUrl = root.get("html_url")?.takeIf { it.isJsonPrimitive }?.asString
+                notes = (root["body"] as? JsonPrimitive)?.content.orEmpty(),
+                htmlUrl = (root["html_url"] as? JsonPrimitive)?.content
                     ?.takeIf { it.isNotBlank() } ?: RELEASES_PAGE,
                 apkAssets = parseApkAssets(root)
             )
@@ -263,15 +266,15 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
         )
     }
 
-    private fun parseApkAssets(root: com.google.gson.JsonObject): List<ApkAsset> = try {
-        root.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray
+    private fun parseApkAssets(root: JsonObject): List<ApkAsset> = try {
+        (root["assets"] as? JsonArray)
             ?.mapNotNull { el ->
-                val a = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-                val name = a.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+                val a = el as? JsonObject ?: return@mapNotNull null
+                val name = (a["name"] as? JsonPrimitive)?.content
                     ?.takeIf { it.endsWith(".apk") } ?: return@mapNotNull null
-                val url = a.get("browser_download_url")?.takeIf { it.isJsonPrimitive }?.asString
+                val url = (a["browser_download_url"] as? JsonPrimitive)?.content
                     ?: return@mapNotNull null
-                ApkAsset(name, url, a.get("size")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L)
+                ApkAsset(name, url, (a["size"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0L)
             }.orEmpty()
     } catch (e: Exception) {
         Log.w(TAG, "assets 解析失败", e)

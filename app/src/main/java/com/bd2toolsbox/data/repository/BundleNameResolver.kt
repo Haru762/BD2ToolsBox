@@ -2,8 +2,9 @@ package com.bd2toolsbox.data.repository
 
 import android.content.Context
 import com.bd2toolsbox.core.engine.ModEngine
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import java.io.File
 
@@ -37,8 +38,8 @@ class BundleNameResolver(private val context: Context) {
         private const val CHARACTERS_FILENAME = "characters.json"
     }
 
-    private val gson = Gson()
-
+    private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
+    private val aliasSerializer = MapSerializer(String.serializer(), String.serializer())
     /** 自动命名的结果。[matched] 为 false 表示没认出来，只能显示 hash。 */
     data class Resolved(
         val character: String,
@@ -360,8 +361,7 @@ class BundleNameResolver(private val context: Context) {
         val f = aliasFile()
         if (!f.exists()) return emptyMap()
         return try {
-            val type = object : TypeToken<Map<String, String>>() {}.type
-            gson.fromJson<Map<String, String>>(f.readText(), type) ?: emptyMap()
+            json.decodeFromString(aliasSerializer, f.readText())
         } catch (e: Exception) {
             e.printStackTrace()
             emptyMap()
@@ -375,7 +375,7 @@ class BundleNameResolver(private val context: Context) {
         val current = loadAliases().toMutableMap()
         if (alias.isBlank()) current.remove(bundleName) else current[bundleName] = alias.trim()
         try {
-            aliasFile().writeText(gson.toJson(current))
+            aliasFile().writeText(json.encodeToString(aliasSerializer, current))
         } catch (e: Exception) {
             e.printStackTrace()
         }

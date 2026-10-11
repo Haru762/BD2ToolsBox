@@ -8,10 +8,11 @@ import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.core.storage.Digester
 import com.bd2toolsbox.core.storage.StreamingDigest
 import com.bd2toolsbox.core.storage.TrustedBaseline
-import com.google.gson.JsonNull
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.google.gson.JsonPrimitive
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 import java.io.OutputStream
 
@@ -401,16 +402,16 @@ class BundleBackupRepository(
      * `null` 的字段仍然写出来（`JsonNull`）而不是省略 —— 键集合因此永远等于
      * [META_KEYS]，机器检查与读侧都能依赖「键一定在」。读侧把 `JsonNull` 当 null。
      */
-    private fun toJson(meta: BackupMeta): String = JsonObject().apply {
-        addProperty(KEY_SCHEMA_VERSION, meta.schemaVersion)
-        addProperty(KEY_SHA256, meta.sha256)
-        addProperty(KEY_SIZE, meta.size)
-        addProperty(KEY_SOURCE, meta.source)
-        addProperty(KEY_CATALOG_VERIFIED, meta.catalogVerified)
-        add(KEY_ANCHORED_INPUT_SIZE, meta.anchoredInputSize?.let { JsonPrimitive(it) } ?: JsonNull.INSTANCE)
-        add(KEY_CATALOG_VERSION, meta.catalogVersion?.let { JsonPrimitive(it) } ?: JsonNull.INSTANCE)
-        add(KEY_QUALITY, meta.quality?.let { JsonPrimitive(it) } ?: JsonNull.INSTANCE)
-        addProperty(KEY_CAPTURED_AT, meta.capturedAt)
+    private fun toJson(meta: BackupMeta): String = buildJsonObject {
+        put(KEY_SCHEMA_VERSION, meta.schemaVersion)
+        put(KEY_SHA256, meta.sha256)
+        put(KEY_SIZE, meta.size)
+        put(KEY_SOURCE, meta.source)
+        put(KEY_CATALOG_VERIFIED, meta.catalogVerified)
+        put(KEY_ANCHORED_INPUT_SIZE, meta.anchoredInputSize)
+        put(KEY_CATALOG_VERSION, meta.catalogVersion)
+        put(KEY_QUALITY, meta.quality)
+        put(KEY_CAPTURED_AT, meta.capturedAt)
     }.toString()
 
     /**
@@ -424,10 +425,11 @@ class BundleBackupRepository(
         val file = metaFile(bundleName, hashDir)
         if (!file.isFile) return null
         return try {
-            val root = JsonParser.parseString(file.readText(Charsets.UTF_8))
-            if (!root.isJsonObject) return null
-            val obj: JsonObject = root.asJsonObject
-            val version = obj.get(KEY_SCHEMA_VERSION)?.takeIf { it.isJsonPrimitive }?.asInt
+            val root = Json.parseToJsonElement(file.readText(Charsets.UTF_8))
+            if (root !is JsonObject) return null
+            val obj: JsonObject = root
+            val version = (obj[KEY_SCHEMA_VERSION] as? JsonPrimitive)?.takeIf { !it.isString }
+                ?.content?.toIntOrNull()
                 ?: return null
             if (version != META_SCHEMA_VERSION) return null
             val meta = BackupMeta(
@@ -450,15 +452,21 @@ class BundleBackupRepository(
 
     /** 取字符串成员；缺失或 `null` 字面量都返回 null（**不抛**，由调用方决定要不要作废）。 */
     private fun JsonObject.str(key: String): String? =
-        get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+        (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
     /** 取长整数成员；缺失、`null` 字面量或不是数字都返回 null。 */
     private fun JsonObject.long(key: String): Long? =
-        get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asLong
+        (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toLongOrNull()
 
     /** 取布尔成员；**只认 JSON 布尔**，缺失或别的类型返回 null（不在读侧做类型强转）。 */
     private fun JsonObject.bool(key: String): Boolean? =
-        get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }?.asBoolean
+        (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.let {
+            when (it) {
+                "true" -> true
+                "false" -> false
+                else -> null
+            }
+        }
 
     private val TAG = "BundleBackupRepository"
 }

@@ -2,6 +2,7 @@ package com.bd2toolsbox.data.model
 
 import android.net.Uri
 import com.bd2toolsbox.core.model.RepackPlanJob
+import kotlinx.serialization.Serializable
 
 enum class ResolutionState {
     KNOWN,
@@ -85,6 +86,7 @@ enum class MatchStrategy {
     NONE
 }
 
+@Serializable
 data class ResolvedTarget(
     val originalFileName: String,
     val normalizedCandidates: List<String> = emptyList(),
@@ -232,6 +234,7 @@ data class ModInfo(
     val outdatedCurrentHash: String? = null
 )
 
+@Serializable
 data class ModCacheInfo(
     val uriString: String,
     val lastModified: Long,

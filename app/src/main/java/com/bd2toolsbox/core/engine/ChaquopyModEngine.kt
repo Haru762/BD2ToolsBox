@@ -2,7 +2,10 @@ package com.bd2toolsbox.core.engine
 
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
@@ -168,7 +171,7 @@ class ChaquopyModEngine(
             onFailure = { false to null }) { cells ->
             if (!cells[0].asBool()) return@callMain false to null
             val json = cells[1].asText()
-            require(JsonParser.parseString(json).isJsonObject) { "Expected a resolver JSON object" }
+            require(Json.parseToJsonElement(json) is JsonObject) { "Expected a resolver JSON object" }
             true to JSONObject(json)
         }
 
@@ -179,7 +182,7 @@ class ChaquopyModEngine(
             onFailure = { false to null }) { cells ->
             if (!cells[0].asBool()) return@callMain false to null
             val json = cells[1].asText()
-            require(JsonParser.parseString(json).isJsonArray) { "Expected a resolver JSON array" }
+            require(Json.parseToJsonElement(json) is JsonArray) { "Expected a resolver JSON array" }
             true to JSONArray(json)
         }
 
@@ -190,9 +193,9 @@ class ChaquopyModEngine(
     override fun checkScanNeeded(outputDir: String, bundleListJson: String, onProgress: (String) -> Unit): String =
         callMain("check_scan_needed", 1, outputDir, bundleListJson, Progress(onProgress), onFailure = { throw it }) { cells ->
             val json = cells[0].asText()
-            val parsed = JsonParser.parseString(json)
-            require(parsed.isJsonArray && parsed.asJsonArray.all {
-                it.isJsonPrimitive && it.asJsonPrimitive.isString
+            val parsed = Json.parseToJsonElement(json)
+            require(parsed is JsonArray && parsed.all {
+                it is JsonPrimitive && it.isString
             }) { "Expected a scan list of bundle names" }
             json
         }
