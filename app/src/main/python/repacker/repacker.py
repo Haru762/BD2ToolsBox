@@ -180,16 +180,31 @@ def compress_image_astc(image_bytes, width, height, block_x, block_y):
 # 工作目录索引
 # ---------------------------------------------------------------------------
 
+# T62：目录级媒体扫描隔离标记（.nomedia）与历史忽略项不参与资源枚举/索引/重打包。
+IGNORED_ENTRY_NAMES = frozenset({'.nomedia', '.modfile'})
+
+
+def should_ignore_entry(name):
+    """该条目是否应从 MOD 资源枚举/索引/重打包输入中排除。
+
+    `.nomedia` 是 T62 新增的目录级媒体扫描隔离标记：它必须**恰好**是 `.nomedia`
+    （`.nomedia.txt` 不算），且不参与生成产物内容、不导致假「MOD 已修改」。
+    """
+    return name in IGNORED_ENTRY_NAMES
+
+
 def _build_file_index(working_dir):
     """一次遍历建好文件索引，取代反复 os.walk。
 
     返回 {'skel_json': {词干: (类型, 路径, 目录)}, 'all_files': [路径]}。
-    .old 备份目录跳过。
+    `.old` 备份目录与 `.nomedia`/`.modfile` 标记跳过。
     """
     index = {'skel_json': {}, 'all_files': []}
     for root, dirs, files in os.walk(working_dir):
         dirs[:] = [d for d in dirs if d != '.old']
         for f in files:
+            if should_ignore_entry(f):
+                continue
             filepath = os.path.join(root, f)
             index['all_files'].append(filepath)
             lowered = f.lower()

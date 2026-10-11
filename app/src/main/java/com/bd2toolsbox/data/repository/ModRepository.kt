@@ -129,7 +129,9 @@ class ModRepository(
 
     private fun shouldIgnoreModEntry(entryName: String?): Boolean {
         val name = entryName?.substringAfterLast('/')?.trim()?.lowercase() ?: return true
-        return name.isEmpty() || name == ".modfile" || name.endsWith(".modfile")
+        // T62：`.nomedia` 媒体扫描隔离标记同样不参与 MOD 枚举/签名/重打包输入。
+        return name.isEmpty() || name == ".modfile" || name.endsWith(".modfile") ||
+            com.bd2toolsbox.core.storage.MediaExclusionManager.shouldSkipInModScan(name)
     }
 
     private fun isModAssetFile(name: String): Boolean {

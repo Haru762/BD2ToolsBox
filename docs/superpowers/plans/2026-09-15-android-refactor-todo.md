@@ -1548,6 +1548,8 @@ Show-Bd2Dependencies -Dependency 'coil'
 
 - [ ] **T62 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `core/storage/MediaExclusionManager`（`.nomedia` 精确同名、混合用途根默认拒绝、已有文件不覆盖、provider 改名不算保护、MOD 扫描跳过标记）；`ModRepository`/`MainViewModel` 的 MOD 忽略逻辑接入；Python `repacker.should_ignore_entry` + `_build_file_index` 排除，新增 `test_nomedia_ignored.py`。JVM 10/0/0/0 + 全量 677/0/0/0、Python 9/9。**SAF/设置页/导出时序接线与设备验收未完成**，不勾 DONE。见 [T62 证据](../../refactor/evidence/T62.md)。
+
 **优先级：** P1　**前置：** T19、T27、T28、T29、T33
 
 **状态：** 根据用户补充问题提出的方案，未实施。仅应用新建且用途明确的 MOD 专用目录可默认设置；对用户已有目录的写入必须确认影响范围。
