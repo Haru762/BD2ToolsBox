@@ -21,16 +21,16 @@ import androidx.core.view.WindowCompat
  * @param dynamicColor          跟随壁纸取色（Material You），Android 12+ 有效，
  *                              优先于 [theme]（系统给的整套色没法叠预设）。
  * @param theme                 手选配色预设，见 [AppTheme]。
- * @param transparentBackground 用自定义壁纸时置 true：把 background/surface 抽掉
- *                              不透明度让壁纸透出来，状态栏随之透明。
- *                              （分层重构属 T40；[appColorScheme] 本身不接收透明度。）
+ *
+ * T40：**不再接收壁纸透明度**。全局 ColorScheme 始终不透明；壁纸由独立的背景层
+ * （[com.bd2toolsbox.ui.components.WallpaperBackdrop]）展示，文字密集区域用
+ * [com.bd2toolsbox.ui.components.AppScreenSurface] 的不透明底色。
  */
 @Composable
 fun BD2ModManagerTheme(
     themeMode: ThemeMode = ThemeMode.LIGHT,
     dynamicColor: Boolean = false,
     theme: AppTheme = AppTheme.PURPLE,
-    transparentBackground: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -44,15 +44,8 @@ fun BD2ModManagerTheme(
     } else {
         null
     }
-    val base = appColorScheme(theme, dark, dynamicScheme)
-
-    // 壁纸模式只透明这两个面色 —— surfaceVariant（头像位/徽章底）和各种
-    // container 必须保持不透明，否则文字直接压在壁纸上没法读
-    val colorScheme = if (transparentBackground) {
-        base.copy(background = Color.Transparent, surface = Color.Transparent)
-    } else {
-        base
-    }
+    // 语义面色恒不透明（appColorScheme 保证 alpha=1）；壁纸不修改全局 ColorScheme。
+    val colorScheme = appColorScheme(theme, dark, dynamicScheme)
 
     val view = LocalView.current
     if (!view.isInEditMode) {

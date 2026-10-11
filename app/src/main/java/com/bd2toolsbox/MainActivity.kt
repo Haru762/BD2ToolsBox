@@ -187,9 +187,9 @@ class MainActivity : ComponentActivity() {
             BD2ModManagerTheme(
                 themeMode = themeMode,
                 dynamicColor = dynamicColor,
-                theme = appTheme,
-                // 有壁纸时把 background/surface 抽成透明，壁纸才透得出来
-                transparentBackground = wallpaperUri != null
+                theme = appTheme
+                // T40：不再把 background/surface 抽透明。全局 ColorScheme 恒不透明，
+                // 壁纸由下面的独立背景层展示，内容区用不透明底色。
             ) {
                 // 壁纸铺在所有内容之下。放在 Theme 之内是为了拿到 colorScheme
                 // 算遮罩色 —— 遮罩必须跟着配色走，否则换了主题色壁纸上会压着一层
@@ -276,6 +276,9 @@ class MainActivity : ComponentActivity() {
                 val modSourceDirs by viewModel.modSourceDirs.collectAsState()
 
                 Scaffold(
+                    // T40：根容器透明，壁纸背景层在下面；页头等无底色区域能看到壁纸，
+                    // 文字密集的内容区由内层不透明 Surface 负责可读性。
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
                     topBar = {
                         if (currentTab == 1) {
                             // 攻略页头部：只有标题与设置齿轮。齿轮与 Mods 页是同一个
@@ -597,12 +600,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     ) { padding ->
-                        Surface(
+                        com.bd2toolsbox.ui.components.AppScreenSurface(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
-                            // 有壁纸时 colorScheme.background 已经是透明的（见 Theme），
-                            // 所以这里照常引用它即可 —— 不必在这儿再判一次。
                             color = MaterialTheme.colorScheme.background
                         ) {
                             when (currentTab) {

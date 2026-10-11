@@ -1808,6 +1808,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.ui.theme.ThemeContractTest'
 
 - [ ] **T40 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 删除主题的 `transparentBackground`（全局 ColorScheme 恒不透明，壁纸不修改它）；新增 `AppScreenSurface`（文字密集区不透明底色）；根 `Scaffold(containerColor = Transparent)` 让独立壁纸背景层在页头/留白可见。x86_64 设备 `WallpaperReadabilityTest` **3/3 PASS**（真实壁纸下 background/surface/onBackground alpha 均为 1，深色同样，null 安全）。**页头/留白构图与截图观感验收未做**、arm64 未跑、无独立审查，不勾 DONE。见 [T40 证据](../../refactor/evidence/T40.md)。
+
 **优先级：** P0　**前置：** T39
 
 **文件范围（实施工作区）：**
