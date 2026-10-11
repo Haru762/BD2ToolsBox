@@ -1,7 +1,9 @@
 package com.bd2toolsbox.data.repository
 
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -11,7 +13,7 @@ import org.junit.Test
  * v2 阵容渲染器的回归测试 —— 用公开接口抓下的真实夹具（wiki-v2-detail-2238.json，
  * Ⅶ战术教材1）断言渲染结果，规格来自交接验收清单。
  *
- * Renderer 是纯 Kotlin + Gson（无 Android 依赖），可在 JVM 直跑。
+ * Renderer 是纯 Kotlin（无 Android 依赖），可在 JVM 直跑。
  *
  * 夹具从 **classpath** 读取（app/src/test/resources/fixtures/wiki/wiki-v2-detail-2238.json），
  * 由仓库外真实样本脱敏派生：删掉 meta（request/trace id）、author（账号/头像/IP 归属）、
@@ -28,8 +30,7 @@ class GamekeeBattleV2RendererTest {
                 "classpath 夹具缺失：$FIXTURE_PATH（应位于 app/src/test/resources$FIXTURE_PATH）"
             )
         val text = stream.use { it.readBytes().toString(Charsets.UTF_8) }
-        return JsonParser.parseString(text).asJsonObject
-            .get("data").asJsonObject
+        return (Json.parseToJsonElement(text) as JsonObject)["data"] as JsonObject
     }
 
     private companion object {
@@ -95,8 +96,7 @@ class GamekeeBattleV2RendererTest {
 
     @Test
     fun `备注转义`() {
-        val data = JsonObject()
-        data.addProperty("content", """{"roundInfos":[{"remark":"<b>注入</b>\"'&\n换行"}]}""")
+        val data = buildJsonObject { put("content", """{"roundInfos":[{"remark":"<b>注入</b>\"'&\n换行"}]}""") }
         val html = GamekeeBattleV2Renderer.render(1L, data)
         assertFalse("尖括号必须转义", html.contains("<b>注入</b>"))
         assertTrue("转义后的实体存在", html.contains("&lt;b&gt;注入&lt;/b&gt;"))
@@ -106,8 +106,7 @@ class GamekeeBattleV2RendererTest {
 
     @Test
     fun `异常content抛出而非静默`() {
-        val data = JsonObject()
-        data.addProperty("content", "not-json{")
+        val data = buildJsonObject { put("content", "not-json{") }
         try {
             GamekeeBattleV2Renderer.render(1L, data)
             throw AssertionError("应抛异常")
@@ -118,8 +117,7 @@ class GamekeeBattleV2RendererTest {
 
     @Test
     fun `空回合数组抛出`() {
-        val data = JsonObject()
-        data.addProperty("content", """{"roundInfos":[]}""")
+        val data = buildJsonObject { put("content", """{"roundInfos":[]}""") }
         try {
             GamekeeBattleV2Renderer.render(1L, data)
             throw AssertionError("空回合应抛异常")

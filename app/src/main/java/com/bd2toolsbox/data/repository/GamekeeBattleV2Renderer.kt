@@ -1,24 +1,25 @@
 package com.bd2toolsbox.data.repository
 
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /** v2 模板的纯 HTML 渲染；不依赖 Android，便于用接口夹具做回归测试。 */
 internal object GamekeeBattleV2Renderer {
     fun render(battleId: Long, data: JsonObject): String {
-        val raw = requireNotNull(data.get("content")) { "v2 阵容缺少 content" }
-        val parsed = if (raw.isJsonPrimitive) JsonParser.parseString(raw.asString) else raw
-        require(parsed.isJsonObject) { "v2 阵容 content 不是对象" }
-        val content = parsed.asJsonObject
+        val raw = requireNotNull(data["content"]) { "v2 阵容缺少 content" }
+        val parsed = if (raw is JsonPrimitive) Json.parseToJsonElement(raw.content) else raw
+        require(parsed is JsonObject) { "v2 阵容 content 不是对象" }
+        val content = parsed
         val roundInfos = requireNotNull(content.array("roundInfos")) { "v2 阵容缺少回合" }
-        require(roundInfos.size() > 0) { "v2 阵容回合为空" }
+        require(roundInfos.size > 0) { "v2 阵容回合为空" }
 
         // 魔兽模式的 roundInfos 外面还套着队伍，每队有自己的 roundInfos / spSetting。
-        val grouped = roundInfos.any { it.isJsonObject && it.asJsonObject.array("roundInfos") != null }
+        val grouped = roundInfos.any { it is JsonObject && (it).array("roundInfos") != null }
         val groups = if (grouped) roundInfos.map {
-            require(it.isJsonObject) { "v2 队伍数据异常" }
-            it.asJsonObject
+            require(it is JsonObject) { "v2 队伍数据异常" }
+            it
         } else listOf(content)
         val title = data.text("title").ifBlank { content.text("title") }
             .ifBlank { "阵容组件 #$battleId" }
@@ -37,13 +38,13 @@ internal object GamekeeBattleV2Renderer {
             }
             out.appendSettings(group.obj("spSetting") ?: content.obj("spSetting"))
             rounds.forEachIndexed { roundIndex, round ->
-                require(round.isJsonObject) { "v2 回合数据异常" }
+                require(round is JsonObject) { "v2 回合数据异常" }
                 out.appendRound(
-                    round.asJsonObject, roundOffset + roundIndex, battleType, showEnemy,
+                    round, roundOffset + roundIndex, battleType, showEnemy,
                     group.obj("unionSetting") ?: content.obj("unionSetting")
                 )
             }
-            roundOffset += rounds.size()
+            roundOffset += rounds.size
             if (grouped) out.appendRemark("队伍备注", group.text("remark"))
         }
         require(roundOffset > 0) { "v2 阵容没有可展示的回合" }
@@ -59,9 +60,9 @@ internal object GamekeeBattleV2Renderer {
         showEnemy: Boolean,
         defaultUnion: JsonObject?
     ) {
-        val positions = round.array("ourPositionData") ?: JsonArray()
+        val positions = round.array("ourPositionData") ?: JsonArray(emptyList())
         val actions = round.array("ourSortData")?.mapNotNull {
-            it.takeIf { value -> value.isJsonObject }?.asJsonObject
+            it as? JsonObject
         }?.filter { hasActor(it) }.orEmpty()
         // 官网普通/魔兽为 4 列，联合为 5 列。保留数组里的空位，不能按角色 index 排序。
         val columns = if (battleType == 2) 5 else 4
@@ -69,11 +70,11 @@ internal object GamekeeBattleV2Renderer {
         if (roundIndex == 0) append(" open")
         append("><summary>回合 ").append(roundIndex * 2 + 1).append("</summary>")
         append("<div class=\"b-team-t\">己方站位 · 面向右侧 · 角标为行动顺序</div>")
-        if (positions.size() > 0) appendGrid(positions, columns, actions)
+        if (positions.size > 0) appendGrid(positions, columns, actions)
         else append("<p class=\"b-v2-note\">未提供己方站位数据</p>")
 
         val enemies = round.array("enemyData")
-        if (showEnemy && enemies != null && enemies.size() > 0) {
+        if (showEnemy && enemies != null && enemies.size > 0) {
             append("<details class=\"b-v2-enemy\"><summary>敌方站位</summary>")
             appendGrid(enemies, columns, emptyList(), enemy = true)
             append("</details>")
@@ -117,7 +118,7 @@ internal object GamekeeBattleV2Renderer {
         if (columns == 5) append(" b-v2-grid-5")
         append("\">")
         cells.forEachIndexed { index, element ->
-            val actor = element.takeIf { it.isJsonObject }?.asJsonObject
+            val actor = element as? JsonObject
             val occupied = hasActor(actor)
             append("<div class=\"b-v2-cell")
             if (!occupied) append(" b-v2-empty")
@@ -164,7 +165,7 @@ internal object GamekeeBattleV2Renderer {
         append("</div>")
         val details = mutableListOf<String>()
         actor.obj("currentStrengthen")?.text("name")?.takeIf { it.isNotBlank() }?.let { details.add(it) }
-        actor.array("currentPotential")?.size()?.takeIf { it > 0 }?.let { details.add("潜力 " + it + " 项") }
+        actor.array("currentPotential")?.size?.takeIf { it > 0 }?.let { details.add("潜力 " + it + " 项") }
         if (actionType == "skills") {
             val calc = actor.obj("calcData")
             val sp = calc?.text("sp").orEmpty().ifBlank {
@@ -232,7 +233,7 @@ internal object GamekeeBattleV2Renderer {
     }
 
     private fun JsonObject.text(name: String): String =
-        get(name)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+        (this[name] as? JsonPrimitive)?.content.orEmpty()
 
     private fun JsonObject.number(name: String): Int? = text(name).toIntOrNull()
 
@@ -243,10 +244,10 @@ internal object GamekeeBattleV2Renderer {
     }
 
     private fun JsonObject.obj(name: String): JsonObject? =
-        get(name)?.takeIf { it.isJsonObject }?.asJsonObject
+        this[name] as? JsonObject
 
     private fun JsonObject.array(name: String): JsonArray? =
-        get(name)?.takeIf { it.isJsonArray }?.asJsonArray
+        this[name] as? JsonArray
 
     private fun esc(value: String): String = value.replace("&", "&amp;")
         .replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")

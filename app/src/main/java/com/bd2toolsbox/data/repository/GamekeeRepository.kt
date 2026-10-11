@@ -9,9 +9,12 @@ import com.bd2toolsbox.data.model.GuideArticle
 import com.bd2toolsbox.data.model.GuideCategory
 import com.bd2toolsbox.data.model.GuideComment
 import com.bd2toolsbox.data.model.GuideDetail
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -148,7 +151,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             val dictBody = httpGet("$API/v1/entry/query-entry-list-from-cdn")
             val iconsBody = dictBody?.let { dict ->
                 try {
-                    val cdnPath = JsonParser.parseString(dict).asJsonObject
+                    val cdnPath = Json.parseToJsonElement(dict).asJsonObject
                         .get("data")?.takeIf { it.isJsonObject }?.asJsonObject
                         ?.get("cdn_path")?.takeIf { it.isJsonPrimitive }?.asString
                     absolutize(cdnPath)?.let { httpGet(it, referer = true) }
@@ -157,9 +160,9 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                 }
             }
             val data = parseTree(
-                JsonParser.parseString(treeBody),
-                dictBody?.let { JsonParser.parseString(it) },
-                iconsBody?.let { JsonParser.parseString(it) }
+                Json.parseToJsonElement(treeBody),
+                dictBody?.let { Json.parseToJsonElement(it) },
+                iconsBody?.let { Json.parseToJsonElement(it) }
             )
             treeCache = data
             try {
@@ -179,9 +182,9 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
         treeCache?.let { return@withContext it }
         try {
             if (treeFile.exists()) {
-                val cachedPair = JsonParser.parseString(treeFile.readText()).asJsonObject
+                val cachedPair = Json.parseToJsonElement(treeFile.readText()).asJsonObject
                 return@withContext parseTree(
-                    cachedPair.get("entry"), cachedPair.get("dict"), cachedPair.get("icons")
+                    requireNotNull(cachedPair["entry"]), cachedPair["dict"], cachedPair["icons"]
                 ).also { treeCache = it }
             }
         } catch (e: Exception) {
@@ -192,9 +195,9 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
     }
 
     private fun parseTree(
-        root: com.google.gson.JsonElement,
-        dictRoot: com.google.gson.JsonElement?,
-        iconsRoot: com.google.gson.JsonElement?
+        root: JsonElement,
+        dictRoot: JsonElement?,
+        iconsRoot: JsonElement?
     ): TreeData {
         // 取数一律用 get + takeIf 而不是 getAsJsonArray/getAsJsonObject：
         // 后者遇到字段为 JsonNull（gamekee 的叶子节点就是 "child":null）时
@@ -299,7 +302,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
     suspend fun loadCdk(): List<CdkItem> = withContext(Dispatchers.IO) {
         val body = httpPostJson("$API/v1/game/cdk2/queryByServerIdPageList", """{"server_id":12}""")
             ?: throw RuntimeException("无法连接 GameKee，请检查网络")
-        val arr = JsonParser.parseString(body).asJsonObject
+        val arr = Json.parseToJsonElement(body).asJsonObject
             .get("data")?.takeIf { it.isJsonArray }?.asJsonArray
             ?: return@withContext emptyList()
         val now = System.currentTimeMillis() / 1000
@@ -335,7 +338,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             val body = httpGet(
                 "$API/v1/content/searchArticle?keyword=$kw&page=$page&limit=$PAGE_SIZE"
             ) ?: throw RuntimeException("无法连接 GameKee，请检查网络")
-            val arr = JsonParser.parseString(body).asJsonObject
+            val arr = Json.parseToJsonElement(body).asJsonObject
                 .get("data")?.takeIf { it.isJsonArray }?.asJsonArray
                 ?: return@withContext ArticlePage(emptyList(), false)
             val items = arr.mapNotNull { el ->
@@ -376,7 +379,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                 throw RuntimeException("无法连接 GameKee，请检查网络")
             }
             // data 可能为 null（文章被删/接口异常），见 parseTree 处的说明
-            val detail = JsonParser.parseString(detailBody).asJsonObject
+            val detail = Json.parseToJsonElement(detailBody).asJsonObject
                 .get("data")?.takeIf { it.isJsonObject }?.asJsonObject
                 ?: throw RuntimeException("文章不存在或已被删除")
             val title = detail.get("title")?.takeIf { it.isJsonPrimitive }?.asString ?: article.title
@@ -403,14 +406,14 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             val cdnUrl = absolutize(cdnUrlRaw)
             val cdnBody = cdnUrl?.let { httpGet(it, referer = true) }
                 ?: throw RuntimeException("正文下载失败，可稍后重试")
-            val cdnJson = JsonParser.parseString(cdnBody).asJsonObject
+            val cdnJson = Json.parseToJsonElement(cdnBody).asJsonObject
 
             val inner = cdnJson.get("content")?.takeIf { it.isJsonPrimitive }?.asString
                 ?: throw RuntimeException("正文为空")
 
             val bodyHtml = when {
                 contentType == 1 || inner.trimStart().startsWith("[") -> {
-                    val blocks = JsonParser.parseString(inner).asJsonArray
+                    val blocks = Json.parseToJsonElement(inner).asJsonArray
                     // v2/v3 使用不同接口和 ID 空间，预取及渲染都用 (version, id) 查表。
                     val battleCards = HashMap<BattleRef, String>()
                     collectBattleRefs(blocks).forEach { ref ->
@@ -521,7 +524,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
 
     /** 递归收集 Slate 块树中受支持的阵容引用，包含 tabs / 折叠块中的组件。 */
     private fun collectBattleRefs(
-        node: com.google.gson.JsonElement,
+        node: JsonElement,
         into: MutableSet<BattleRef> = linkedSetOf()
     ): Set<BattleRef> {
         when {
@@ -531,7 +534,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                     val data = o.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
                     parseBattleRef(data)?.let { into.add(it) }
                 }
-                o.entrySet().forEach { collectBattleRefs(it.value, into) }
+                o.entries.forEach { collectBattleRefs(it.value, into) }
             }
             node.isJsonArray -> node.asJsonArray.forEach { collectBattleRefs(it, into) }
         }
@@ -562,7 +565,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             else -> null
         } ?: return@withContext null
         val html = try {
-            val response = JsonParser.parseString(body).asJsonObject
+            val response = Json.parseToJsonElement(body).asJsonObject
             val code = response.get("code")?.takeIf { it.isJsonPrimitive }?.asString?.toIntOrNull()
             if (code != 0) {
                 Log.w(TAG, "阵容接口未返回成功: $ref (code=$code)")
@@ -607,9 +610,9 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
         sb.append("</span></div>")
 
         // team 是「队伍 → 成员」两层；单队不标号，多队标 队伍1/2
-        val teams = data.get("team")?.takeIf { it.isJsonArray }?.asJsonArray ?: JsonArray()
+        val teams = data.get("team")?.takeIf { it.isJsonArray }?.asJsonArray ?: JsonArray(emptyList())
         teams.forEachIndexed { ti, teamEl ->
-            if (teams.size() > 1) sb.append("<div class=\"b-team-t\">队伍").append(ti + 1).append("</div>")
+            if (teams.size > 1) sb.append("<div class=\"b-team-t\">队伍").append(ti + 1).append("</div>")
             sb.append("<div class=\"b-team\">")
             teamEl.takeIf { it.isJsonArray }?.asJsonArray?.forEach { mEl ->
                 val m = mEl.asJsonObject
@@ -658,7 +661,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                     "$API/v1/comment/pageList?limit=20&page_no=$page&page_total=1&total=0&content_id=$contentId"
                 ) ?: break
                 val arr = try {
-                    JsonParser.parseString(body).asJsonObject
+                    Json.parseToJsonElement(body).asJsonObject
                         .get("data")?.takeIf { it.isJsonArray }?.asJsonArray
                 } catch (e: Exception) {
                     Log.w(TAG, "评论解析失败: $contentId p$page", e); null
@@ -744,7 +747,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
     }
 
     private fun parseEmojiMap(body: String): Map<String, String>? = try {
-        val arr = JsonParser.parseString(body).asJsonObject
+        val arr = Json.parseToJsonElement(body).asJsonObject
             .get("data")?.takeIf { it.isJsonArray }?.asJsonArray
         if (arr == null) null else {
             val map = HashMap<String, String>()
@@ -791,7 +794,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
      */
     private fun renderTableDocument(inner: String): String {
         return try {
-            val rows = JsonParser.parseString(inner).asJsonObject
+            val rows = Json.parseToJsonElement(inner).asJsonObject
                 .get("baseData")?.takeIf { it.isJsonArray }?.asJsonArray
                 ?: return inner
             val sb = StringBuilder("<table class=\"gktable\">")
@@ -839,7 +842,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             val out = StringBuilder()
             children?.forEach { c ->
                 val o = c.asJsonObject
-                out.append(if (o.has("type") && o.get("type").isJsonPrimitive) renderBlock(o, context)
+                out.append(if (o.has("type") && o["type"]?.isJsonPrimitive == true) renderBlock(o, context)
                            else renderRuns(o))
             }
             return out.toString()
@@ -847,7 +850,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
         return when (b.get("type")?.asString) {
             "paragraph" -> "<p${blockAttrs(b)}>${inlineChildren(b)}</p>"
             "header1", "header2", "header3", "header4", "header5", "header6" ->
-                "<h${b["type"].asString.takeLast(1)}>${inlineChildren(b)}</h${b["type"].asString.takeLast(1)}>"
+                "<h${b.getValue("type").asString.takeLast(1)}>${inlineChildren(b)}</h${b.getValue("type").asString.takeLast(1)}>"
             "divider" -> "<hr>"
             "highlight-block" -> {
                 val emoji = b.get("emoji")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
@@ -909,7 +912,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             "table" -> "<table>${renderChildren()}</table>"
             "table-row" -> "<tr>${renderChildren()}</tr>"
             "table-cell" -> "<td>${renderChildren()}</td>"
-            else -> if (children != null && children.size() > 0)
+            else -> if (children != null && children.size > 0)
                 "<p${blockAttrs(b)}>${inlineChildren(b)}</p>"
             else ""
         }
@@ -929,7 +932,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
         return renderRuns(children)
     }
 
-    private fun renderRuns(children: com.google.gson.JsonElement): String {
+    private fun renderRuns(children: JsonElement): String {
         val sb = StringBuilder()
         if (!children.isJsonArray) return sb.toString()
         for (c in children.asJsonArray) {
@@ -938,7 +941,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                 o.get("type")?.asString == "image" -> {
                     val src = absolutize(o.get("src")?.takeIf { it.isJsonPrimitive }?.asString)
                     if (src != null) {
-                        val style = o.getAsJsonObject("style")
+                        val style = o["style"] as? JsonObject
                         val w = style?.get("width")?.takeIf { it.isJsonPrimitive }?.asString
                         sb.append("<img src=\"").append(esc(src)).append("\" alt=\"")
                             .append(esc(o.get("alt")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()))
@@ -950,7 +953,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                 o.get("type")?.asString == "link" -> {
                     val url = o.get("url")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
                     sb.append("<a href=\"").append(esc(url)).append("\">")
-                        .append(renderRuns(o.get("children") ?: com.google.gson.JsonNull.INSTANCE))
+                        .append(renderRuns(o.get("children") ?: JsonNull))
                         .append("</a>")
                 }
                 o.get("type")?.asString == "mention-doc" -> {
@@ -965,7 +968,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                         .append("📄 ").append(esc(label)).append("</a>")
                 }
                 o.has("text") -> {
-                    var text = esc(o.get("text").asString)
+                    var text = esc(o.getValue("text").asString)
                     if (text.isEmpty()) continue
                     if (o.get("bold")?.takeIf { it.isJsonPrimitive }?.asBoolean == true)
                         text = "<b>$text</b>"
@@ -973,7 +976,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                         text = "<i>$text</i>"
                     if (o.get("underline")?.takeIf { it.isJsonPrimitive }?.asBoolean == true)
                         text = "<u>$text</u>"
-                    if (text != esc(o.get("text").asString) ||
+                    if (text != esc(o.getValue("text").asString) ||
                         o.has("color") || o.has("fontSize") ||
                         o.has("bgColor") || o.has("background")
                     ) {
@@ -1391,3 +1394,22 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
 }
+
+// ---------------------------------------------------------------------------
+// T35：kotlinx JsonElement 上的只读访问器，名字与旧 Gson 调用点保持一致，
+// 让动态 Wiki JSON 的读取代码逐行不变（类型换成 kotlinx）。
+// ---------------------------------------------------------------------------
+
+private val JsonElement.isJsonObject: Boolean get() = this is JsonObject
+private val JsonElement.isJsonArray: Boolean get() = this is JsonArray
+private val JsonElement.isJsonPrimitive: Boolean get() = this is JsonPrimitive
+private val JsonElement.asJsonObject: JsonObject get() = this as JsonObject
+private val JsonElement.asJsonArray: JsonArray get() = this as JsonArray
+private val JsonElement.asJsonPrimitive: JsonPrimitive get() = this as JsonPrimitive
+
+private val JsonElement.asString: String get() = (this as JsonPrimitive).content
+private val JsonElement.asLong: Long get() = (this as JsonPrimitive).content.toLong()
+private val JsonElement.asInt: Int get() = (this as JsonPrimitive).content.toInt()
+private val JsonElement.asBoolean: Boolean get() = (this as JsonPrimitive).content.toBoolean()
+
+private fun JsonObject.has(key: String): Boolean = containsKey(key)
