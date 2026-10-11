@@ -1996,6 +1996,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.DestructiveActionConfirmationTest'
 
 - [ ] **T45 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** `RedeemSummary` 新增 `canRetry`（由结果性质决定）与 `resultLabel`（成功标签只在真有成功时出现，未知优先）；新增账号维度 `AccountRedeemResult`/`BatchRedeemSummary` 与 `describe`；新增 `CdkResultPresentation`（`toneFor`/`RedeemAccountResultRow`/`batchResultText`）。JVM `RedeemSummaryTest` **10/10 PASS**、设备 `CdkResultPresentationTest` **5/5 PASS**；首轮 JVM FAILED 暴露并修复了「纯未知集合被标成待重试」的真实语义错误。**CdkScreen 未接线、CdkUiState 无账号维度字段、复制/历史/账号切换反馈未统一**、arm64 未跑、无独立审查，不勾 DONE。见 [T45 证据](../../refactor/evidence/T45.md)。
+
 **优先级：** P1　**前置：** T41、T31
 
 **文件范围（实施工作区）：**

@@ -57,6 +57,14 @@ data class RedeemSummary(
     /** 全部已兑换（成功或服务器已兑换）。空集合**不**算。 */
     val allRedeemed: Boolean
         get() = total > 0 && successCount + alreadyRedeemedCount == total
+
+    /**
+     * 是否值得重试（T45）。
+     *
+     * **由结果性质决定**，不看「按钮会不会误导」：只有仍可重试的失败/未处理/结果未知
+     * 才允许重试；全成功或全终局失败时重试没有意义。
+     */
+    val canRetry: Boolean get() = pendingCount > 0 || unknownCount > 0
 }
 
 /** 按处置结局汇总。 */
@@ -81,3 +89,74 @@ fun summarizeRedemption(dispositions: Collection<RedeemDisposition>): RedeemSumm
 /** 便捷：直接从官方响应集合汇总。 */
 fun summarizeOutcomes(outcomes: Collection<RedeemOutcome>): RedeemSummary =
     summarizeRedemption(outcomes.map { dispositionOf(it) })
+
+// ------------------------------------------------------------------ T45：账号维度
+
+/** 单个账号在一批兑换码上的结果。 */
+data class AccountRedeemResult(
+    val accountId: String,
+    val accountName: String,
+    val summary: RedeemSummary
+)
+
+/**
+ * 批量兑换的**账号维度**汇总（T45）。
+ *
+ * 汇总只用于展示统计，**不覆盖历史数据**：历史仍由 [com.bd2toolsbox.data.model.RedeemRecord]
+ * 独立持有；这里算出来的东西不写回历史。
+ */
+data class BatchRedeemSummary(val perAccount: List<AccountRedeemResult>) {
+
+    /** 全账号合计。 */
+    val aggregate: RedeemSummary
+        get() = perAccount.fold(RedeemSummary()) { acc, r ->
+            RedeemSummary(
+                successCount = acc.successCount + r.summary.successCount,
+                alreadyRedeemedCount = acc.alreadyRedeemedCount + r.summary.alreadyRedeemedCount,
+                terminalFailureCount = acc.terminalFailureCount + r.summary.terminalFailureCount,
+                pendingCount = acc.pendingCount + r.summary.pendingCount,
+                unknownCount = acc.unknownCount + r.summary.unknownCount
+            )
+        }
+
+    /** 有可重试内容的账号（入口是否允许重试的依据）。 */
+    val retryableAccounts: List<AccountRedeemResult>
+        get() = perAccount.filter { it.summary.canRetry }
+
+    val canRetry: Boolean get() = retryableAccounts.isNotEmpty()
+}
+
+/**
+ * 行级/账号级标签（T45 的核心修复）。
+ *
+ * **绝不因为「都处理完了」就输出成功**：成功标签只在真的有成功时出现；
+ * 全终局失败给失败标签，混合给「部分成功」。
+ */
+fun RedeemSummary.resultLabel(): String = when {
+    total == 0 -> "未处理"
+    // 有未知就不能声称失败也不能声称成功 —— 未知优先。
+    successCount == 0 && alreadyRedeemedCount == 0 && unknownCount > 0 -> "结果未知"
+    successCount == 0 && alreadyRedeemedCount == 0 && terminalFailureCount > 0 && !canRetry ->
+        "兑换失败"
+    successCount == 0 && alreadyRedeemedCount == 0 -> "待重试"
+    allRedeemed -> "已兑换"
+    else -> "部分成功"
+}
+
+/**
+ * 账号级说明文案：数量 + 原因。全失败时**必须**带原因，不出现成功字样。
+ */
+fun AccountRedeemResult.describe(): String {
+    val s = summary
+    val parts = buildList {
+        if (s.successCount > 0) add("成功 ${s.successCount}")
+        if (s.alreadyRedeemedCount > 0) add("已兑换 ${s.alreadyRedeemedCount}")
+        if (s.terminalFailureCount > 0) add("失败 ${s.terminalFailureCount}")
+        if (s.pendingCount > 0) add("待重试 ${s.pendingCount}")
+        if (s.unknownCount > 0) add("结果未知 ${s.unknownCount}")
+    }
+    return "$accountName：" + if (parts.isEmpty()) "未处理" else parts.joinToString("，")
+}
+
+/** 账号级标签：与 [describe] 一致，成功只在真有成功时出现。 */
+fun AccountRedeemResult.label(): String = summary.resultLabel()
