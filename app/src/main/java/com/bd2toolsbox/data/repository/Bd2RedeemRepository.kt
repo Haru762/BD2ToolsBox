@@ -4,9 +4,14 @@ import android.util.Log
 import com.bd2toolsbox.data.model.CdkItem
 import com.bd2toolsbox.data.model.RedeemOutcome
 import com.bd2toolsbox.data.model.RedeemRecord
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -107,9 +112,8 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
     }
 
     private fun readUserIds(): List<String> = try {
-        JsonParser.parseString(prefs.getString("user_ids", "[]"))
-            .takeIf { it.isJsonArray }?.asJsonArray
-            ?.mapNotNull { el -> el.takeIf { it.isJsonPrimitive }?.asString }
+        (Json.parseToJsonElement(prefs.getString("user_ids", "[]") ?: "[]") as? JsonArray)
+            ?.mapNotNull { el -> (el as? JsonPrimitive)?.takeIf { it.isString }?.content }
             .orEmpty()
     } catch (e: Exception) {
         Log.w(TAG, "账号列表读取失败", e)
@@ -133,9 +137,10 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
             writeUserIds(readUserIds().filterNot { it == userId })
             try {
                 if (autoDoneFile.exists()) {
-                    val root = JsonParser.parseString(autoDoneFile.readText())
-                        .takeIf { it.isJsonObject }?.asJsonObject ?: return@withLock
-                    if (root.remove(userId) != null) autoDoneFile.writeText(root.toString())
+                    val root = readJsonObjectOrNew(autoDoneFile)
+                    if (root.containsKey(userId)) {
+                        autoDoneFile.writeText(JsonObject(root.filterKeys { it != userId }).toString())
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "自动兑换清单清理失败", e)
@@ -145,7 +150,7 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
 
     private fun writeUserIds(list: List<String>) {
         prefs.edit()
-            .putString("user_ids", JsonArray().apply { list.forEach(::add) }.toString())
+            .putString("user_ids", buildJsonArray { list.forEach { add(it) } }.toString())
             .apply()
     }
 
@@ -166,15 +171,14 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
     /** 本地成功记录，新 → 旧。就是个几 KB 的本地文件，直接读即可。 */
     fun loadHistory(): List<RedeemRecord> = try {
         if (!historyFile.exists()) emptyList()
-        else JsonParser.parseString(historyFile.readText())
-            .takeIf { it.isJsonArray }?.asJsonArray
+        else (Json.parseToJsonElement(historyFile.readText()) as? JsonArray)
             ?.mapNotNull { el ->
-                if (!el.isJsonObject) return@mapNotNull null
-                val o = el.asJsonObject
+                val o = el as? JsonObject ?: return@mapNotNull null
                 RedeemRecord(
                     code = o.str("code") ?: return@mapNotNull null,
                     reward = o.str("reward").orEmpty(),
-                    at = o.get("at")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
+                    at = (o["at"] as? JsonPrimitive)?.takeIf { !it.isString }
+                        ?.content?.toLongOrNull() ?: 0L,
                     userId = o.str("user_id").orEmpty()
                 )
             }.orEmpty()
@@ -199,14 +203,15 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
     }
 
     private fun writeHistory(list: List<RedeemRecord>) {
-        val arr = JsonArray()
-        list.forEach { r ->
-            arr.add(JsonObject().apply {
-                addProperty("code", r.code)
-                addProperty("reward", r.reward)
-                addProperty("at", r.at)
-                addProperty("user_id", r.userId)
-            })
+        val arr = buildJsonArray {
+            list.forEach { r ->
+                add(buildJsonObject {
+                    put("code", r.code)
+                    put("reward", r.reward)
+                    put("at", r.at)
+                    put("user_id", r.userId)
+                })
+            }
         }
         historyFile.writeText(arr.toString())
     }
@@ -222,10 +227,9 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
      */
     fun autoDoneCodes(userId: String): Set<String> = try {
         if (!autoDoneFile.exists()) emptySet()
-        else JsonParser.parseString(autoDoneFile.readText())
-            .takeIf { it.isJsonObject }?.asJsonObject
-            ?.get(userId)?.takeIf { it.isJsonArray }?.asJsonArray
-            ?.mapNotNull { el -> el.takeIf { it.isJsonPrimitive }?.asString }
+        else (Json.parseToJsonElement(autoDoneFile.readText()) as? JsonObject)
+            ?.get(userId)?.let { it as? JsonArray }
+            ?.mapNotNull { el -> (el as? JsonPrimitive)?.takeIf { it.isString }?.content }
             ?.toSet() ?: emptySet()
     } catch (e: Exception) {
         Log.w(TAG, "自动兑换清单读取失败", e)
@@ -238,11 +242,15 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
             // 读不动的坏文件按空表重建自愈——否则坏文件会让 autoDoneCodes 永远返回
             // 空集、自动兑换每轮全量重发，卡死在原地。
             val root = readJsonObjectOrNew(autoDoneFile)
-            val merged = (root.get(userId)?.takeIf { it.isJsonArray }?.asJsonArray
-                ?.mapNotNull { el -> el.takeIf { it.isJsonPrimitive }?.asString }
-                ?: emptyList()) + codes
-            root.add(userId, JsonArray().apply { merged.distinct().forEach(::add) })
-            autoDoneFile.writeText(root.toString())
+            val existing = (root[userId] as? JsonArray)
+                ?.mapNotNull { el -> (el as? JsonPrimitive)?.takeIf { it.isString }?.content }
+                ?: emptyList()
+            val merged = (existing + codes).distinct()
+            val updated = buildJsonObject {
+                for ((k, v) in root) if (k != userId) put(k, v)
+                put(userId, buildJsonArray { merged.forEach { add(it) } })
+            }
+            autoDoneFile.writeText(updated.toString())
         } catch (e: Exception) {
             Log.w(TAG, "自动兑换清单写入失败", e)
         }
@@ -251,12 +259,11 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
     /** 读一个应为 JSON object 的本地文件；不存在、损坏、类型不对都返回新空对象。 */
     private fun readJsonObjectOrNew(file: File): JsonObject = try {
         if (file.exists())
-            JsonParser.parseString(file.readText()).takeIf { it.isJsonObject }?.asJsonObject
-                ?: JsonObject()
-        else JsonObject()
+            (Json.parseToJsonElement(file.readText()) as? JsonObject) ?: JsonObject(emptyMap())
+        else JsonObject(emptyMap())
     } catch (e: Exception) {
         Log.w(TAG, "本地清单损坏，按空表重建: ${file.name}", e)
-        JsonObject()
+        JsonObject(emptyMap())
     }
 
     // ---------------------------------------------------------------- 兑换
@@ -269,10 +276,10 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
         withContext(Dispatchers.IO) {
             // 官方页输入时自动去空格、转大写，照做
             val normalized = code.trim().uppercase()
-            val body = JsonObject().apply {
-                addProperty("appId", APP_ID)
-                addProperty("userId", userId.trim())
-                addProperty("code", normalized)
+            val body = buildJsonObject {
+                put("appId", APP_ID)
+                put("userId", userId.trim())
+                put("code", normalized)
             }.toString()
 
             val resp = httpPost(body)
@@ -395,9 +402,11 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
      */
     private fun parseOutcome(code: String, userId: String, body: String, reward: String): RedeemOutcome {
         return try {
-            val root = JsonParser.parseString(body).asJsonObject
+            val root = Json.parseToJsonElement(body) as? JsonObject
+                ?: throw IllegalArgumentException("兑换响应不是 JSON 对象")
             val error = errorField(root)
-            val successFlag = root.get("success")?.takeIf { it.isJsonPrimitive }?.asBoolean
+            val successFlag = (root["success"] as? JsonPrimitive)?.takeIf { !it.isString }
+                ?.content?.toBooleanStrictOrNull()
             when {
                 !error.isNullOrBlank() -> {
                     val msg = root.str("message").orEmpty()
@@ -426,10 +435,10 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
     }
 
     private fun errorField(root: JsonObject): String? {
-        val e = root.get("error") ?: root.get("errorCode") ?: return null
+        val e = root["error"] ?: root["errorCode"] ?: return null
         return when {
-            e.isJsonPrimitive -> e.asString
-            e.isJsonObject -> e.asJsonObject.str("code") ?: e.asJsonObject.str("message")
+            e is JsonPrimitive -> e.content
+            e is JsonObject -> e.str("code") ?: e.str("message")
             else -> null
         }
     }
@@ -466,5 +475,5 @@ class Bd2RedeemRepository @Inject constructor(@param:ApplicationContext private 
     }
 
     private fun JsonObject.str(key: String): String? =
-        get(key)?.takeIf { it.isJsonPrimitive }?.asString
+        (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 }

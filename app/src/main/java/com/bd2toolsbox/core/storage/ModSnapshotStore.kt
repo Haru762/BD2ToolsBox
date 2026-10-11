@@ -3,9 +3,11 @@ package com.bd2toolsbox.core.storage
 import com.bd2toolsbox.core.fileaccess.AtomicFileWriter
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
-import com.google.gson.Gson
-import com.google.gson.JsonParser
-import com.google.gson.annotations.SerializedName
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import java.io.File
 
 /**
@@ -25,7 +27,7 @@ import java.io.File
  *
  * ## 字段名 = 磁盘键名，而且是**故意**写成同一个字面量的
  *
- * 每个字段都带 `@SerializedName("<与字段名相同的字面量>")`。看着冗余，实际是两条防线：
+ * 每个字段都带 `@SerialName("<与字段名相同的字面量>")`。看着冗余，实际是两条防线：
  *
  * - 它把 JSON 键**写成编译期常量**，将来谁重命名 Kotlin 属性都不会顺手改掉磁盘格式；
  * - 万一 R8 把注解属性剥掉（见 `app/proguard-rules.pro` 里 T10 那段说明），Gson 会退回
@@ -55,25 +57,26 @@ import java.io.File
  * 同样的值，见 `MainViewModel` 的转换。**读侧零行为变化；写入体积也零变化**（这三个字段
  * 在 release 里本来就没落盘）。
  */
+@Serializable
 data class SnapshotEntry(
-    @SerializedName("name") val name: String? = null,
-    @SerializedName("character") val character: String? = null,
-    @SerializedName("costume") val costume: String? = null,
-    @SerializedName("type") val type: String? = null,
-    @SerializedName("isEnabled") val isEnabled: Boolean = false,
-    @SerializedName("uri") val uri: String? = null,
-    @SerializedName("targetHashedName") val targetHashedName: String? = null,
-    @SerializedName("isDirectory") val isDirectory: Boolean = false,
-    @SerializedName("resolutionState") val resolutionState: String? = null,
-    @SerializedName("targetHash") val targetHash: String? = null,
-    @SerializedName("resolvedFamilyKey") val resolvedFamilyKey: String? = null,
-    @SerializedName("errorReason") val errorReason: String? = null,
-    @SerializedName("installState") val installState: String? = null,
-    @SerializedName("kind") val kind: String? = null,
-    @SerializedName("convertedHashDir") val convertedHashDir: String? = null,
-    @SerializedName("convertedDataSize") val convertedDataSize: Long = 0L,
-    @SerializedName("defect") val defect: String? = null,
-    @SerializedName("outdatedCurrentHash") val outdatedCurrentHash: String? = null
+    @SerialName("name") val name: String? = null,
+    @SerialName("character") val character: String? = null,
+    @SerialName("costume") val costume: String? = null,
+    @SerialName("type") val type: String? = null,
+    @SerialName("isEnabled") val isEnabled: Boolean = false,
+    @SerialName("uri") val uri: String? = null,
+    @SerialName("targetHashedName") val targetHashedName: String? = null,
+    @SerialName("isDirectory") val isDirectory: Boolean = false,
+    @SerialName("resolutionState") val resolutionState: String? = null,
+    @SerialName("targetHash") val targetHash: String? = null,
+    @SerialName("resolvedFamilyKey") val resolvedFamilyKey: String? = null,
+    @SerialName("errorReason") val errorReason: String? = null,
+    @SerialName("installState") val installState: String? = null,
+    @SerialName("kind") val kind: String? = null,
+    @SerialName("convertedHashDir") val convertedHashDir: String? = null,
+    @SerialName("convertedDataSize") val convertedDataSize: Long = 0L,
+    @SerialName("defect") val defect: String? = null,
+    @SerialName("outdatedCurrentHash") val outdatedCurrentHash: String? = null
 )
 
 /**
@@ -271,10 +274,11 @@ class ModSnapshotStore internal constructor(
      *
      * 这份 DTO 是**过渡期**的东西，按计划由 T35–T36 连同这条兼容分支一起移除。
      */
+    @Serializable
     internal data class LegacyObfuscatedSnapshot(
-        @SerializedName("a") val savedAt: Long = 0L,
-        @SerializedName("b") val mods: List<SnapshotEntry>? = null,
-        @SerializedName("c") val sourceDirs: List<String>? = null
+        @SerialName("a") val savedAt: Long = 0L,
+        @SerialName("b") val mods: List<SnapshotEntry?>? = null,
+        @SerialName("c") val sourceDirs: List<String>? = null
     )
 
     /**
@@ -289,11 +293,12 @@ class ModSnapshotStore internal constructor(
      * 剩下唯一能毁掉它的手段是**把字段改名或删掉**，而这正是
      * `app/proguard-rules.pro` 里 T10 那条精确 keep 规则挡住的事。
      */
+    @Serializable
     internal data class SnapshotV1(
-        @SerializedName("version") val version: Int = SCHEMA_VERSION,
-        @SerializedName("savedAt") val savedAt: Long = 0L,
-        @SerializedName("mods") val mods: List<SnapshotEntry>? = null,
-        @SerializedName("sourceDirs") val sourceDirs: List<String>? = null
+        @SerialName("version") val version: Int = SCHEMA_VERSION,
+        @SerialName("savedAt") val savedAt: Long = 0L,
+        @SerialName("mods") val mods: List<SnapshotEntry?>? = null,
+        @SerialName("sourceDirs") val sourceDirs: List<String>? = null
     )
 
     /** 快照文件本身（测试与调用方排查用）。 */
@@ -302,7 +307,7 @@ class ModSnapshotStore internal constructor(
     /** 捕获序号。只在 [capture] / [discard] 里递增，只在 [commit] 里读。 */
     private var revision = 0L
 
-    private val gson = Gson()
+    private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
 
     /**
      * 把「此刻要写的这张表」连同源目录快照一起捕获下来，分配一个递增序号。
@@ -359,8 +364,8 @@ class ModSnapshotStore internal constructor(
             mods = write.entries,
             sourceDirs = write.sourceDirs
         )
-        val json = try {
-            gson.toJson(payload, SnapshotV1::class.java)
+        val jsonText = try {
+            json.encodeToString(SnapshotV1.serializer(), payload)
         } catch (e: Exception) {
             // 序列化失败与 IO 失败必须分开报：前者原样重试无用，后者可能只是这一次没写成。
             return SnapshotCommit.Failed(
@@ -375,7 +380,7 @@ class ModSnapshotStore internal constructor(
 
         return try {
             AtomicFileWriter().write(target = snapshotFile) { out ->
-                out.write(json.toByteArray(Charsets.UTF_8))
+                out.write(jsonText.toByteArray(Charsets.UTF_8))
             }
             SnapshotCommit.Written
         } catch (e: Exception) {
@@ -476,33 +481,43 @@ class ModSnapshotStore internal constructor(
      * 而「按空表继续」会把「用户有 5 个 mod」变成「用户没有 mod」。
      */
     private fun parse(text: String, expectedSourceDirs: List<String>): SnapshotLoad {
-        val root = JsonParser.parseString(text)
-        if (root.isJsonNull) return SnapshotLoad.Corrupt("快照内容是 JSON null，不是一张表")
-        if (!root.isJsonObject) {
-            return SnapshotLoad.Corrupt("快照顶层不是 JSON 对象，而是 " + root.javaClass.simpleName)
+        val root = try {
+            Json.parseToJsonElement(text)
+        } catch (e: Exception) {
+            return SnapshotLoad.Corrupt("快照不是合法 JSON：" + e.message.orEmpty())
         }
-        val obj = root.asJsonObject
+        if (root is JsonNull) return SnapshotLoad.Corrupt("快照内容是 JSON null，不是一张表")
+        if (root !is JsonObject) {
+            return SnapshotLoad.Corrupt("快照顶层不是 JSON 对象")
+        }
+        val obj = root
 
         val savedAt: Long
-        val mods: List<SnapshotEntry>?
+        val mods: List<SnapshotEntry?>?
         val sourceDirs: List<String>?
         var wasLegacy = false
 
-        if (obj.has(KEY_VERSION)) {
-            val snapshot = gson.fromJson(obj, SnapshotV1::class.java)
-                ?: return SnapshotLoad.Corrupt("顶层解析成了 null")
+        if (obj.containsKey(KEY_VERSION)) {
+            val snapshot = try {
+                json.decodeFromJsonElement(SnapshotV1.serializer(), obj)
+            } catch (e: Exception) {
+                return SnapshotLoad.Corrupt("新格式解析失败：" + e.message.orEmpty())
+            }
             if (snapshot.version != SCHEMA_VERSION) {
                 return SnapshotLoad.StaleVersion(snapshot.version)
             }
             savedAt = snapshot.savedAt
             mods = snapshot.mods
             sourceDirs = snapshot.sourceDirs
-        } else if (obj.has(KEY_LEGACY_MODS)) {
+        } else if (obj.containsKey(KEY_LEGACY_MODS)) {
             // 0.2.16 release 的形态。它**没有版本字段可读**（R8 删掉了），所以这里
             // 能做的只有「按 mapping.txt 的无歧义映射读出来」，没有版本闸可过 ——
             // 这正是本任务要消灭的契约脆弱性，迁移完之后新文件才重新有了版本闸。
-            val legacy = gson.fromJson(obj, LegacyObfuscatedSnapshot::class.java)
-                ?: return SnapshotLoad.Corrupt("旧格式顶层解析成了 null")
+            val legacy = try {
+                json.decodeFromJsonElement(LegacyObfuscatedSnapshot.serializer(), obj)
+            } catch (e: Exception) {
+                return SnapshotLoad.Corrupt("旧格式解析失败：" + e.message.orEmpty())
+            }
             savedAt = legacy.savedAt
             mods = legacy.mods
             sourceDirs = legacy.sourceDirs
@@ -520,8 +535,8 @@ class ModSnapshotStore internal constructor(
             return SnapshotLoad.SourceDirsChanged(from = sourceDirs ?: emptyList(), to = expectedSourceDirs)
         }
 
-        // Gson 不管 Kotlin 的非空约束：数组里混进 null 元素、或某个条目缺字段时，
-        // 放过去会在很远的转换路径上炸 NPE。逐条校验，坏的整条丢掉并计数。
+        // kotlinx 允许数组里出现 null 元素（元素类型可空）；逐条做结构校验，
+        // 坏的整条丢掉并计数，而不是静默吞掉。
         val nonNull = mods.filterNotNull()
         val valid = nonNull.filter { it.isStructurallyValid() }
         return SnapshotLoad.Loaded(

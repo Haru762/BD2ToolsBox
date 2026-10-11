@@ -684,24 +684,36 @@ class ModSnapshotStoreTest {
     // ================================================================
 
     /**
-     * `@SerializedName` 的键名必须与 `parse` 里用的常量一致。
+     * `@SerialName` 的键名必须与 `parse` 里用的常量一致。
      *
      * 这两处一旦漂移（有人改了注解、常量没跟上），形态判定就会走错分支
      * —— 这类「两处字面量必须相同」的契约靠读代码很容易漏，用一条用例钉住。
-     * 破坏它 = 把 `SnapshotV1.version` 的 `@SerializedName` 改成别的名字，红。
+     * 破坏它 = 把 `SnapshotV1.version` 的 `@SerialName` 改成别的名字，红。
      */
     @Test
     fun serializedNamesMatchTheFormatConstants() {
-        val v1Fields = ModSnapshotStore.SnapshotV1::class.java.declaredFields
-            .mapNotNull { f -> f.getAnnotation(com.google.gson.annotations.SerializedName::class.java)?.value }
-        assertTrue("SnapshotV1 必须有 version/mods 键", v1Fields.containsAll(listOf("version", "mods")))
+        // 直接序列化一个默认实例看键名（比反射 @SerialName 稳：注解 use-site 不保证落在字段上）。
+        val keyJson = kotlinx.serialization.json.Json {
+            encodeDefaults = true
+            explicitNulls = true
+        }
+        val v1Keys = keyJson
+            .encodeToString(ModSnapshotStore.SnapshotV1.serializer(), ModSnapshotStore.SnapshotV1())
+            .let { kotlinx.serialization.json.Json.parseToJsonElement(it) }
+            .let { (it as kotlinx.serialization.json.JsonObject).keys }
+        assertTrue("SnapshotV1 必须有 version/mods 键", v1Keys.containsAll(listOf("version", "mods")))
 
-        val legacyFields = ModSnapshotStore.LegacyObfuscatedSnapshot::class.java.declaredFields
-            .mapNotNull { f -> f.getAnnotation(com.google.gson.annotations.SerializedName::class.java)?.value }
+        val legacyKeys = keyJson
+            .encodeToString(
+                ModSnapshotStore.LegacyObfuscatedSnapshot.serializer(),
+                ModSnapshotStore.LegacyObfuscatedSnapshot()
+            )
+            .let { kotlinx.serialization.json.Json.parseToJsonElement(it) }
+            .let { (it as kotlinx.serialization.json.JsonObject).keys }
         assertEquals(
             "0.2.16 的键名是 mapping.txt 给的 a/b/c，不许漂移",
             setOf("a", "b", "c"),
-            legacyFields.toSet()
+            legacyKeys
         )
     }
 
