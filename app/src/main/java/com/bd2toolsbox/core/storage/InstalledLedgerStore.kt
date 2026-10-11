@@ -3,10 +3,15 @@ package com.bd2toolsbox.core.storage
 import com.bd2toolsbox.core.fileaccess.AtomicFileWriter
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.google.gson.reflect.TypeToken
+import com.bd2toolsbox.core.storage.dto.StoredInstalledMod
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -308,70 +313,75 @@ class InstalledLedgerStore(private val ledgerFile: File) {
      * 已知的未知顶层键一律忽略（向前兼容：将来加字段不该让今天的账本判废）。
      */
     private fun parse(text: String): LedgerRead {
-        val root = JsonParser.parseString(text)
-        if (root.isJsonNull) return LedgerRead.Corrupt("账本内容是 JSON null，不是一张表")
-        if (!root.isJsonObject) {
-            return LedgerRead.Corrupt("账本顶层不是 JSON 对象，而是 " + root.javaClass.simpleName)
+        val root = try {
+            json.parseToJsonElement(text)
+        } catch (e: Exception) {
+            return LedgerRead.Corrupt("账本不是合法 JSON：" + e.message.orEmpty())
         }
-        val obj = root.asJsonObject
+        if (root is JsonNull) return LedgerRead.Corrupt("账本内容是 JSON null，不是一张表")
+        if (root !is JsonObject) {
+            return LedgerRead.Corrupt("账本顶层不是 JSON 对象")
+        }
+        val obj = root
 
-        val recordsObject = if (obj.has(RECORDS_KEY)) {
+        val recordsObject: JsonObject = if (obj.containsKey(RECORDS_KEY)) {
             // v1 形态
-            val versionElement = obj.get(SCHEMA_VERSION_KEY)
-            if (versionElement == null || !versionElement.isJsonPrimitive ||
-                !versionElement.asJsonPrimitive.isNumber
-            ) {
+            val versionPrimitive = obj[SCHEMA_VERSION_KEY] as? JsonPrimitive
+            if (versionPrimitive == null || versionPrimitive.isString) {
                 return LedgerRead.Corrupt("账本有 $RECORDS_KEY 但缺少数字型 $SCHEMA_VERSION_KEY")
             }
-            val version = versionElement.asInt
+            val version = versionPrimitive.content.toIntOrNull()
+                ?: return LedgerRead.Corrupt("账本 $SCHEMA_VERSION_KEY 不是整数")
             if (version != SCHEMA_VERSION) {
                 return LedgerRead.Corrupt("账本 schemaVersion=$version，本版本只认 $SCHEMA_VERSION")
             }
-            val element = obj.get(RECORDS_KEY)
-            if (!element.isJsonObject) {
+            val element = obj[RECORDS_KEY]
+            if (element !is JsonObject) {
                 return LedgerRead.Corrupt("账本的 $RECORDS_KEY 不是 JSON 对象")
             }
-            element.asJsonObject
+            element
         } else {
             // v0 legacy 裸表：整个顶层对象就是记录表
             obj
         }
 
-        val type = object : TypeToken<Map<String, LedgerRecord>>() {}.type
-        val parsed: Map<String, LedgerRecord>? = gson.fromJson(recordsObject, type)
-        if (parsed == null) return LedgerRead.Corrupt("$RECORDS_KEY 解析成了 null")
-
-        // Gson 不管 Kotlin 的非空约束：缺字段的条目反序列化后字段会是 null，
-        // 漏过去会在读它时抛 NPE、且发生在离此处很远的地方。改动前那份代码在 load() 里
-        // 做过「过滤掉 modUri 为 null 的条目」—— 这里保留这个意图，但**不静默丢条目**：
-        // 整份判损坏，让上层有机会保留原件并提示，而不是悄悄少几条。
-        val cleaned = LinkedHashMap<String, LedgerRecord>(parsed.size)
-        for ((key, record) in parsed) {
-            // 这些「恒为 false」的 null 判断是**故意的**：Kotlin 认为 Map 的值不可空，
-            // 而 Gson 用 Unsafe 造实例、完全不理会 Kotlin 的非空约束 —— 运行期真的会是 null。
-            // 编译器看不见这一点，所以整段抑制警告，而不是把判断删掉。
-            @Suppress("SENSELESS_COMPARISON")
-            if (record == null || record.modUri == null || record.modName == null ||
-                record.familyKey == null || record.snapshotTargetHash == null ||
-                record.quality == null
-            ) {
-                return LedgerRead.Corrupt("记录 $key 缺少必需字段")
+        // T35：kotlinx.serialization 反序列化。**逐条解码**，这样缺必需字段/类型不符时
+        // 能点出是哪一条记录；可选字段（usedAstc/installedAt）缺失时用 DTO 默认值。
+        val cleaned = LinkedHashMap<String, LedgerRecord>(recordsObject.size)
+        for ((key, value) in recordsObject) {
+            if (value !is JsonObject) {
+                return LedgerRead.Corrupt("记录 $key 不是 JSON 对象")
             }
-            if (key != record.modUri) {
+            val stored = try {
+                json.decodeFromJsonElement(StoredInstalledMod.serializer(), value)
+            } catch (e: Exception) {
+                return LedgerRead.Corrupt("记录 $key 缺字段或类型不符：" + e.message.orEmpty())
+            }
+            if (key != stored.modUri) {
                 // 主键必须等于记录自己的 modUri：两者不一致说明文件被外部改过，
                 // 而「按 key 查得到、按 modUri 查不到」会让删除与回滚对不上账。
-                return LedgerRead.Corrupt("记录键 $key 与它自己的 modUri ${record.modUri} 不一致")
+                return LedgerRead.Corrupt("记录键 $key 与它自己的 modUri ${stored.modUri} 不一致")
             }
-            cleaned[key] = record
+            cleaned[key] = LedgerRecord(
+                stored.modUri, stored.modName, stored.familyKey,
+                stored.snapshotTargetHash, stored.quality, stored.usedAstc, stored.installedAt
+            )
         }
         return if (cleaned.isEmpty()) LedgerRead.Empty else LedgerRead.Loaded(cleaned)
     }
 
     private fun encode(records: Map<String, LedgerRecord>): String {
-        val root = JsonObject()
-        root.addProperty(SCHEMA_VERSION_KEY, SCHEMA_VERSION)
-        root.add(RECORDS_KEY, gson.toJsonTree(records))
-        return gson.toJson(root)
+        val stored = records.mapValues { (_, r) ->
+            StoredInstalledMod(
+                r.modUri, r.modName, r.familyKey, r.snapshotTargetHash,
+                r.quality, r.usedAstc, r.installedAt
+            )
+        }
+        val root = buildJsonObject {
+            put(SCHEMA_VERSION_KEY, SCHEMA_VERSION)
+            put(RECORDS_KEY, json.encodeToJsonElement(recordsMapSerializer, stored))
+        }
+        return json.encodeToString(JsonObject.serializer(), root)
     }
 
     /**
@@ -415,7 +425,13 @@ class InstalledLedgerStore(private val ledgerFile: File) {
         private val CORRUPT_STAMP_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
 
-        /** Gson 实例是线程安全的（官方明确），共享一个即可。 */
-        private val gson = Gson()
+        /** kotlinx Json 实例线程安全，共享一个即可。 */
+        private val json = Json {
+            ignoreUnknownKeys = true
+            explicitNulls = false
+        }
+
+        private val recordsMapSerializer =
+            MapSerializer(String.serializer(), StoredInstalledMod.serializer())
     }
 }
