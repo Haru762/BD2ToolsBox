@@ -2387,6 +2387,8 @@ Test-Bd2ReleaseSmoke -Case 'all-core-features' -Abi 'x86_64'
 
 - [ ] **T55 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `tools/check_architecture.py`（R1–R7 分层规则，误报写 `ALLOW` 且强制带理由，无全局忽略）与 `tests/test_check_architecture.py` **15/15 PASS**（逐条触发 R1–R7 + 真实仓库断言）。真实仓库：**116 文件 / 0 违规 / 1 条带理由例外**。首轮抓到 3 条并逐条处置（2 条误报改进规则、1 条真依赖边修复），并把 `CdkResultPresentation.kt` 从 `feature/cdk` 移到 `ui/components`（修掉唯一的 `feature → ui` 反向依赖）。两 flavor JVM 各 **694/694**；设备 `CdkResultPresentationTest` **5/5 PASS**。新增 `docs/refactor/architecture.md`（分层图/规则表/旧巨型文件落点/**不拆 Gradle module 的结论**）。**`mergeWithInstalled`/`recordConvertedInstalls` 落点未核对、MainViewModel 行数反增至 5306、AppDialogs 未拆、未做死代码逐项审计**，不勾 DONE。见 [T55 证据](../../refactor/evidence/T55.md) 与 [architecture.md](../../refactor/architecture.md)。
+
 **优先级：** P1　**前置：** T28、T29、T30、T31、T32、T33、T34、T36
 
 **文件范围（实施工作区）：**

@@ -9,10 +9,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bd2toolsbox.feature.cdk.AccountRedeemResult
 import com.bd2toolsbox.feature.cdk.BatchRedeemSummary
-import com.bd2toolsbox.feature.cdk.RedeemAccountResultRow
+import com.bd2toolsbox.ui.components.RedeemAccountResultRow
 import com.bd2toolsbox.feature.cdk.RedeemSummary
-import com.bd2toolsbox.feature.cdk.batchResultText
-import com.bd2toolsbox.feature.cdk.toneFor
+import com.bd2toolsbox.ui.components.batchResultText
+import com.bd2toolsbox.ui.components.toneFor
 import com.bd2toolsbox.ui.components.StatusTone
 import com.bd2toolsbox.ui.theme.BD2ModManagerTheme
 import org.junit.Assert.assertEquals

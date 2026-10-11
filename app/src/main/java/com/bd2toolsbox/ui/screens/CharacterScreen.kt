@@ -26,7 +26,6 @@ import com.bd2toolsbox.data.model.ModInfo
 import com.bd2toolsbox.data.model.ModInstallState
 import com.bd2toolsbox.data.model.categoryOf
 import com.bd2toolsbox.data.model.isUnknownCharacter
-import com.bd2toolsbox.data.repository.CharacterMetaRepository
 import com.bd2toolsbox.di.rememberUiRepositories
 import com.bd2toolsbox.ui.components.CharacterAvatar
 import kotlinx.coroutines.launch
@@ -51,7 +50,7 @@ data class CharacterEntry(
 /**
  * 角色列表的筛选维度。
  *
- * 性别与联动来自随包的 `character_meta.json`（见 [CharacterMetaRepository]）——
+ * 性别与联动来自随包的 `character_meta.json`（见 `data/repository/CharacterMetaRepository.kt`）——
  * 它覆盖 83 个角色，那 12 个 NPC（Guild Girl、Female Researcher 等）没有性别，
  * 所以「男性 + 女性」不等于全部，这三项都是「筛出确定符合的」。
  */

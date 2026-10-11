@@ -1,4 +1,4 @@
-package com.bd2toolsbox.feature.cdk
+package com.bd2toolsbox.ui.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,8 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.bd2toolsbox.ui.components.StatusBadge
-import com.bd2toolsbox.ui.components.StatusTone
+import com.bd2toolsbox.feature.cdk.AccountRedeemResult
+import com.bd2toolsbox.feature.cdk.BatchRedeemSummary
+import com.bd2toolsbox.feature.cdk.RedeemSummary
+import com.bd2toolsbox.feature.cdk.describe
+import com.bd2toolsbox.feature.cdk.label
+import com.bd2toolsbox.feature.cdk.resultLabel
 
 /**
  * 兑换结果标签的语义色（T45）。
