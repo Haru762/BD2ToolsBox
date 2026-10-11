@@ -1885,6 +1885,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.NavigationStateTest' -Abi 'x86_64'
 
 - [ ] **T42 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `ui/components/ModActionButtons`（预览/更多两个独立可见入口、语义名可辨识、点击不串；预览禁用时说明原因且仍可见）与设备 `ModActionsTest` **4/4 PASS**。**未接入 ModScreen/ModListComponents**、点击区域区分未改、arm64 未跑、无独立审查，不勾 DONE。见 [T42 证据](../../refactor/evidence/T42.md)。
+
 **优先级：** P1　**前置：** T41、T28、T29
 
 **文件范围（实施工作区）：**
