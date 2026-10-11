@@ -12,7 +12,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bd2toolsbox.ui.components.TaskPanelUiState
+import com.bd2toolsbox.data.model.PreviewState
 import com.bd2toolsbox.ui.components.TaskProgressPanel
+import com.bd2toolsbox.ui.dialogs.PreviewProgressDialog
 import com.bd2toolsbox.ui.theme.BD2ModManagerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -105,5 +107,42 @@ class TaskPanelLifecycleTest {
         }
         composeRule.onNodeWithContentDescription("任务进度：预解包中").assertIsDisplayed()
         composeRule.onNodeWithText("预解包中").assertIsDisplayed()
+    }
+    // ------------------------------------------------ T43：进行中面板不再锁死
+
+    @Test
+    fun previewPreparingOffersCollapseInsteadOfLockingTheDialog() {
+        var hidden = 0
+        var dismissed = 0
+        composeRule.setContent {
+            BD2ModManagerTheme {
+                PreviewProgressDialog(
+                    state = PreviewState.Preparing("正在解包 3/48"),
+                    onDismiss = { dismissed++ },
+                    onHide = { hidden++ }
+                )
+            }
+        }
+        // 以前这里是 onDismissRequest = { } + confirmButton = {} —— 点框外、按返回都没反应
+        composeRule.onNodeWithText("收起，继续处理").assertIsDisplayed().performClick()
+        assertEquals("收起必须可用", 1, hidden)
+        assertEquals("收起不是取消/丢弃", 0, dismissed)
+    }
+
+    @Test
+    fun collapsedTaskPanelOffersAReopenEntry() {
+        var toggled = 0
+        composeRule.setContent {
+            BD2ModManagerTheme {
+                TaskProgressPanel(
+                    title = "预解包进行中",
+                    collapsed = true,
+                    onToggleCollapse = { toggled++ }
+                )
+            }
+        }
+        composeRule.onNodeWithText("预解包进行中").assertIsDisplayed()
+        composeRule.onNodeWithText("展开").assertIsDisplayed().performClick()
+        assertEquals("收起后必须能重开同一任务", 1, toggled)
     }
 }

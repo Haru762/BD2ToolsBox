@@ -470,11 +470,18 @@ fun BackupManageDialog(
 
 /** 预览准备中/失败。产物要先解包，耗时几秒，不能像 PC mod 那样静默处理。 */
 @Composable
-fun PreviewProgressDialog(state: PreviewState, onDismiss: () -> Unit) {
+fun PreviewProgressDialog(
+    state: PreviewState,
+    onDismiss: () -> Unit,
+    onHide: () -> Unit = onDismiss
+) {
     when (state) {
         is PreviewState.Idle -> return
+        // T43：准备阶段**必须能退出**。以前这里 onDismissRequest = { } 且 confirmButton = {}，
+        // 等于把一个几秒到几十秒的任务锁在不可退出的对话框里 —— 点框外、按返回都没反应。
+        // 现在「收起」只改展示：任务照跑，进度面板可重开（见 MainActivity 的进行中横幅）。
         is PreviewState.Preparing -> AlertDialog(
-            onDismissRequest = { },
+            onDismissRequest = onHide,
             containerColor = dialogContainerColor(),
             title = { Text("正在准备预览") },
             text = {
@@ -488,7 +495,7 @@ fun PreviewProgressDialog(state: PreviewState, onDismiss: () -> Unit) {
                     )
                 }
             },
-            confirmButton = {}
+            confirmButton = { TextButton(onClick = onHide) { Text("收起，继续处理") } }
         )
         is PreviewState.Failed -> AlertDialog(
             onDismissRequest = onDismiss,

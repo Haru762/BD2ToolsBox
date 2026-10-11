@@ -79,6 +79,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.data.model.ModInfo
+import com.bd2toolsbox.data.model.PreviewState
+import com.bd2toolsbox.ui.components.TaskProgressPanel
 import com.bd2toolsbox.ui.components.WallpaperBackdrop
 import com.bd2toolsbox.ui.dialogs.*
 import com.bd2toolsbox.ui.screens.CharacterFilter
@@ -275,6 +277,13 @@ class MainActivity : ComponentActivity() {
 
                 val modSourceUri by viewModel.modSourceDirectoryUri.collectAsState()
                 val modSourceDirs by viewModel.modSourceDirs.collectAsState()
+
+                // T43：进行中任务的「收起」开关与进度源。声明在 Scaffold **之前** ——
+                // 内容区顶部的重开横幅（Scaffold 的 content lambda 里）要看得见它们。
+                val prepackProgress by viewModel.prepackProgress.collectAsState()
+                val previewState by viewModel.previewState.collectAsState()
+                var prepackHidden by remember { mutableStateOf(false) }
+                var previewHidden by remember { mutableStateOf(false) }
 
                 Scaffold(
                     // T40：根容器透明，壁纸背景层在下面；页头等无底色区域能看到壁纸，
@@ -607,6 +616,31 @@ class MainActivity : ComponentActivity() {
                                 .padding(padding),
                             color = MaterialTheme.colorScheme.background
                         ) {
+                            // T43：进行中的任务被收起后，这里给出**统一的重开入口**。
+                            // 它只改展示，绝不取消任务或释放仍使用的 Binder。
+                            val prepackRunning by viewModel.prepackProgress.collectAsState()
+                            val previewRunning by viewModel.previewState.collectAsState()
+                            val activeTitle = when {
+                                prepackRunning != null -> "预解包进行中"
+                                previewRunning is PreviewState.Preparing -> "预览准备中"
+                                else -> null
+                            }
+                            val collapsed = when {
+                                prepackRunning != null -> prepackHidden
+                                previewRunning is PreviewState.Preparing -> previewHidden
+                                else -> false
+                            }
+                            if (activeTitle != null && collapsed) {
+                                TaskProgressPanel(
+                                    title = activeTitle,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                    collapsed = true,
+                                    onToggleCollapse = {
+                                        prepackHidden = false
+                                        previewHidden = false
+                                    }
+                                )
+                            }
                             when (currentTab) {
                                 1 -> GuideScreen(guideViewModel)
                                 2 -> CdkScreen(cdkViewModel)
@@ -794,10 +828,6 @@ class MainActivity : ComponentActivity() {
                     onDismiss = { viewModel.dismissUpdateReady() }
                 )
 
-                val prepackProgress by viewModel.prepackProgress.collectAsState()
-                // 「后台运行」只是把框收起来，任务在服务里照跑，所以这个开关得留在
-                // 界面侧（ViewModel 里的 progress 仍然非 null）。
-                var prepackHidden by remember { mutableStateOf(false) }
                 // 任务结束（progress 变 null）时复位，否则收起来一次之后，
                 // 下次点「批量预解包」就再也看不到进度框了。
                 LaunchedEffect(prepackProgress == null) {
@@ -858,10 +888,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                val previewState by viewModel.previewState.collectAsState()
+                // T43：收起只改展示 —— 准备任务照跑，横幅里有重开入口。
+                LaunchedEffect(previewState) {
+                    if (previewState !is PreviewState.Preparing) previewHidden = false
+                }
                 PreviewProgressDialog(
-                    state = previewState,
-                    onDismiss = { viewModel.dismissPreviewState() }
+                    state = if (previewHidden) PreviewState.Idle else previewState,
+                    onDismiss = { viewModel.dismissPreviewState() },
+                    onHide = { previewHidden = true }
                 )
 
                 val showInstallDialog by viewModel.showInstallDialog.collectAsState()
