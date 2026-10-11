@@ -8,8 +8,8 @@ import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.core.storage.Digester
 import com.bd2toolsbox.core.storage.StreamingDigest
 import com.bd2toolsbox.core.storage.TrustedBaseline
-import com.bd2toolsbox.feature.settings.BackupPurge
-import com.bd2toolsbox.feature.settings.PurgeOutcome
+import com.bd2toolsbox.core.model.BackupPurge
+import com.bd2toolsbox.core.model.PurgeOutcome
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

@@ -42,8 +42,8 @@ import com.bd2toolsbox.core.model.PrepackPlan
 import com.bd2toolsbox.core.model.PreviewAssets
 import com.bd2toolsbox.core.model.RepackPlanBuilder
 import com.bd2toolsbox.core.model.UninstallPlan
-import com.bd2toolsbox.feature.settings.BackupPurge
-import com.bd2toolsbox.feature.settings.PurgeOutcome
+import com.bd2toolsbox.core.model.BackupPurge
+import com.bd2toolsbox.core.model.PurgeOutcome
 import com.bd2toolsbox.core.storage.BackupProvenance
 import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.core.storage.CatalogAnchor
@@ -80,7 +80,8 @@ import com.bd2toolsbox.data.repository.CharacterRepository
 import com.bd2toolsbox.data.repository.ConvertedInstallSubmitter
 import com.bd2toolsbox.data.repository.ConvertedSubmitResult
 import com.bd2toolsbox.data.repository.InstalledModRepository
-import com.bd2toolsbox.feature.install.InstallExecutor
+import com.bd2toolsbox.feature.install.MoveCommitHost
+import com.bd2toolsbox.feature.install.MoveCommitRequest
 import com.bd2toolsbox.feature.install.UninstallExecutor
 import com.bd2toolsbox.feature.mods.ScanCheck
 import com.bd2toolsbox.feature.mods.ScanExecutor
@@ -104,11 +105,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
@@ -139,7 +140,7 @@ class MainViewModel @Inject constructor(
     private val avatarRepository: AvatarRepository,
     private val spineRuntimeRepository: SpineRuntimeRepository,
     private val updateRepository: UpdateRepository,
-    private val installExecutor: InstallExecutor,
+    private val commitHost: MoveCommitHost,
     private val uninstallExecutor: UninstallExecutor,
     private val scanExecutor: ScanExecutor,
     private val prepackExecutor: PrepackExecutor,
@@ -3183,19 +3184,40 @@ class MainViewModel @Inject constructor(
             moveInProgress = true
             if (!silent) _moveState.value = MoveState.Moving
             try {
-                val executed = withContext(Dispatchers.IO) {
+                // T22：**提交执行搬进 InstallService**。以前这里直接调 executor，
+                // 协程挂在 viewModelScope 上 —— 用户退出界面时 onCleared 会取消它，
+                // 在游戏目录留下半个 __data。现在服务持有自己的 scope，
+                // 界面销毁不影响提交；ViewModel 只等结果、做 UI 收尾。
+                val request = withContext(Dispatchers.IO) {
                     val shared = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Shared")
                     val targets = journalTargetsForJobs(shared, jobs, quality, astc, installedAt)
                     val removals = targets.filter {
                         it.modUris.isEmpty() && (clearRestored || it.bundleName == removeTarget)
                     }.map { it.bundleName }.toSet()
-                    installExecutor.move(
-                        OperationId("move-" + java.util.UUID.randomUUID()), shared,
-                        File(cache, "move_staging_owned"), targets, removals
+                    MoveCommitRequest(
+                        id = "move-" + java.util.UUID.randomUUID(),
+                        sharedPath = shared.absolutePath,
+                        stagingPath = File(cache, "move_staging_owned").absolutePath,
+                        targets = targets,
+                        removals = removals
                     )
                 }
-                executed.ledgerNotices.forEach { reportLedgerWrite(it.result, it.action) }
-                val result = executed.submission
+                val runResult = withContext(Dispatchers.IO) {
+                    commitHost.execute(request)
+                }
+                if (runResult == null) {
+                    // 宿主没能开始跑（例如系统拒绝启动前台服务）：不能照常当成功
+                    _moveState.value = MoveState.Failed("系统拒绝启动前台服务，装入未开始；请保持应用在前台后重试")
+                    return@launch
+                }
+                runResult.ledgerNotices.forEach { reportLedgerWrite(it.result, it.action) }
+                if (runResult.failure != null || runResult.submission == null) {
+                    val message = "装入未完成，请先核对游戏文件和安装记录：${runResult.failure.orEmpty()}"
+                    _moveState.value = MoveState.Failed(message)
+                    notifyLedgerNotice(message)
+                    return@launch
+                }
+                val result = runResult.submission
                 if (result.requiresReconciliation) notifyLedgerNotice(result.message)
                 if (result.filesReplaced) {
                     _finalInstallResult.value = _finalInstallResult.value?.copy(command = null)

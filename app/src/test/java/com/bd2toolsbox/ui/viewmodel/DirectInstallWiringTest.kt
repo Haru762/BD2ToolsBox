@@ -1,6 +1,7 @@
 package com.bd2toolsbox.ui.viewmodel
 
 import android.content.Context
+import com.bd2toolsbox.feature.install.DirectMoveCommitHost
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -80,7 +81,7 @@ class DirectInstallWiringTest {
             mockk(relaxed = true),
             mockk(relaxed = true),
             mockk(relaxed = true),
-            mockk(relaxed = true), // move executor is not used by direct-install tests
+            DirectMoveCommitHost(mockk(relaxed = true)),
             mockk(relaxed = true), // uninstall executor is not used by direct-install tests
             mockk(relaxed = true), // scan executor is not used by direct-install tests
             mockk(relaxed = true), // prepack executor is not used by direct-install tests

@@ -1,4 +1,4 @@
-package com.bd2toolsbox.feature.settings
+package com.bd2toolsbox.core.model
 
 import java.security.MessageDigest
 

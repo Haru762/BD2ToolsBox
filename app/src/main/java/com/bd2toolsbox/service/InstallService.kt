@@ -12,15 +12,35 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bd2toolsbox.MainActivity
+import com.bd2toolsbox.feature.install.InstallExecutor
+import com.bd2toolsbox.feature.install.MoveCommitHost
+import com.bd2toolsbox.feature.install.MoveCommitRequest
+import com.bd2toolsbox.feature.install.MoveCommitResult
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * 转换 / 装入期间的前台服务。
  *
- * 只做一件事：把进程钉在前台，并在通知栏显示进度。转换与装入的逻辑仍留在
- * [com.bd2toolsbox.ui.viewmodel.MainViewModel] —— 那条流程牵着 Python
- * 重打包、CDN 下载、Shizuku 写入、原版备份、装入账本五摊子事，整个搬进服务的
- * 收益远不如风险。
+ * 职责：把进程钉在前台、在通知栏显示进度，并且**亲自执行提交**（T22）。
+ *
+ * 为什么只搬「提交」这一段：整条流程牵着 Python 重打包、CDN 下载、Shizuku 写入、
+ * 原版备份、装入账本五摊子事，全搬进服务的收益远不如风险（这一条判断没有变）。
+ * 但**真正被点名的缺陷**是第 2 条：提交跑在 viewModelScope 上，用户退出界面时
+ * ViewModel onCleared、协程被取消，会在游戏目录留下半个 `__data`。
+ * 所以这里只把 [InstallExecutor.move] 那次提交搬进来 —— 它本来就已经是
+ * 「冻结事实进、真实结果出」的形态，不读 UI 状态、不持调用方闭包。
+ * 提交完成后的 UI 状态刷新仍然留在 ViewModel。
  *
  * 「放着不管就被杀」是两个原因叠出来的，所以要两处一起改：
  *   1. 没有前台服务 → 切后台后系统把整个进程当空闲后台回收
@@ -31,8 +51,29 @@ import dagger.hilt.android.AndroidEntryPoint
  * 通知里刻意**不放取消按钮**：重打包中途断掉会在游戏目录留下半个 __data，
  * 而这条流程目前也没有干净的中断点。要停就等它跑完再卸载。
  */
-@AndroidEntryPoint // T16：本进程前台服务接入 Hilt（当前无注入字段，留给 T17）
+@AndroidEntryPoint // T16：本进程前台服务接入 Hilt；T22 注入 InstallExecutor
 class InstallService : Service() {
+
+    @Inject lateinit var installExecutor: InstallExecutor
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var worker: Job? = null
+
+    /**
+     * 生产宿主：把提交交给本服务执行（T22）。
+     *
+     * 服务持有自己的 scope 与前台状态，**界面销毁不会取消它** —— 这正是把提交从
+     * viewModelScope 搬过来的理由。请求通过 companion 直传（同进程，避免 Binder 1MB 上限）。
+     */
+    class Host @Inject constructor(
+        @dagger.hilt.android.qualifiers.ApplicationContext private val context: Context
+    ) : MoveCommitHost {
+        override suspend fun execute(request: MoveCommitRequest): MoveCommitResult? {
+            clearRunResult()
+            if (!run(context, request)) return null
+            return runResult.first { it?.id == request.id }
+        }
+    }
 
     companion object {
         private const val TAG = "InstallService"
@@ -43,6 +84,37 @@ class InstallService : Service() {
         const val ACTION_START = "com.bd2toolsbox.action.INSTALL_START"
         const val ACTION_UPDATE = "com.bd2toolsbox.action.INSTALL_UPDATE"
         const val ACTION_STOP = "com.bd2toolsbox.action.INSTALL_STOP"
+        const val ACTION_RUN = "com.bd2toolsbox.action.INSTALL_RUN"
+
+        @Volatile
+        private var pendingRun: MoveCommitRequest? = null
+
+        private val _runResult = MutableStateFlow<MoveCommitResult?>(null)
+        val runResult: StateFlow<MoveCommitResult?> = _runResult.asStateFlow()
+
+        fun clearRunResult() {
+            _runResult.value = null
+        }
+
+        /**
+         * 把一次提交交给服务执行（T22）。返回 false 表示前台服务启动被拒 ——
+         * 调用方必须据此停下并告诉用户，不能照常开跑。
+         */
+        fun run(context: Context, request: MoveCommitRequest): Boolean {
+            pendingRun = request
+            val intent = Intent(context, InstallService::class.java).apply {
+                action = ACTION_RUN
+                putExtra(EXTRA_TOTAL, request.targets.size)
+            }
+            return try {
+                context.startForegroundService(intent)
+                true
+            } catch (e: Exception) {
+                pendingRun = null
+                Log.w(TAG, "提交任务的前台服务启动被拒: ${e.message}")
+                false
+            }
+        }
 
         private const val EXTRA_DONE = "done"
         private const val EXTRA_TOTAL = "total"
@@ -113,6 +185,25 @@ class InstallService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_RUN -> {
+                val request = pendingRun
+                pendingRun = null
+                if (request == null) {
+                    // 没有冻结输入就没有可执行的东西：不谎报「正在装入」
+                    Log.w(TAG, "收到 ACTION_RUN 但没有待执行任务，忽略")
+                    stopForegroundCompat()
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                total = request.targets.size
+                if (!foregroundStarted) {
+                    foregroundStarted = true
+                    startForeground(NOTIFICATION_ID, buildNotification(0, total, "正在装入…"))
+                }
+                worker?.cancel()
+                worker = scope.launch { executeRun(request) }
+            }
+
             ACTION_START -> {
                 total = intent.getIntExtra(EXTRA_TOTAL, total)
                 if (foregroundStarted) {
@@ -156,6 +247,37 @@ class InstallService : Service() {
         // 不要 START_STICKY：进程被杀后重启一个空 Intent 的服务毫无意义 ——
         // 真正在装的那个协程已经随进程没了，留个空通知只会误导。
         return START_NOT_STICKY
+    }
+
+    /**
+     * 真正执行提交（T22）。
+     *
+     * 跑在服务自己的 scope 上，**不随 ViewModel 销毁而取消** —— 这正是把这段搬进来的理由。
+     * 结果（含失败原因）一律落进 [RunResult]，由 ViewModel 决定怎么向用户交代；
+     * 这里不吞异常、也不谎报成功。
+     */
+    private suspend fun executeRun(request: MoveCommitRequest) {
+        val result = try {
+            val executed = installExecutor.move(
+                id = com.bd2toolsbox.core.model.OperationId(request.id),
+                shared = File(request.sharedPath),
+                stagingRoot = File(request.stagingPath),
+                targets = request.targets,
+                restoredTargets = request.removals
+            )
+            MoveCommitResult(request.id, executed.submission, executed.ledgerNotices, null)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            // 服务被系统停掉时的取消：如实记录，不当作成功
+            MoveCommitResult(request.id, null, emptyList(), "装入被中断：服务已停止")
+        } catch (e: Exception) {
+            Log.e(TAG, "提交执行失败", e)
+            MoveCommitResult(request.id, null, emptyList(), e.message ?: e.javaClass.simpleName)
+        }
+        _runResult.value = result
+        // 提交是这条前台服务的唯一目的，做完即收场（通知与前台状态一起收）
+        foregroundStarted = false
+        stopForegroundCompat()
+        stopSelf()
     }
 
     override fun onDestroy() {

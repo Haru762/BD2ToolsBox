@@ -47,8 +47,8 @@ import com.bd2toolsbox.core.model.ConvertedOverwritePlan
 import com.bd2toolsbox.core.model.PrepackPlan
 import com.bd2toolsbox.core.model.UninstallPlan
 import com.bd2toolsbox.data.repository.UpdateRepository
-import com.bd2toolsbox.feature.settings.BackupPurge
-import com.bd2toolsbox.feature.settings.PurgeOutcome
+import com.bd2toolsbox.core.model.BackupPurge
+import com.bd2toolsbox.core.model.PurgeOutcome
 import com.bd2toolsbox.ui.components.AppDialog
 import com.bd2toolsbox.ui.components.InstallJobRow
 import com.bd2toolsbox.ui.components.SelectionRow

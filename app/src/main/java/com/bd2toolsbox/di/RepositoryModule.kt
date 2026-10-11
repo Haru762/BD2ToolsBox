@@ -36,6 +36,26 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object RepositoryModule {
 
+    /**
+     * 提交执行的宿主（T22）：生产把提交交给 `InstallService`。
+     *
+     * 这是**必须**在这里绑而不是在 ViewModel 里 new 的原因：JVM 用例要能替换成
+     * [com.bd2toolsbox.feature.install.DirectMoveCommitHost] 来验证提交语义本身，
+     * 而生产路径由设备用例 `InstallServiceRunHostTest` 覆盖。
+     */
+
+    /**
+     * 提交执行的宿主（T22）：生产把提交交给 `InstallService`（自己的 scope + 前台服务，
+     * 界面销毁不会取消它）。绑在接口上是为了让 JVM 用例能换成
+     * [com.bd2toolsbox.feature.install.DirectMoveCommitHost] 验证提交语义本身；
+     * 生产路径由设备用例 `InstallServiceRunHostTest` 覆盖。
+     */
+    @Provides
+    @Singleton
+    fun provideMoveCommitHost(
+        impl: com.bd2toolsbox.service.InstallService.Host
+    ): com.bd2toolsbox.feature.install.MoveCommitHost = impl
+
     @Provides
     @Singleton
     fun provideCharacterRepository(@ApplicationContext context: Context): CharacterRepository =

@@ -7,8 +7,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.bd2toolsbox.feature.settings.BackupPurge
-import com.bd2toolsbox.feature.settings.PurgeRevalidation
+import com.bd2toolsbox.core.model.BackupPurge
+import com.bd2toolsbox.core.model.PurgeRevalidation
 import com.bd2toolsbox.ui.components.AppDialog
 import com.bd2toolsbox.ui.dialogs.BackupManageDialog
 import com.bd2toolsbox.ui.theme.BD2ModManagerTheme

@@ -18,6 +18,7 @@ import com.bd2toolsbox.data.repository.CharacterRepository
 import com.bd2toolsbox.data.repository.InstalledModRepository
 import com.bd2toolsbox.data.repository.ModRepository
 import com.bd2toolsbox.data.repository.PreviewCacheRepository
+import com.bd2toolsbox.feature.install.DirectMoveCommitHost
 import com.bd2toolsbox.feature.install.InstallExecutor
 import com.bd2toolsbox.feature.install.UninstallExecutor
 import com.bd2toolsbox.service.ShizukuManager
@@ -103,7 +104,7 @@ class MoveInstallWiringTest {
             mockk(relaxed = true),
             mockk(relaxed = true),
             mockk(relaxed = true),
-            executor,
+            DirectMoveCommitHost(executor),
             uninstallExecutor,
             mockk(relaxed = true), // scan executor is not used by move-install tests
             mockk(relaxed = true), // prepack executor is not used by move-install tests
