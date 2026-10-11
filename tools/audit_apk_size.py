@@ -39,6 +39,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import struct
 import sys
 import zipfile
@@ -162,6 +163,60 @@ def _read_nested_imy(blob: bytes, label: str, findings: list) -> dict:
     return result
 
 
+def _abi_tokens(abi: str) -> List[str]:
+    if abi == "arm64-v8a":
+        return ["arm64-v8a", "arm64"]
+    if abi == "x86_64":
+        return ["x86_64"]
+    return [abi]
+
+
+ALL_ABI_TOKENS = ("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+
+
+def _token_matches(text: str, token: str) -> bool:
+    """ABI token 必须作为**独立片段**出现。
+
+    否则 `x86` 会在 `stdlib-x86_64.imy` 里被子串命中，把正确的包误判成混架构
+    （与 `feature/update/ApkSelector.kt` 同一条边界规则）。
+    """
+    pattern = "(?<![a-z0-9_])" + re.escape(token) + "(?![a-z0-9_])"
+    return re.search(pattern, text, re.IGNORECASE) is not None
+
+
+def check_expected_abi(report: dict, expected: str) -> List[dict]:
+    """T49：确认这个包**只**含 [expected] 架构的内容。
+
+    只看 `lib/` 目录不够 —— Chaquopy 的 assets/IMY 里还藏着另一套原生库，
+    文件名里也带 ABI 后缀。这里两处都查。
+    """
+    problems = []
+    allowed = set(_abi_tokens(expected))
+    foreign = [t for t in ALL_ABI_TOKENS if t not in allowed]
+
+    for abi_dir in sorted(report.get("nativeByAbiDir", {})):
+        if abi_dir not in allowed:
+            problems.append({"kind": "foreign-lib-abi-dir", "abi": abi_dir})
+
+    for problem in report.get("elfProblems", []):
+        problems.append({"kind": "elf-problem", "name": problem.get("name"),
+                         "reason": problem.get("reason")})
+
+    for inner in report.get("nestedImy", []):
+        entry = inner.get("entry", "")
+        for token in foreign:
+            if _token_matches(entry, token):
+                problems.append({"kind": "foreign-imy-name", "entry": entry, "token": token})
+        for so in inner.get("soFiles", []):
+            if so.get("abi") is not None and so.get("abi") not in allowed:
+                problems.append({"kind": "foreign-imy-native", "entry": entry,
+                                 "name": so.get("name"), "abi": so.get("abi")})
+        for unknown in inner.get("unknownPlatform", []):
+            problems.append({"kind": "unknown-imy-native", "entry": entry,
+                             "name": unknown.get("name")})
+    return problems
+
+
 def audit(apk_path: str) -> dict:
     if not os.path.isfile(apk_path):
         raise AuditError("APK not found: %s" % apk_path)
@@ -280,6 +335,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="只读审计 APK 组成 / ABI / native")
     parser.add_argument("--apk", required=True, help="release APK 路径")
     parser.add_argument("--output", default=None, help="JSON 输出路径（省略则打印）")
+    parser.add_argument("--expected-abi", default=None,
+                        help="断言该包只含此 ABI（arm64-v8a / x86_64）；不符则退出码 1")
     parser.add_argument("--quiet", action="store_true", help="不打印摘要")
     args = parser.parse_args(argv)
 
@@ -295,6 +352,12 @@ def main(argv=None) -> int:
     problems = _check_invariants(report)
     report["invariantProblems"] = problems
 
+    if args.expected_abi:
+        abi_problems = check_expected_abi(report, args.expected_abi)
+        report["expectedAbi"] = args.expected_abi
+        report["expectedAbiProblems"] = abi_problems
+        problems = problems + abi_problems
+
     text = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     if args.output:
         with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
@@ -305,7 +368,6 @@ def main(argv=None) -> int:
     if problems or report["findings"]:
         return 1
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

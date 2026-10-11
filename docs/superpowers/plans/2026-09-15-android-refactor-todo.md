@@ -2152,6 +2152,8 @@ Invoke-Bd2Python (Join-Path $Root 'tools/audit_apk_size.py') --apk $BeforeX64Apk
 
 - [ ] **T49 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** ABI 发布改为 `arm64`/`x64` 两个单 ABI flavor，删除 `splits`（不再产 universal）与 release 的写死 `abiFilters`；两个 flavor 共用 applicationId/版本/签名。`audit_apk_size.py` 新增 `--expected-abi`（不只查 `lib/`，还查嵌套 IMY 文件名与内部 `.so` 架构），两包 **exit 0、findings=0**；改前 splits 的 arm64 包里**确实同时带 `stdlib-x86_64.imy`**。体积 33.5184 → 28.8306 MiB（−13.99%）。verification.ps1 任务映射已更新（`Test-Bd2Unit` 现跑 `arm64Debug+x64Debug`）。**arm64 真机未验、`resources-and-licenses` smoke 用例不存在**，不勾 DONE。见 [T49 证据](../../refactor/evidence/T49.md) 与 [abi-packaging.md](../../refactor/evidence/abi-packaging.md)。
+
 **优先级：** P0　**前置：** T48、T32、T12、T37、T38
 
 **文件范围（实施工作区）：**
@@ -2190,6 +2192,8 @@ Test-Bd2ReleaseSmoke -Case 'resources-and-licenses' -Abi 'x86_64'
 ### T50 — 从 Android Python 归档中剔除已确认无关平台内容
 
 - [ ] **T50 完成**
+
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `config/android-python-excludes.json`（三条已核对路径：UnityPy 的 Darwin/Windows/桌面 Linux FMOD 二进制，18 个文件）与 `tools/stage_android_python.py`（只读源、确定性、归一 mtime、清单零命中即失败），Gradle 用 `stageAndroidPython` 把 `sourceSets.main.python` **替换**为暂存目录。Python `test_android_python_staging.py` **13/13 PASS**；设备 `AndroidPythonStagingTest` **4/4 PASS**（设备上无任何桌面 FMOD 文件；保留模块可 import；`pyfmodex` 仍不可用、Ogg 基线不变；走生产入口 `main_script` 可导入 repacker）与 `NativeEngineSmokeTest` **9/9 PASS**。体积 28.8306 → **23.2837 MiB**（相对 T48 基线 −30.5%）。**音频全格式回归、`engine-and-preview` smoke、arm64 未做**，不勾 DONE。见 [T50 证据](../../refactor/evidence/T50.md)。
 
 **优先级：** P1　**前置：** T49、T37
 

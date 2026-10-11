@@ -657,11 +657,22 @@ function Restore-Bd2SystemSettings {
 # ---------------------------------------------------------------------------
 
 function Get-Bd2InstrumentationApk {
-    $pattern = Join-Path $Root 'app/build/outputs/apk/androidTest/debug/*.apk'
-    $files = @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue)
-    if ($files.Count -eq 0) { throw "androidTest APK not found under $pattern" }
-    if ($files.Count -gt 1) { throw "multiple androidTest APKs found: $($files.FullName -join ', ')" }
-    return $files[0].FullName
+    param([string]$Abi = '')
+    # T49 起 androidTest APK 按 flavor 变体分目录：
+    #   apk/androidTest/<flavor>/debug/app-<flavor>-debug-androidTest.apk
+    # 旧的共用布局（apk/androidTest/debug/*.apk）作为兼容保留。
+    $patterns = @()
+    if ($Abi) {
+        $flavor = if ($Abi -eq 'arm64-v8a') { 'arm64' } else { 'x64' }
+        $patterns += (Join-Path $Root "app/build/outputs/apk/androidTest/$flavor/debug/*.apk")
+    }
+    $patterns += (Join-Path $Root 'app/build/outputs/apk/androidTest/debug/*.apk')
+    foreach ($pattern in $patterns) {
+        $files = @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue)
+        if ($files.Count -eq 1) { return $files[0].FullName }
+        if ($files.Count -gt 1) { throw "multiple androidTest APKs found: $($files.FullName -join ', ')" }
+    }
+    throw "androidTest APK not found under: $($patterns -join ', ')"
 }
 
 function Get-Bd2ReleaseProbeApk {
@@ -677,12 +688,17 @@ function Get-Bd2ReleaseProbeApk {
 
 function Get-Bd2ApkForAbi {
     param([Parameter(Mandatory=$true)][string]$BuildType, [Parameter(Mandatory=$true)][string]$Abi)
-    $dir = Join-Path $Root ("app/build/outputs/apk/" + $BuildType)
-    $candidate = Join-Path $dir ("app-" + $Abi + "-" + $BuildType + ".apk")
-    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        throw "ABI split APK missing for $Abi/${BuildType}: $candidate"
+    # T49 起是单 ABI flavors：apk/<flavor>/<buildType>/app-<flavor>-<buildType>.apk。
+    # 旧的 ABI splits 布局（apk/<buildType>/app-<abi>-<buildType>.apk）作为兼容保留。
+    $flavor = if ($Abi -eq 'arm64-v8a') { 'arm64' } else { 'x64' }
+    $candidates = @(
+        (Join-Path $Root ("app/build/outputs/apk/$flavor/$BuildType/app-$flavor-$BuildType.apk")),
+        (Join-Path $Root ("app/build/outputs/apk/$BuildType/app-$Abi-$BuildType.apk"))
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
     }
-    return $candidate
+    throw "No APK for $Abi/${BuildType}; tried: $($candidates -join ', ')"
 }
 
 function Invoke-Bd2Instrumentation {
@@ -846,9 +862,10 @@ function Test-Bd2Device {
         result = 'FAIL'
     }
     try {
-        Invoke-Bd2Gradle :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+        $flavor = if ($Abi -eq 'arm64-v8a') { 'Arm64' } else { 'X64' }
+        Invoke-Bd2Gradle ":app:assemble${flavor}Debug" ":app:assemble${flavor}DebugAndroidTest" --console=plain
         $appApk = Get-Bd2ApkForAbi -BuildType 'debug' -Abi $Abi
-        $testApk = Get-Bd2InstrumentationApk
+        $testApk = Get-Bd2InstrumentationApk -Abi $Abi
         $summary.appApk = $appApk
         $summary.appApkSha256 = Get-Bd2Sha256 -Path $appApk
         $summary.testApk = $testApk
@@ -1014,17 +1031,31 @@ function Invoke-Bd2UiColdStart {
     return @{ scope = 'production-ui-chrome-only'; uiChromeColdStartVerified = $true; uiColdStartVerified = $false }
 }
 
+function Get-Bd2MappingForAbi {
+    param([Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi)
+    # T49 起 mapping 按 flavor 变体分目录；旧布局作为兼容保留。
+    $flavor = if ($Abi -eq 'arm64-v8a') { 'arm64' } else { 'x64' }
+    $candidates = @(
+        (Join-Path $Root "app/build/outputs/mapping/${flavor}Release/mapping.txt"),
+        (Join-Path $Root 'app/build/outputs/mapping/release/mapping.txt')
+    )
+    foreach ($candidate in $candidates) {
+        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (Get-Item -LiteralPath $candidate).Length -gt 0) {
+            return $candidate
+        }
+    }
+    throw "R8 mapping missing or empty for $Abi; tried: $($candidates -join ', ')"
+}
+
 function Get-Bd2CurrentReleaseArtifact {
     param([Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi)
     # Do not use the frozen 0.2.16 APK for a test of new production Store code.
     # Normal release signing remains mandatory; this helper never fabricates credentials.
     Invoke-Bd2Gradle :app:assembleRelease --console=plain
     $path = Get-Bd2ApkForAbi -BuildType release -Abi $Abi
-    $mapping = Join-Path $Root 'app/build/outputs/mapping/release/mapping.txt'
-    if (-not (Test-Path -LiteralPath $mapping -PathType Leaf) -or (Get-Item -LiteralPath $mapping).Length -eq 0) {
-        throw 'Current release R8 mapping is missing or empty'
-    }
-    return @{ path = $path; relative = "app/build/outputs/apk/release/app-$Abi-release.apk"; expectedSha256 = (Get-Bd2Sha256 -Path $path); mappingPath = $mapping; mappingSha256 = (Get-Bd2Sha256 -Path $mapping) }
+    $mapping = Get-Bd2MappingForAbi -Abi $Abi
+    $relative = $path.Substring($Root.Length).TrimStart('\', '/').Replace('\', '/')
+    return @{ path = $path; relative = $relative; expectedSha256 = (Get-Bd2Sha256 -Path $path); mappingPath = $mapping; mappingSha256 = (Get-Bd2Sha256 -Path $mapping) }
 }
 
 function Test-Bd2ReleaseSmoke {

@@ -56,6 +56,52 @@ val appVersionCode = run {
     parsed
 }
 
+// ---------------------------------------------------------------------------
+// T50：Android 侧 Python 源集先在构建目录暂存，再交给 Chaquopy。
+//
+// `app/src/main/python` 里 vendored 的 UnityPy 随包带着**桌面平台**的 FMOD
+// 原生库（macOS dylib / Windows dll / 桌面 Linux glibc so，18 个文件）。它们在
+// Android/Bionic 上既不会被加载（`pyfmodex` 根本不在 pip 清单里），也没有调用
+// 路径。直接删 vendored 原文件会破坏「第三方来源原样保留」，所以在暂存阶段剔除。
+//
+// 清单：config/android-python-excludes.json（每条必须在源树里真实命中，否则失败）。
+// 暂存逻辑：tools/stage_android_python.py（确定性：先清空、归一 mtime）。
+// ---------------------------------------------------------------------------
+val androidPythonSourceDir = layout.projectDirectory.dir("src/main/python")
+val stagedAndroidPythonDir = layout.buildDirectory.dir("staged-python/main")
+val stagedAndroidPythonManifest = layout.buildDirectory.file("staged-python/manifest.json")
+val androidPythonExcludeConfig = rootProject.layout.projectDirectory.file("config/android-python-excludes.json")
+
+// 构建机 Python：与 chaquopy.buildPython 同一套查找顺序（local.properties → 环境变量 → PATH）。
+val hostPythonExecutable: String = run {
+    val localPython = Properties().apply {
+        rootProject.file("local.properties")
+            .takeIf { it.exists() }
+            ?.inputStream()
+            ?.use { load(it) }
+    }.getProperty("chaquopy.python") ?: System.getenv("CHAQUOPY_PYTHON")
+    if (!localPython.isNullOrBlank()) localPython else "python"
+}
+
+val stageAndroidPython by tasks.registering(Exec::class) {
+    group = "build"
+    description = "按 config/android-python-excludes.json 暂存 Android Python 源集（T50）"
+    inputs.dir(androidPythonSourceDir).withPropertyName("pythonSource")
+    inputs.file(androidPythonExcludeConfig).withPropertyName("excludeConfig")
+    inputs.file(rootProject.file("tools/stage_android_python.py")).withPropertyName("stagingTool")
+    outputs.dir(stagedAndroidPythonDir).withPropertyName("stagedPython")
+    outputs.file(stagedAndroidPythonManifest).withPropertyName("stagingManifest")
+    commandLine(
+        hostPythonExecutable,
+        rootProject.file("tools/stage_android_python.py").absolutePath,
+        "--source", androidPythonSourceDir.asFile.absolutePath,
+        "--dest", stagedAndroidPythonDir.get().asFile.absolutePath,
+        "--config", androidPythonExcludeConfig.asFile.absolutePath,
+        "--manifest", stagedAndroidPythonManifest.get().asFile.absolutePath,
+        "--quiet"
+    )
+}
+
 android {
     namespace = "com.bd2toolsbox"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -83,42 +129,54 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+    }
 
-        // v0.2.2 起发分架构 APK：手机装 arm64-v8a、模拟器装 x86_64，
-        // 各自只含对应架构的 Chaquopy 原生库（体积约减半），模拟器也不会
-        // 再被 PackageManager 挑成 arm64 走 libhoudini 转译。通用包继续出。
-        splits {
-            abi {
-                isEnable = true
-                reset()
-                include("arm64-v8a", "x86_64")
-                isUniversalApk = true
-            }
+    // T49：把「发分架构 APK」建模为两个 flavor，而不是 ABI splits。
+    //
+    // 理由：splits 会在同一个 variant 里同时装配两个 ABI 的 Chaquopy 资产再切开，
+    // 且默认还会多产一个 universal 包（容易被误上传 / 被更新器选错）。
+    // flavor 让 arm64 与 x64 各自成为一个独立 variant，`ndk.abiFilters` 只含自己的 ABI，
+    // 因此 lib/ 与 Chaquopy 的 assets/IMY 都只含当前 ABI。
+    //
+    // 两个 flavor 共用 defaultConfig 的 applicationId / versionCode / versionName /
+    // signingConfig，所以「同一应用、同一签名、同一版本」的语义不变；
+    // 也不再默认产出 universal。
+    flavorDimensions += "abi"
+    productFlavors {
+        create("arm64") {
+            dimension = "abi"
+            ndk { abiFilters.add("arm64-v8a") }
         }
-        
-        ndk {
-            abiFilters.addAll(listOf("x86_64", "arm64-v8a"))
+        create("x64") {
+            dimension = "abi"
+            ndk { abiFilters.add("x86_64") }
         }
     }
 
     buildTypes {
         debug {
-            ndk {
-                abiFilters.addAll(listOf("x86_64", "arm64-v8a"))
-            }
         }
         release {
             isMinifyEnabled = true
-            ndk {
-                abiFilters.add("arm64-v8a")
-            }
+            // Chaquopy 16.1.0 自己把 build/python/proguard-rules.pro 接入 R8
+            // （见 mapping/<variant>Release/configuration.txt 的 section 头）。
+            // 这里曾写死 build/generated/chaquopy/proguard.pro —— 该路径在 16.1.0
+            // 已不存在，每次 release 构建都会报 “Supplied proguard configuration
+            // does not exist” 而实际规则并未缺失（T49 核对后删除）。
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-                "build/generated/chaquopy/proguard.pro"
+                "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("release")
         }
+    }
+
+    // T50：把 main 源集的 Python 根换成暂存目录（替换而非追加 —— 追加会把
+    // 原树里的桌面 FMOD 二进制又带回包里）。
+    sourceSets.getByName("main").apply {
+        val pythonSourceSet = (this as org.gradle.api.plugins.ExtensionAware)
+            .extensions.getByName("python") as org.gradle.api.file.SourceDirectorySet
+        pythonSourceSet.setSrcDirs(listOf(stagedAndroidPythonDir))
     }
 
     compileOptions {
@@ -228,5 +286,12 @@ aboutLibraries {
         configPath.set(file("../config/aboutlibraries"))
         fetchRemoteLicense.set(false)
         fetchRemoteFunding.set(false)
+    }
+}
+
+// T50：Chaquopy 的 Python 资产任务必须先把源集暂存好。
+tasks.configureEach {
+    if (name.contains("Python") && name != "stageAndroidPython") {
+        dependsOn(stageAndroidPython)
     }
 }

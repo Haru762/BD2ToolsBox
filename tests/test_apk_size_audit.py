@@ -226,5 +226,92 @@ class AuditApkSizeTest(unittest.TestCase):
         self.assertIn("categories", data)
 
 
+    # ---------------------------------------------------------------- T49 单 ABI
+
+    def test_expected_abi_accepts_single_abi_package(self):
+        apk = self._apk([
+            ("lib/arm64-v8a/liba.so", elf_bytes(183)),
+            ("assets/chaquopy/stdlib-arm64-v8a.imy",
+             make_imy([("chaquopy/libx.so", elf_bytes(183))])),
+        ])
+        report = audit.audit(apk)
+        self.assertEqual([], audit.check_expected_abi(report, "arm64-v8a"))
+
+    def test_expected_abi_rejects_foreign_lib_dir(self):
+        apk = self._apk([
+            ("lib/arm64-v8a/liba.so", elf_bytes(183)),
+            ("lib/x86_64/libb.so", elf_bytes(62)),
+        ])
+        report = audit.audit(apk)
+        problems = audit.check_expected_abi(report, "arm64-v8a")
+        self.assertTrue(any(p["kind"] == "foreign-lib-abi-dir" for p in problems))
+
+    def test_expected_abi_rejects_foreign_content_inside_imy(self):
+        # lib/ 全对，但 Chaquopy 归档里藏着另一套架构的原生库 —— 只看 lib/ 会漏
+        apk = self._apk([
+            ("lib/arm64-v8a/liba.so", elf_bytes(183)),
+            ("assets/chaquopy/requirements-arm64-v8a.imy",
+             make_imy([("chaquopy/libx.so", elf_bytes(62))])),
+        ])
+        report = audit.audit(apk)
+        problems = audit.check_expected_abi(report, "arm64-v8a")
+        self.assertTrue(any(p["kind"] == "foreign-imy-native" for p in problems))
+
+    def test_expected_abi_rejects_foreign_imy_name(self):
+        apk = self._apk([
+            ("lib/arm64-v8a/liba.so", elf_bytes(183)),
+            ("assets/chaquopy/stdlib-x86_64.imy", make_imy([("m.py", b"x")])),
+        ])
+        report = audit.audit(apk)
+        problems = audit.check_expected_abi(report, "arm64-v8a")
+        self.assertTrue(any(p["kind"] == "foreign-imy-name" for p in problems))
+
+    def test_expected_abi_rejects_unknown_platform_native(self):
+        apk = self._apk([
+            ("lib/arm64-v8a/liba.so", elf_bytes(183)),
+            ("assets/chaquopy/x-arm64-v8a.imy",
+             make_imy([("chaquopy/libw.so", elf_bytes(243))])),
+        ])
+        report = audit.audit(apk)
+        problems = audit.check_expected_abi(report, "arm64-v8a")
+        self.assertTrue(any(p["kind"] == "unknown-imy-native" for p in problems))
+
+    def test_cli_expected_abi_exit_code(self):
+        ok = self._apk([("lib/arm64-v8a/liba.so", elf_bytes(183))], name="abi-ok.apk")
+        self.assertEqual(0, audit.main(["--apk", ok, "--expected-abi", "arm64-v8a",
+                                        "--quiet"]))
+        self.assertEqual(1, audit.main(["--apk", ok, "--expected-abi", "x86_64",
+                                        "--quiet"]))
+
+
+    def test_expected_abi_token_matching_does_not_confuse_x86_with_x86_64(self):
+        # 回归：stdlib-x86_64.imy 不能被当成「含 x86 架构内容」
+        apk = self._apk([
+            ("lib/x86_64/liba.so", elf_bytes(62)),
+            ("assets/chaquopy/stdlib-x86_64.imy", make_imy([("m.py", b"x")])),
+            ("assets/chaquopy/requirements-x86_64.imy", make_imy([("m.py", b"x")])),
+        ])
+        report = audit.audit(apk)
+        self.assertEqual([], audit.check_expected_abi(report, "x86_64"))
+
+    def test_expected_abi_token_matching_still_catches_real_foreign_names(self):
+        apk = self._apk([
+            ("lib/arm64-v8a/liba.so", elf_bytes(183)),
+            ("assets/chaquopy/stdlib-x86_64.imy", make_imy([("m.py", b"x")])),
+        ])
+        report = audit.audit(apk)
+        problems = audit.check_expected_abi(report, "arm64-v8a")
+        self.assertTrue(any(p["kind"] == "foreign-imy-name" for p in problems))
+
+    def test_token_matching_is_boundary_aware(self):
+        self.assertTrue(audit._token_matches("stdlib-arm64-v8a.imy", "arm64-v8a"))
+        self.assertTrue(audit._token_matches("app-x86_64-release.apk", "x86_64"))
+        self.assertFalse(audit._token_matches("stdlib-x86_64.imy", "x86"))
+        self.assertFalse(audit._token_matches("stdlib-arm64v8a.imy", "arm64"))
+        self.assertFalse(audit._token_matches("libfmod.so", "x86"))
+        self.assertTrue(audit._token_matches("lib/arm64/libfmod.so", "arm64"))
+        self.assertTrue(audit._token_matches("stdlib-arm64-v8a.imy", "arm64"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "createdByTask": "T50",
+  "note": "Android 侧 Python 源集的精确排除清单。只列**已确认**与 Android/Bionic 无关或不可用的路径，不做按扩展名（如所有 .so）或按目录（如整个 export）的粗暴删除。vendored 原始文件保留在 app/src/main/python 下不删，构建时由 tools/stage_android_python.py 暂存到 build/staged-python 再交给 Chaquopy。每条排除都必须在源集里真实命中，否则构建失败（防止清单腐烂）。",
+  "excludes": [
+    {
+      "path": "vendor/UnityPy/lib/FMOD/Darwin",
+      "reason": "macOS 通用 dylib（libfmod.dylib，2.43 MB）。Android 不能加载 Mach-O。",
+      "evidence": "UnityPy/export/AudioClipConverter.py: get_fmod_path 只在 platform.system()==\"Darwin\" 时返回此路径；Android 上 platform.system()==\"Linux\"。"
+    },
+    {
+      "path": "vendor/UnityPy/lib/FMOD/Windows",
+      "reason": "Windows DLL（fmod.dll，x86/x64/arm）。Android 不能加载 PE。",
+      "evidence": "同上：只有 platform.system()==\"Windows\" 才会走到这里。"
+    },
+    {
+      "path": "vendor/UnityPy/lib/FMOD/Linux",
+      "reason": "桌面 Linux (glibc) 的 libfmod.so（x86/x86_64/arm/arm64）。Android 是 Bionic libc，且这些构建不面向 Android ABI；即便路径被解析到也加载不了。",
+      "evidence": "platform.system() 在 Android 上返回 \"Linux\"，machine 为 aarch64 → 解析到 lib/FMOD/Linux/arm64/libfmod.so；但该文件是 glibc 桌面构建。"
+    }
+  ],
+  "whyWholeFmodTreeIsRemoved": {
+    "summary": "整棵 vendor/UnityPy/lib/FMOD 都不适用于 Android，因此三个平台目录全排除；lib/ 下的 README.MD 与 __init__.py 保留。",
+    "notAnExtensionBasedRule": "不是「删掉所有 .so」：app/src/main/python 下其它 .so/.py 一律保留，只排这三条已核对的路径。",
+    "runtimeCheck": "pyfmodex（Python 绑定）**不在** app/requirements-android.txt 里，import_pyfmodex() 的 `import pyfmodex` 必然 ImportError；AudioClipConverter.dump_samples 是唯一用到 FMOD 的地方，而 app 侧 Python 没有任何调用路径（只有 UnityPy 自带的桌面 CLI tools/extractor.py 用）。",
+    "audioBaseline": "Ogg/RIFF/m4a 音频由 extract_audioclip_samples 直接按容器头返回字节，不经过 FMOD；其余格式在本轮之前就已因缺少 pyfmodex 而返回空。排除前后该行为不变，已由设备用例断言。"
+  }
+}
