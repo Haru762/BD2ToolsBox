@@ -298,6 +298,54 @@ def check_required_resource_names(apk_path: str, required: List[str]) -> List[di
     return problems
 
 
+def compare_reports(before: dict, after: dict) -> dict:
+    """T54：两份审计报告的逐项对照（同一口径可复算）。"""
+    categories = {}
+    for name in CATEGORY_ORDER:
+        b = before["categories"].get(name, {})
+        a = after["categories"].get(name, {})
+        categories[name] = {
+            "entriesBefore": b.get("entries"),
+            "entriesAfter": a.get("entries"),
+            "bytesBefore": b.get("compressedBytes"),
+            "bytesAfter": a.get("compressedBytes"),
+            "deltaBytes": (a.get("compressedBytes") or 0) - (b.get("compressedBytes") or 0),
+        }
+    return {
+        "schemaVersion": 1,
+        "tool": "tools/audit_apk_size.py --compare",
+        "apk": {
+            "bytesBefore": before["apk"]["bytes"],
+            "bytesAfter": after["apk"]["bytes"],
+            "mibBefore": before["apk"]["mib"],
+            "mibAfter": after["apk"]["mib"],
+            "deltaBytes": after["apk"]["bytes"] - before["apk"]["bytes"],
+            "deltaMib": round((after["apk"]["bytes"] - before["apk"]["bytes"]) / MIB, 4),
+            "deltaPercent": round(
+                100.0 * (after["apk"]["bytes"] - before["apk"]["bytes"])
+                / before["apk"]["bytes"], 2
+            ),
+            "sha256Before": before["apk"]["sha256"],
+            "sha256After": after["apk"]["sha256"],
+        },
+        "categories": categories,
+        "containerOverhead": {
+            "bytesBefore": before["containerOverhead"]["bytes"],
+            "bytesAfter": after["containerOverhead"]["bytes"],
+        },
+        "nativeDebugBytes": {
+            "before": before.get("nativeDebugBytes"),
+            "after": after.get("nativeDebugBytes"),
+        },
+        "abi": {
+            "before": list(sorted(before.get("nativeByAbiDir", {}))),
+            "after": list(sorted(after.get("nativeByAbiDir", {}))),
+        },
+        "findings": {"before": len(before.get("findings", [])),
+                     "after": len(after.get("findings", []))},
+    }
+
+
 def audit(apk_path: str) -> dict:
     if not os.path.isfile(apk_path):
         raise AuditError("APK not found: %s" % apk_path)
@@ -427,7 +475,9 @@ def _check_invariants(report: dict) -> list:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="只读审计 APK 组成 / ABI / native")
-    parser.add_argument("--apk", required=True, help="release APK 路径")
+    parser.add_argument("--apk", default=None, help="release APK 路径")
+    parser.add_argument("--compare", nargs=2, default=None, metavar=("BEFORE", "AFTER"),
+                        help="对照两份已有的审计 JSON，不再读 APK")
     parser.add_argument("--output", default=None, help="JSON 输出路径（省略则打印）")
     parser.add_argument("--expected-abi", default=None,
                         help="断言该包只含此 ABI（arm64-v8a / x86_64）；不符则退出码 1")
@@ -436,6 +486,28 @@ def main(argv=None) -> int:
                         help="断言 resources.arsc 里仍有该资源名（可重复，如 raw/aboutlibraries）")
     parser.add_argument("--quiet", action="store_true", help="不打印摘要")
     args = parser.parse_args(argv)
+
+    if args.compare:
+        try:
+            with open(args.compare[0], encoding="utf-8") as fh:
+                before = json.load(fh)
+            with open(args.compare[1], encoding="utf-8") as fh:
+                after = json.load(fh)
+        except (OSError, ValueError) as exc:
+            sys.stderr.write("ERROR: %s\n" % exc)
+            return 2
+        report = compare_reports(before, after)
+        text = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        if args.output:
+            with open(args.output, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+        if not args.quiet:
+            sys.stdout.write(text)
+        return 0
+
+    if not args.apk:
+        sys.stderr.write("ERROR: --apk is required (or use --compare BEFORE AFTER)\n")
+        return 2
 
     try:
         report = audit(args.apk)

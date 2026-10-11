@@ -2345,6 +2345,8 @@ Test-Bd2ReleaseSmoke -Case 'resources-and-licenses' -Abi 'arm64-v8a'
 
 - [ ] **T54 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `docs/refactor/apk-comparison.md` 与 `audit_apk_size.py --compare`（逐项差额、`sum check` 逐字节自洽）：arm64 **35,146,618 → 22,661,146 B（−35.52%）**、x86_64 **−34.85%**；逐项 A/B 分开报告（T49 −4.91 MB、T50 −5.70 MB、T51 −1.36 MB、T52 −104 KB、T53 −294 KB + 容器开销），新依赖成本与冗余清理分开，历史 11.809 MiB 候选池**不当净节省**。设备实测安装 35,048,281 → **22,833,231 B**、冷启动 367 → 346/347/349 ms、PSS 205,151 → 201,918 KB、无 crash。**`all-core-features` smoke 用例不存在、arm64 未跑、差异只做到类别级**，不勾 DONE。见 [T54 证据](../../refactor/evidence/T54.md) 与 [apk-comparison.md](../../refactor/apk-comparison.md)。
+
 **优先级：** P0　**前置：** T50、T51、T52、T53
 
 **文件范围（实施工作区）：**

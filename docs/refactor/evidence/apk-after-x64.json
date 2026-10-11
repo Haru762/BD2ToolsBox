@@ -1,0 +1,571 @@
+{
+  "apk": {
+    "bytes": 22833231,
+    "mib": 21.7755,
+    "path": "app-x64-release.apk",
+    "sha256": "219b27dfa9388eec868f5eb9557bbaad1adbf8515f01089d2e2fc291e5103a48"
+  },
+  "categories": {
+    "androidResources": {
+      "compressedBytes": 166002,
+      "entries": 38,
+      "mib": 0.1583,
+      "uncompressedBytes": 269223,
+      "uncompressedMib": 0.2568
+    },
+    "chaquopy": {
+      "compressedBytes": 10370265,
+      "entries": 20,
+      "mib": 9.8899,
+      "uncompressedBytes": 10508308,
+      "uncompressedMib": 10.0215
+    },
+    "dex": {
+      "compressedBytes": 3421604,
+      "entries": 1,
+      "mib": 3.2631,
+      "uncompressedBytes": 3421604,
+      "uncompressedMib": 3.2631
+    },
+    "native": {
+      "compressedBytes": 8465776,
+      "entries": 11,
+      "mib": 8.0736,
+      "uncompressedBytes": 8465776,
+      "uncompressedMib": 8.0736
+    },
+    "other": {
+      "compressedBytes": 189723,
+      "entries": 93,
+      "mib": 0.1809,
+      "uncompressedBytes": 746490,
+      "uncompressedMib": 0.7119
+    }
+  },
+  "categoryBytesPlusOverhead": 22833231,
+  "containerOverhead": {
+    "bytes": 219861,
+    "mib": 0.2097
+  },
+  "dangerousEntries": [],
+  "elfProblems": [],
+  "expectedAbi": "x86_64",
+  "expectedAbiProblems": [],
+  "findings": [],
+  "invariantProblems": [],
+  "nativeByAbiDir": {
+    "x86_64": {
+      "bytes": 8465776,
+      "files": 11
+    }
+  },
+  "nativeDebugBytes": 0,
+  "nativeLibraries": [
+    {
+      "abi": "x86_64",
+      "bytes": 10760,
+      "compressedBytes": 10760,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libandroidx.graphics.path.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 536920,
+      "compressedBytes": 536920,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libastcenc.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 158680,
+      "compressedBytes": 158680,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libchaquopy_java.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 3520,
+      "compressedBytes": 3520,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libcrypto_chaquopy.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 2403072,
+      "compressedBytes": 2403072,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libcrypto_python.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 3158672,
+      "compressedBytes": 3158672,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libpython3.8.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 3520,
+      "compressedBytes": 3520,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libsqlite3_chaquopy.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 1168912,
+      "compressedBytes": 1168912,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libsqlite3_python.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 3504,
+      "compressedBytes": 3504,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libssl_chaquopy.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 578112,
+      "compressedBytes": 578112,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libssl_python.so"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 440104,
+      "compressedBytes": 440104,
+      "debugBytes": 0,
+      "debugSections": {},
+      "elfClass": 64,
+      "name": "lib/x86_64/libtexture2ddecoder.so"
+    }
+  ],
+  "nestedImy": [
+    {
+      "dangerous": [],
+      "entries": 135,
+      "entry": "assets/chaquopy/app.imy",
+      "malformed": null,
+      "soFiles": [],
+      "unknownPlatform": []
+    },
+    {
+      "dangerous": [],
+      "entries": 129,
+      "entry": "assets/chaquopy/bootstrap.imy",
+      "malformed": null,
+      "soFiles": [],
+      "unknownPlatform": []
+    },
+    {
+      "dangerous": [],
+      "entries": 524,
+      "entry": "assets/chaquopy/requirements-common.imy",
+      "malformed": null,
+      "soFiles": [
+        {
+          "abi": "x86_64",
+          "bytes": 489712,
+          "elfClass": 64,
+          "name": "PIL/_imaging.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 31736,
+          "elfClass": 64,
+          "name": "PIL/_imagingft.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 29608,
+          "elfClass": 64,
+          "name": "PIL/_imagingmath.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 8184,
+          "elfClass": 64,
+          "name": "PIL/_imagingmorph.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 9648,
+          "elfClass": 64,
+          "name": "PIL/_imagingtk.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 954536,
+          "elfClass": 64,
+          "name": "_brotli.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 1252080,
+          "elfClass": 64,
+          "name": "chaquopy/lib/libc++_shared.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 973640,
+          "elfClass": 64,
+          "name": "chaquopy/lib/libfreetype.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 518784,
+          "elfClass": 64,
+          "name": "chaquopy/lib/libjpeg_chaquopy.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 77624,
+          "elfClass": 64,
+          "name": "lz4/_version.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 159000,
+          "elfClass": 64,
+          "name": "lz4/block/_block.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 201280,
+          "elfClass": 64,
+          "name": "lz4/frame/_frame.so"
+        }
+      ],
+      "unknownPlatform": []
+    },
+    {
+      "dangerous": [],
+      "entries": 0,
+      "entry": "assets/chaquopy/requirements-x86_64.imy",
+      "malformed": null,
+      "soFiles": [],
+      "unknownPlatform": []
+    },
+    {
+      "dangerous": [],
+      "entries": 600,
+      "entry": "assets/chaquopy/stdlib-common.imy",
+      "malformed": null,
+      "soFiles": [],
+      "unknownPlatform": []
+    },
+    {
+      "dangerous": [],
+      "entries": 46,
+      "entry": "assets/chaquopy/stdlib-x86_64.imy",
+      "malformed": null,
+      "soFiles": [
+        {
+          "abi": "x86_64",
+          "bytes": 57032,
+          "elfClass": 64,
+          "name": "_asyncio.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 10112,
+          "elfClass": 64,
+          "name": "_bisect.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 40800,
+          "elfClass": 64,
+          "name": "_blake2.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 147104,
+          "elfClass": 64,
+          "name": "_codecs_cn.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 154768,
+          "elfClass": 64,
+          "name": "_codecs_hk.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 21232,
+          "elfClass": 64,
+          "name": "_codecs_iso2022.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 264352,
+          "elfClass": 64,
+          "name": "_codecs_jp.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 133632,
+          "elfClass": 64,
+          "name": "_codecs_kr.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 108528,
+          "elfClass": 64,
+          "name": "_codecs_tw.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 5144,
+          "elfClass": 64,
+          "name": "_contextvars.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 30344,
+          "elfClass": 64,
+          "name": "_csv.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 316856,
+          "elfClass": 64,
+          "name": "_decimal.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 65856,
+          "elfClass": 64,
+          "name": "_elementtree.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 29128,
+          "elfClass": 64,
+          "name": "_hashlib.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 16792,
+          "elfClass": 64,
+          "name": "_heapq.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 36160,
+          "elfClass": 64,
+          "name": "_json.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 16928,
+          "elfClass": 64,
+          "name": "_lsprof.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 12280,
+          "elfClass": 64,
+          "name": "_md5.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 36296,
+          "elfClass": 64,
+          "name": "_multibytecodec.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 14304,
+          "elfClass": 64,
+          "name": "_multiprocessing.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 6648,
+          "elfClass": 64,
+          "name": "_opcode.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 118000,
+          "elfClass": 64,
+          "name": "_pickle.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 13680,
+          "elfClass": 64,
+          "name": "_posixsubprocess.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 13040,
+          "elfClass": 64,
+          "name": "_queue.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 13992,
+          "elfClass": 64,
+          "name": "_sha1.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 19144,
+          "elfClass": 64,
+          "name": "_sha256.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 81896,
+          "elfClass": 64,
+          "name": "_sha3.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 90648,
+          "elfClass": 64,
+          "name": "_socket.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 79072,
+          "elfClass": 64,
+          "name": "_sqlite3.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 180384,
+          "elfClass": 64,
+          "name": "_ssl.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 6824,
+          "elfClass": 64,
+          "name": "_statistics.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 31712,
+          "elfClass": 64,
+          "name": "_xxsubinterpreters.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 12112,
+          "elfClass": 64,
+          "name": "_xxtestfuzz.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 53352,
+          "elfClass": 64,
+          "name": "array.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 43184,
+          "elfClass": 64,
+          "name": "audioop.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 34672,
+          "elfClass": 64,
+          "name": "cmath.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 15864,
+          "elfClass": 64,
+          "name": "fcntl.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 27120,
+          "elfClass": 64,
+          "name": "ossaudiodev.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 21760,
+          "elfClass": 64,
+          "name": "parser.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 238408,
+          "elfClass": 64,
+          "name": "pyexpat.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 12832,
+          "elfClass": 64,
+          "name": "resource.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 28000,
+          "elfClass": 64,
+          "name": "select.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 9312,
+          "elfClass": 64,
+          "name": "syslog.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 23056,
+          "elfClass": 64,
+          "name": "termios.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 1082744,
+          "elfClass": 64,
+          "name": "unicodedata.cpython-38.so"
+        },
+        {
+          "abi": "x86_64",
+          "bytes": 9056,
+          "elfClass": 64,
+          "name": "xxlimited.cpython-38.so"
+        }
+      ],
+      "unknownPlatform": []
+    }
+  ],
+  "requiredResourceNames": [
+    "raw/aboutlibraries",
+    "xml/file_paths"
+  ],
+  "requiredResourceProblems": [],
+  "schemaVersion": 1,
+  "tool": "tools/audit_apk_size.py"
+}

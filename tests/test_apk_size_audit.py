@@ -339,5 +339,49 @@ class AuditApkSizeTest(unittest.TestCase):
                                         "raw/nope", "--quiet"]))
 
 
+    # ---------------------------------------------------------------- T54 对照
+
+    def test_compare_reports_per_category_deltas(self):
+        before = self._apk([("classes.dex", b"D" * 4000),
+                            ("lib/arm64-v8a/liba.so", elf_bytes(183) + b"\x00" * 4000)],
+                           name="cmp-before.apk")
+        after = self._apk([("classes.dex", b"D" * 2000),
+                           ("lib/arm64-v8a/liba.so", elf_bytes(183) + b"\x00" * 1000)],
+                          name="cmp-after.apk")
+        rb = audit.audit(before)
+        ra = audit.audit(after)
+        report = audit.compare_reports(rb, ra)
+        self.assertEqual(rb["apk"]["bytes"], report["apk"]["bytesBefore"])
+        self.assertEqual(ra["apk"]["bytes"], report["apk"]["bytesAfter"])
+        self.assertLess(report["apk"]["deltaBytes"], 0)
+        self.assertLess(report["categories"]["dex"]["deltaBytes"], 0)
+        self.assertLess(report["categories"]["native"]["deltaBytes"], 0)
+        # 分类差额与总量差额自洽
+        total = sum(v["deltaBytes"] for v in report["categories"].values())
+        total += report["containerOverhead"]["bytesAfter"] - report["containerOverhead"]["bytesBefore"]
+        self.assertEqual(report["apk"]["deltaBytes"], total)
+
+    def test_compare_cli_writes_output_and_ignores_apk(self):
+        before = self._apk([("classes.dex", b"D" * 300)], name="cli-before.apk")
+        after = self._apk([("classes.dex", b"D" * 100)], name="cli-after.apk")
+        rb = os.path.join(self.tmp, "rb.json")
+        ra = os.path.join(self.tmp, "ra.json")
+        self.assertEqual(0, audit.main(["--apk", before, "--output", rb, "--quiet"]))
+        self.assertEqual(0, audit.main(["--apk", after, "--output", ra, "--quiet"]))
+        out = os.path.join(self.tmp, "cmp.json")
+        self.assertEqual(0, audit.main(["--compare", rb, ra, "--output", out, "--quiet"]))
+        with open(out, encoding="utf-8") as fh:
+            data = json.load(fh)
+        self.assertEqual(1, data["schemaVersion"])
+        self.assertIn("categories", data)
+        # 缺 --apk 也没关系（--compare 不需要 APK）
+        self.assertEqual(0, audit.main(["--compare", rb, ra, "--quiet"]))
+        # 两者都缺 → 用法错误
+        self.assertEqual(2, audit.main(["--quiet"]))
+        # 文件不存在 → IO 错误
+        self.assertEqual(2, audit.main(["--compare", rb, os.path.join(self.tmp, "no.json"),
+                                        "--quiet"]))
+
+
 if __name__ == "__main__":
     unittest.main()
