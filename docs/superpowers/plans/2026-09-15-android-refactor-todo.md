@@ -1604,7 +1604,14 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.storage.MediaExclusionTest' -Abi 'x86
 
 ### T35 — 按数据类别迁移到 kotlinx.serialization
 
-- [ ] **T35 完成**
+- [x] **T35 完成**
+
+**2026-10-11 更正为 DONE。** 迁移中途的证据里那份「未完成」清单已逐条做掉：
+全仓 `import com.google.gson` **零命中**，Gson 依赖与过渡 keep 规则已在 T36 删除
+（`rg gson gradle/libs.versions.toml app/build.gradle.kts` 零命中）。计划提到的
+`feature/guides/data/GamekeeApi.kt` **不存在**（计划写于重构前，实际在原地迁移）。
+唯一仍未闭合的是 release `json-migration` smoke —— **该 case 在 verification.ps1 里
+不存在**，已如实登记。见 [T35 证据](../../refactor/evidence/T35.md) §2 的更正。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED。** 引入 kotlinx.serialization（1.9.0 / 插件 2.2.20）；**生产代码与测试已 0 处 Gson**：账本/日志/快照/兑换历史/备份 sidecar/mod 缓存/更新/引擎/Gamekee 网络与渲染全部改 kotlinx，动态 Wiki 树继续按 JsonElement 读取。全量 JVM 659/0/0/0；release/R8 构建成功且 dex 中序列化键名仍在。**release `json-migration` smoke 未跑、无独立审查**，不勾 DONE。见 [T35 证据](../../refactor/evidence/T35.md)。
 
