@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.ui.components.WorkbenchRow
 import com.bd2toolsbox.ui.components.WorkbenchSection
+import com.bd2toolsbox.core.model.ThemeMode
 import com.bd2toolsbox.ui.theme.AppTheme
 import com.bd2toolsbox.ui.viewmodel.MainViewModel
 
@@ -76,6 +77,7 @@ fun WorkbenchSheet(
     val backupUsage by viewModel.backupUsage.collectAsState()
     val dynamicColor by viewModel.dynamicColor.collectAsState()
     val appTheme by viewModel.appTheme.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
     val wallpaperUri by viewModel.wallpaperUri.collectAsState()
     val wallpaperScrim by viewModel.wallpaperScrim.collectAsState()
     val hiddenCount by viewModel.hiddenCount.collectAsState()
@@ -232,6 +234,40 @@ fun WorkbenchSheet(
 
             // ---------------------------------------------------------- 外观
             WorkbenchSection("外观") {
+                // T39：明/暗/跟随系统的选择器。主题内核（BD2ModManagerTheme 接 themeMode）
+                // 与 MainViewModel 的读写早已就位，缺的一直是这个入口 —— 没有它，
+                // ThemeMode 只能在代码里改，用户永远看不到深色主题。
+                WorkbenchRow(
+                    title = "明暗模式",
+                    subtitle = when (themeMode) {
+                        ThemeMode.LIGHT -> "始终浅色"
+                        ThemeMode.DARK -> "始终深色"
+                        ThemeMode.SYSTEM -> "跟随系统设置"
+                    }
+                ) {}
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ThemeMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = mode == themeMode,
+                            onClick = { viewModel.setThemeMode(mode) },
+                            label = {
+                                Text(
+                                    when (mode) {
+                                        ThemeMode.LIGHT -> "浅色"
+                                        ThemeMode.DARK -> "深色"
+                                        ThemeMode.SYSTEM -> "跟随系统"
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
                 WorkbenchRow(
                     title = "跟随壁纸取色",
                     subtitle = if (dynamicSupported) "开启后下面的预设配色不生效"
