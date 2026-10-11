@@ -881,10 +881,18 @@ function Test-Bd2Device {
         # 通知断言（以及它们的 @Before 前置检查）要求它已授权。不补这一步的话，
         # 「刚装完就跑」必然红，而重跑一次（权限已被上一轮用例打开）又会绿 —— 假的抖动。
         # 权限本身不在本仓库的门禁范围内，这里只把它恢复成用例声明的运行前提。
-        # API 33 以下没有该权限，grant 会失败，忽略即可。
-        $grant = (& $Bd2Adb -s $serial shell pm grant com.bd2toolsbox android.permission.POST_NOTIFICATIONS 2>&1) -join ' '
-        if ($LASTEXITCODE -ne 0) {
-            Write-Verbose "pm grant POST_NOTIFICATIONS skipped: $grant"
+        # 只有 API 33+ 才有这个权限；更低的版本 pm grant 会失败。
+        # 注意：原生命令写 stderr 时 PowerShell 会在 $ErrorActionPreference='Stop' 下抛
+        # 终止错误，所以这里显式把该调用括在 'Continue' 里并吃掉输出。
+        $apiLevel = [int](((& $Bd2Adb -s $serial shell getprop ro.build.version.sdk) -join '').Trim())
+        if ($apiLevel -ge 33) {
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                & $Bd2Adb -s $serial shell pm grant com.bd2toolsbox android.permission.POST_NOTIFICATIONS 2>&1 | Out-Null
+            } finally {
+                $ErrorActionPreference = $prevEap
+            }
         }
         $result = Invoke-Bd2Instrumentation -Serial $serial -TestClass $TestClass
         # 先落盘再断言：断言失败时归档里必须留下现场，不能只剩一个空目录（见 T04.md §5.3）

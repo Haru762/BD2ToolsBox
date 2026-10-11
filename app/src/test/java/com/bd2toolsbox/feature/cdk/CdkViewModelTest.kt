@@ -3,6 +3,7 @@ package com.bd2toolsbox.feature.cdk
 import com.bd2toolsbox.data.model.CdkItem
 import com.bd2toolsbox.data.model.RedeemOutcome
 import com.bd2toolsbox.data.repository.Bd2RedeemRepository
+import com.bd2toolsbox.data.repository.GamekeeRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -14,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -106,6 +108,8 @@ class CdkViewModelTest {
 
     private fun item(code: String) = CdkItem(code, "reward", 0L, expired = false)
 
+    private fun gamekee(): GamekeeRepository = mockk(relaxed = true)
+
     private fun repo(): Bd2RedeemRepository {
         val repo = mockk<Bd2RedeemRepository>(relaxed = true)
         every { repo.savedUserIds() } returns listOf("user")
@@ -121,7 +125,7 @@ class CdkViewModelTest {
             "user" to outcome(success = true),
             "user" to outcome(retryable = false, errorCode = "InvalidCode")
         )
-        val vm = CdkViewModel(repo)
+        val vm = CdkViewModel(repo, gamekee())
         val summary = vm.redeemAll(listOf(item("A"), item("B")))
         assertEquals(1, summary.successCount)
         assertEquals(1, summary.terminalFailureCount)
@@ -141,7 +145,7 @@ class CdkViewModelTest {
             active--
             emptyList()
         }
-        val vm = CdkViewModel(repo)
+        val vm = CdkViewModel(repo, gamekee())
         val first = async { vm.redeemAll(listOf(item("A"))) }
         val second = async { vm.redeemAll(listOf(item("B"))) }
         // 让两个协程都到达互斥锁
@@ -156,7 +160,7 @@ class CdkViewModelTest {
     @Test fun repositoryFailureIsSurfacedNotSwallowed() = runTest {
         val repo = repo()
         coEvery { repo.autoRedeem(any()) } throws RuntimeException("network down")
-        val vm = CdkViewModel(repo)
+        val vm = CdkViewModel(repo, gamekee())
         try {
             vm.redeemAll(listOf(item("A")))
             org.junit.Assert.fail("异常必须上抛")
@@ -164,5 +168,59 @@ class CdkViewModelTest {
             assertFalse(vm.ui.value.batchRedeeming)
             assertTrue(vm.ui.value.error?.contains("network down") == true)
         }
+    }
+    // ------------------------------------------------- T45：账号维度结果
+
+    @Test fun perAccountBreakdownIsPublishedFromOutcomes() = runTest {
+        val repo = repo()
+        coEvery { repo.autoRedeem(any()) } returns listOf(
+            "alice" to outcome(retryable = false, errorCode = "InvalidCode"),
+            "bob" to outcome(retryable = false, errorCode = "InvalidCode")
+        )
+        val vm = CdkViewModel(repo, gamekee())
+        vm.redeemAll(listOf(item("A")))
+        val batch = vm.ui.value.lastBatch
+        assertNotNull("必须留下账号维度结果", batch)
+        assertEquals(2, batch!!.perAccount.size)
+        // 两个账号都终局失败：没有任何成功行级标签
+        batch.perAccount.forEach { row ->
+            assertEquals("兑换失败", row.label())
+            assertFalse(row.describe().contains("成功"))
+        }
+        assertEquals("兑换失败", batch.aggregate.resultLabel())
+        assertEquals(0, batch.aggregate.successCount)
+        assertFalse("全终局失败没有可重试内容", batch.canRetry)
+        assertFalse(vm.ui.value.canRetry)
+    }
+
+    @Test fun perAccountBreakdownKeepsAccurateCountsForMixedResult() = runTest {
+        val repo = repo()
+        coEvery { repo.autoRedeem(any()) } returns listOf(
+            "alice" to outcome(success = true),
+            "bob" to outcome(retryable = true, errorCode = "Timeout")
+        )
+        val vm = CdkViewModel(repo, gamekee())
+        vm.redeemAll(listOf(item("A")))
+        val batch = requireNotNull(vm.ui.value.lastBatch)
+        val byId = batch.perAccount.associateBy { it.accountId }
+        assertEquals("成功 1", byId.getValue("alice").describe().substringAfter("："))
+        assertEquals("待重试 1", byId.getValue("bob").describe().substringAfter("："))
+        assertEquals(1, batch.aggregate.successCount)
+        assertEquals(1, batch.aggregate.pendingCount)
+        assertTrue("还有可重试项，入口允许重试", batch.canRetry)
+        assertEquals("部分成功", batch.aggregate.resultLabel())
+    }
+
+    @Test fun unknownResultsKeepTheEntryRetryable() = runTest {
+        val repo = repo()
+        coEvery { repo.autoRedeem(any()) } returns listOf(
+            "alice" to outcome(retryable = true, errorCode = "UnknownResult")
+        )
+        val vm = CdkViewModel(repo, gamekee())
+        vm.redeemAll(listOf(item("A")))
+        val batch = requireNotNull(vm.ui.value.lastBatch)
+        assertEquals("结果未知", batch.perAccount.single().label())
+        assertTrue(batch.canRetry)
+        assertFalse("未知不得被当成已兑换", batch.aggregate.allRedeemed)
     }
 }

@@ -2,9 +2,12 @@ package com.bd2toolsbox.feature.cdk
 
 import androidx.lifecycle.ViewModel
 import com.bd2toolsbox.data.model.CdkItem
+import com.bd2toolsbox.data.model.RedeemOutcome
 import com.bd2toolsbox.data.repository.Bd2RedeemRepository
+import com.bd2toolsbox.data.repository.GamekeeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,7 +27,8 @@ import kotlinx.coroutines.sync.withLock
  */
 @HiltViewModel
 class CdkViewModel @Inject constructor(
-    private val repo: Bd2RedeemRepository
+    private val repo: Bd2RedeemRepository,
+    private val gamekee: GamekeeRepository
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(CdkUiState())
@@ -61,6 +65,46 @@ class CdkViewModel @Inject constructor(
     }
 
     /**
+     * 拉清单（T31/T45）。
+     *
+     * 拉完就重算行级标记；**不**在这里自动兑换 —— 自动兑换的触发时机是产品决策，
+     * 由屏幕在拉到清单后显式调 [redeemAll]（与原实现一致）。
+     */
+    suspend fun loadItems(): Result<List<CdkItem>> {
+        _ui.update { it.copy(loading = true, error = null) }
+        return try {
+            val items = gamekee.loadCdk()
+            _ui.update {
+                it.copy(
+                    loading = false,
+                    items = items,
+                    accounts = repo.savedUserIds(),
+                    settledCodes = settledCodesFor(items)
+                )
+            }
+            Result.success(items)
+        } catch (e: CancellationException) {
+            _ui.update { it.copy(loading = false) }
+            throw e // 切 tab/退出时的协程取消不是加载失败，别吞
+        } catch (e: Exception) {
+            val message = e.message ?: "加载失败"
+            _ui.update { it.copy(loading = false, error = message) }
+            Result.failure(e)
+        }
+    }
+
+    /** 重算行级标记（账号增删/兑换后调用）。 */
+    fun refreshMarks() {
+        val items = _ui.value.items
+        _ui.update {
+            it.copy(
+                accounts = repo.savedUserIds(),
+                settledCodes = if (items == null) emptySet() else settledCodesFor(items)
+            )
+        }
+    }
+
+    /**
      * 批量兑换。串行 + 互斥；返回真实汇总。
      *
      * 仓储抛异常时如实把错误放进状态并继续上抛 —— 不吞成「全部成功」。
@@ -69,16 +113,8 @@ class CdkViewModel @Inject constructor(
         _ui.update { it.copy(batchRedeeming = true, error = null) }
         try {
             val outcomes = repo.autoRedeem(items)
-            val summary = summarizeOutcomes(outcomes.map { it.second })
-            _ui.update {
-                it.copy(
-                    batchRedeeming = false,
-                    lastSummary = summary,
-                    history = repo.loadHistory(),
-                    settledCodes = settledCodesFor(items)
-                )
-            }
-            summary
+            publishOutcomes(outcomes, items)
+            _ui.value.lastSummary
         } catch (e: Exception) {
             _ui.update { it.copy(batchRedeeming = false, error = e.message ?: "兑换失败") }
             throw e
@@ -90,14 +126,40 @@ class CdkViewModel @Inject constructor(
         _ui.update { it.copy(redeemingCode = item.code, error = null) }
         try {
             val outcomes = repo.redeemCodeForAll(item.code, item.reward)
-            val summary = summarizeOutcomes(outcomes.map { it.second })
-            _ui.update {
-                it.copy(redeemingCode = null, lastSummary = summary, history = repo.loadHistory())
-            }
-            summary
+            publishOutcomes(outcomes, _ui.value.items.orEmpty())
+            _ui.value.lastSummary
         } catch (e: Exception) {
             _ui.update { it.copy(redeemingCode = null, error = e.message ?: "兑换失败") }
             throw e
+        }
+    }
+
+    /**
+     * 把官方返回的 `(账号, 响应)` 列表同时落成**合计**与**账号维度**结果（T45）。
+     *
+     * 账号维度按账号分组后各自汇总；界面逐行展示，全终局失败时不会出现任何成功字样。
+     */
+    private fun publishOutcomes(outcomes: List<Pair<String, RedeemOutcome>>, items: List<CdkItem>) {
+        val perAccount = outcomes
+            .groupBy({ it.first }, { dispositionOf(it.second) })
+            .toSortedMap()
+            .map { (accountId, dispositions) ->
+                AccountRedeemResult(
+                    accountId = accountId,
+                    accountName = accountId,
+                    summary = summarizeRedemption(dispositions)
+                )
+            }
+        val aggregate = BatchRedeemSummary(perAccount).aggregate
+        _ui.update {
+            it.copy(
+                batchRedeeming = false,
+                redeemingCode = null,
+                lastSummary = aggregate,
+                lastPerAccount = perAccount,
+                history = repo.loadHistory(),
+                settledCodes = settledCodesFor(items)
+            )
         }
     }
 }

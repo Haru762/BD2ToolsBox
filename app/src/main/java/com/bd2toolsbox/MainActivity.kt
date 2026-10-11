@@ -122,6 +122,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private val guideViewModel: GuideViewModel by viewModels()
+    private val cdkViewModel: com.bd2toolsbox.feature.cdk.CdkViewModel by viewModels()
 
     // T20：字段注入，不再经静态 UpdateRepository.get(context)
     @javax.inject.Inject lateinit var updateRepository: UpdateRepository
@@ -608,7 +609,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             when (currentTab) {
                                 1 -> GuideScreen(guideViewModel)
-                                2 -> CdkScreen()
+                                2 -> CdkScreen(cdkViewModel)
                                 else -> Column(modifier = Modifier.fillMaxSize()) {
                                     val allMods by viewModel.modsList.collectAsState()
 

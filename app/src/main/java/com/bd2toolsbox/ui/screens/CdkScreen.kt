@@ -26,14 +26,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.data.model.CdkItem
-import com.bd2toolsbox.data.model.RedeemOutcome
 import com.bd2toolsbox.data.model.RedeemRecord
 import com.bd2toolsbox.di.rememberUiRepositories
+import com.bd2toolsbox.feature.cdk.BatchRedeemSummary
+import com.bd2toolsbox.feature.cdk.CdkViewModel
+import com.bd2toolsbox.feature.cdk.RedeemSummary
+import com.bd2toolsbox.feature.cdk.resultLabel
+import com.bd2toolsbox.ui.components.RedeemAccountResultRow
+import com.bd2toolsbox.ui.components.StatusBadge
+import com.bd2toolsbox.ui.components.StatusTone
+import com.bd2toolsbox.ui.components.batchResultText
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * 兑换码板块 —— 独立于攻略的第三个 tab。
@@ -46,104 +52,62 @@ import kotlin.coroutines.cancellation.CancellationException
  * 不留兑换按钮（官方没有查询接口，只能自己记）。
  */
 @Composable
-fun CdkScreen() {
+fun CdkScreen(viewModel: CdkViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val repositories = rememberUiRepositories()
-    val repo = repositories.gamekeeRepository()
-    val redeemRepo = repositories.bd2RedeemRepository()
     val clipboard = LocalClipboardManager.current
+    val state by viewModel.ui.collectAsState()
 
-    var items by remember { mutableStateOf<List<CdkItem>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
-
-    // ---- 官方兑换状态 ----
-    var accounts by remember { mutableStateOf(redeemRepo.savedUserIds()) }
+    // T31：屏幕不再自己建仓储/持状态，全部读 viewModel.ui；T45：结果按账号维度展示。
     var newAccount by remember { mutableStateOf("") }
-    /** 全部账号都处理完（成功或终局失败）的码：行级「已兑换」标记与一键兑换计数
-     *  都按它——处理完的不留兑换按钮（留着只会误导人以为还有的换）。 */
-    var settledAll by remember { mutableStateOf(setOf<String>()) }
-    var redeemingCode by remember { mutableStateOf<String?>(null) }
-    var batchRedeeming by remember { mutableStateOf(false) }
-    var batchResult by remember { mutableStateOf<List<Pair<String, RedeemOutcome>>?>(null) }
-    var history by remember { mutableStateOf<List<RedeemRecord>?>(null) }
     var showHistory by remember { mutableStateOf(false) }
-
-    /** 从本地记录重算行级标记（读的是几 KB 的本地文件，沿用本屏既有模式）。 */
-    fun refreshMarks() {
-        accounts = redeemRepo.savedUserIds()
-        // history 一份读进来按账号分账，别每个账号各读一遍文件
-        val all = redeemRepo.loadHistory()
-        settledAll = if (accounts.isEmpty()) emptySet()
-        else accounts.map { redeemRepo.autoDoneCodes(it) +
-                all.filter { h -> h.userId == it }.map { h -> h.code }.toSet() }
-            .reduce { a, b -> a intersect b }
-    }
+    var showBatchResult by remember { mutableStateOf(false) }
 
     suspend fun load() {
-        loading = true
-        error = null
-        try {
-            items = repo.loadCdk()
-            // 拉到清单就自动兑换：每个账号没处理完的码补一遍。终局失败（过期/无效/
-            // 已兑换……）不重复提交，网络类失败下次拉到再试；没有账号或全处理完时静默。
-            val outcomes = redeemRepo.autoRedeem(items.orEmpty())
-            if (outcomes.isNotEmpty()) {
-                val ok = outcomes.count { it.second.success }
-                val fail = outcomes.size - ok
-                Toast.makeText(
-                    context,
-                    if (fail == 0) "自动兑换完成：成功 $ok 条"
-                    else "自动兑换完成：成功 $ok 条，失败 $fail 条",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        } catch (e: CancellationException) {
-            throw e   // 切 tab/退出时的协程取消不是加载失败，别吞
-        } catch (e: Exception) {
-            error = e.message ?: "加载失败"
-        } finally {
-            loading = false
-        }
-        refreshMarks()
+        viewModel.loadItems()
+        // 拉到清单就自动兑换：每个账号没处理完的码补一遍（与原实现一致）。
+        // 终局失败不重复提交；没有账号或全处理完时静默。
+        val items = viewModel.ui.value.items.orEmpty()
+        if (items.isEmpty() || viewModel.ui.value.accounts.isEmpty()) return
+        val summary = runCatching { viewModel.redeemAll(items) }.getOrNull() ?: return
+        if (summary.total > 0) showBatchResult = true
     }
 
     LaunchedEffect(Unit) {
+        viewModel.refreshAccounts()
         load()
     }
 
     /** 单码手动兑换：所有还没处理完该码的账号各来一次；入口只对未处理完的码出现。 */
     fun redeemOne(item: CdkItem) {
         scope.launch {
-            redeemingCode = item.code
-            try {
-                val results = redeemRepo.redeemCodeForAll(item.code, item.reward)
-                val msg = when {
-                    results.isEmpty() -> "这个码所有账号都处理完了"
-                    results.size == 1 -> results.first().second.message
-                    else -> "${results.count { it.second.success }} / ${results.size} 个账号成功"
-                }
-                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-            } finally {
-                redeemingCode = null
-                refreshMarks()
+            val summary = runCatching { viewModel.redeemOne(item) }.getOrNull()
+            val msg = when {
+                summary == null -> "兑换失败：${viewModel.ui.value.error ?: "未知原因"}"
+                summary.total == 0 -> "这个码所有账号都处理完了"
+                else -> summary.resultLabel() + "（成功 ${summary.successCount}、已兑换 " +
+                    "${summary.alreadyRedeemedCount}、失败 ${summary.terminalFailureCount}、" +
+                    "待重试 ${summary.pendingCount}、未知 ${summary.unknownCount}）"
             }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
     }
 
     /** 一键兑换 = 手动触发同一套自动逻辑，结果弹层逐条展示。 */
     fun redeemAll() {
         scope.launch {
-            batchRedeeming = true
-            try {
-                batchResult = redeemRepo.autoRedeem(items.orEmpty())
-            } finally {
-                batchRedeeming = false
-                refreshMarks()
-            }
+            runCatching { viewModel.redeemAll(viewModel.ui.value.items.orEmpty()) }
+            showBatchResult = true
         }
     }
+
+    val items = state.items
+    val accounts = state.accounts
+    val settledAll = state.settledCodes
+    val loading = state.loading
+    val error = state.error
+    val busy = state.busy
+    val redeemingCode = state.redeemingCode
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -171,7 +135,7 @@ fun CdkScreen() {
 
         // ---- 官方兑换区 ----
         // 有兑换在跑（含拉清单后的自动兑换那一段）时收起全部单码按钮，避免并发触发官方限流
-        val busy = loading || batchRedeeming || redeemingCode != null
+        val busy = state.busy
         val pending = items.orEmpty().filterNot { it.expired || it.code in settledAll }
 
         OfficialRedeemSection(
@@ -179,9 +143,9 @@ fun CdkScreen() {
             newAccount = newAccount,
             onNewAccount = { newAccount = it.take(24) },
             onAddAccount = {
-                if (redeemRepo.addUserId(newAccount)) {
+                if (viewModel.addAccount(newAccount)) {
                     newAccount = ""
-                    refreshMarks()
+                    viewModel.refreshMarks()
                     // 刚加的账号对这一页的码多半还没换过：直接把同一套兑换跑起来（弹层
                     // 给结果），不用等下次进页的自动兑换
                     if (items.orEmpty().any { !it.expired && it.code !in settledAll }) {
@@ -193,29 +157,31 @@ fun CdkScreen() {
             },
             onRemoveAccount = { acc ->
                 scope.launch {
-                    redeemRepo.removeUserId(acc)
-                    refreshMarks()
+                    viewModel.removeAccount(acc)
+                    viewModel.refreshMarks()
                 }
             },
             pendingCount = pending.size,
             canRedeemAll = accounts.isNotEmpty() && pending.isNotEmpty(),
             busy = busy,
-            batchRedeeming = batchRedeeming,
+            batchRedeeming = state.batchRedeeming,
             autoRunning = loading && items != null,
             onRedeemAll = { redeemAll() },
             onShowHistory = {
-                scope.launch {
-                    history = redeemRepo.loadHistory()
-                    showHistory = true
-                }
+                viewModel.loadHistory()
+                showHistory = true
             }
         )
 
-        if (batchResult != null) {
-            BatchResultDialog(batchResult!!) { batchResult = null }
+        if (showBatchResult) {
+            BatchResultDialog(
+                batch = state.lastBatch,
+                summary = state.lastSummary,
+                onDismiss = { showBatchResult = false }
+            )
         }
         if (showHistory) {
-            HistoryDialog(history) { showHistory = false }
+            HistoryDialog(state.history) { showHistory = false }
         }
 
         when {
@@ -341,7 +307,11 @@ private fun CdkRow(
         }
         if (enabled) {
             if (redeemed) {
-                RedeemChip(text = "已兑换", emphasized = false)
+                // T45：行级标签走与账号级同一套语义（「已兑换」只在真有兑换时出现）。
+                StatusBadge(
+                    text = RedeemSummary(alreadyRedeemedCount = 1).resultLabel(),
+                    tone = StatusTone.SUCCESS
+                )
                 Spacer(Modifier.width(6.dp))
             } else if (redeemable) {
                 Surface(
@@ -554,58 +524,42 @@ private fun AccountChip(name: String, enabled: Boolean, onRemove: () -> Unit) {
 }
 
 /** 批量兑换的结果：逐条 账号 + 码 + 成功/失败原因。 */
+/**
+ * 兑换结果弹层（T31 宿主 + T45 语义）。
+ *
+ * **按账号逐行展示**成功/失败/待处理的数量与原因；全终局失败时不会出现任何成功字样，
+ * 也不把「已处理完」渲染成「已兑换」。
+ */
 @Composable
 private fun BatchResultDialog(
-    outcomes: List<Pair<String, RedeemOutcome>>,
+    batch: BatchRedeemSummary?,
+    summary: RedeemSummary,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        // M3 1.2.1 的 AlertDialog 默认底色取自 colorScheme.surface，壁纸模式下
-        // 那是透明的（见 Theme 的 transparentBackground），这里显式给不透明的
+        // M3 1.2.1 的 AlertDialog 默认底色取自 colorScheme.surface，这里显式给不透明的
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text("兑换结果") },
         text = {
-            if (outcomes.isEmpty()) {
-                Text("没有需要兑换的新兑换码（处理过的不再重复提交）")
-            } else {
-                Column {
-                    if (outcomes.any { it.second.success }) {
-                        Text(
-                            "成功的奖励已发往游戏内邮箱，重启游戏后查收。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(6.dp))
-                    }
-                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                        items(outcomes, key = { "${it.first}-${it.second.code}" }) { (account, o) ->
-                            Row(
-                                Modifier.padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        o.code,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    if (account.isNotBlank()) {
-                                        Text(
-                                            account,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Text(
-                                    if (o.success) "成功" else o.message,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (o.success) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.error
-                                )
-                            }
-                            HorizontalDivider()
+            Column {
+                Text(
+                    batchResultText(batch ?: BatchRedeemSummary(emptyList())),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (summary.successCount + summary.alreadyRedeemedCount > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "成功的奖励已发往游戏内邮箱，重启游戏后查收。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (batch != null && batch.perAccount.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                        items(batch.perAccount, key = { it.accountId }) { row ->
+                            RedeemAccountResultRow(row)
                         }
                     }
                 }
