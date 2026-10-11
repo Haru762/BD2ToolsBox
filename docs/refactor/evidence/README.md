@@ -21,8 +21,8 @@
 | 最后核对的代码提交 | 本轮基点 `4fe7f29`；T35 序列化依赖与兼容读取随本次原子提交保存，验证见 [T35.md](T35.md)。 |
 | 工作区脏文件 | 经用户确认接管 T21 的 OperationModels、OperationContractTest 和 OperationCoordinatorTest；其余旧 `diff.txt`、`patch.py`、三份 09-23 计划与两份诊断 probe 原样保留，不暂存、不清理。准确状态以 `git status` 为准。 |
 | 环境/输入清单 | local/refactor-artifacts/historical-0.2.16（2 APK + mapping）、rebuilt-original（3 APK + mapping + metadata）；local/refactor-inputs（catalog-alpha.json、wiki-v2-detail-2238.source.json）。冻结记录见 artifact-manifest.json 的 t03Freeze；旧数据样本与缺口见 fixture-manifest.json |
-| 命令结果 | 2026-10-11：T35 第二增量（账本 Store 改 kotlinx）后全量 JVM **659/0/0/0**（含 InstalledLedgerStoreTest 24/24）；设备已连（Xiaomi 2509FPN0BC / arm64），待跑设备验收。上一交付 T32 定向 11/0/0/0、全量 646。仅 `:app`、offline。 |
-| 本轮设备与推送 | 配置测试设备 1 台、ADB 就绪 0 台，未安装或操作设备。origin 没有此重构分支，推送会包含本轮前 81 个历史提交，因此只提交本轮，不自动推送整段历史。 |
+| 命令结果 | 2026-10-11：设备侧 `InstallServiceLifecycleTest` arm64 **4/4 PASS**（runId `20261011-125559-device-arm64-v8a-…`）、`ProcessDeathRecoveryTest` arm64 **4/4 PASS**（runId `20261011-130621-device-arm64-v8a-…`）；JVM 全量 **659/0/0/0**（T35 第二增量后）。仅 `:app`、offline。 |
+| 本轮设备与推送 | 设备白名单新增真机 `f7f409ac`（Xiaomi 2509FPN0BC / arm64-v8a / API 36）；2026-10-11 在它上面跑通 `InstallServiceLifecycleTest`（T22，4/4，抓到并修掉重复 start 归零）与 `ProcessDeathRecoveryTest`（T25，4/4）。origin 没有此重构分支，推送会包含本轮前 80+ 历史提交，因此只提交本轮，不自动推送整段历史。 |
 | 设备覆盖 | MuMu 127.0.0.1:16384（x86_64 / API 32）：T03 做**只读**包身份与占用测量（T03.md §6）；T04 在其上实跑 release `baseline-startup` 5 次与 6 个 androidTest 类的 35 条用例（T04.md §5）。**T05 与 T06 全程没有碰设备**（T05 的 runId 皆为 `…-unit-…`；T06 的 runId 皆为 `-unit-` / `-python-`）。**T07 在其上实跑两个设备套件**（`GameFileCommitTest` 13 条、`BackupFailureSummaryTest` 5 条，skip 全 0，三轮共跑了几十次），并且在**真实游戏目录**上做了一次端到端补充验证（T07.md §11.0：用 T07 的提交序列改写一个 30 KB `__data` —— mode/属组不变、属主变为写入者、内容哈希逐字节相同，游戏随后启动无 bundle/cache/CRC 报错且未重下载）。该设备上此时已装好真实 BD2（18 GB / 1830 个 `__data`）；**除 T07 那次已登记的单次 `__data` 写入外，T03/T04 与 2026-09-19 审计均为只读**（`ls`/`stat`/`sha256sum`）；不可用「全程只读」概括整个项目。arm64-v8a 真机仍**未覆盖**，该 ABI 的 smoke 每次运行都按白名单为空而拒绝安装（T04.md §5.2、§16.1） |
 
 ## 任务登记

@@ -98,6 +98,11 @@ class InstallService : Service() {
 
     private var lastNotifyMs = 0L
     private var total = 0
+    private var lastDone = 0
+    private var lastText = ""
+
+    /** 是否已进入前台。重复 start 不能再次 startForeground（会把进度归零）。 */
+    private var foregroundStarted = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -109,16 +114,27 @@ class InstallService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                total = intent.getIntExtra(EXTRA_TOTAL, 0)
-                Log.i(TAG, "前台服务启动，本批 $total 个")
-                // 必须先 startForeground 再干别的，否则 5 秒后系统判定违规并杀服务
-                startForeground(NOTIFICATION_ID, buildNotification(0, total, "准备中…"))
+                total = intent.getIntExtra(EXTRA_TOTAL, total)
+                if (foregroundStarted) {
+                    // T26：重复 start（误触/界面重建/系统重投递）不得把进度归零 ——
+                    // 与 ScanService 同一契约。只按新总数重绘当前进度。
+                    Log.i(TAG, "前台服务已在跑，重复 start 忽略重置（本批 $total 个）")
+                    getSystemService(NotificationManager::class.java)
+                        ?.notify(NOTIFICATION_ID, buildNotification(lastDone, total, lastText))
+                } else {
+                    Log.i(TAG, "前台服务启动，本批 $total 个")
+                    foregroundStarted = true
+                    // 必须先 startForeground 再干别的，否则 5 秒后系统判定违规并杀服务
+                    startForeground(NOTIFICATION_ID, buildNotification(0, total, "准备中…"))
+                }
             }
 
             ACTION_UPDATE -> {
                 val done = intent.getIntExtra(EXTRA_DONE, 0)
                 val t = intent.getIntExtra(EXTRA_TOTAL, total).also { total = it }
                 val text = intent.getStringExtra(EXTRA_TEXT) ?: ""
+                lastDone = done
+                lastText = text
                 val now = System.currentTimeMillis()
                 // 最后一个完成（done == total）时不节流：那是用户最关心的一帧
                 if (now - lastNotifyMs >= NOTIFY_INTERVAL_MS || (t > 0 && done >= t)) {
@@ -130,6 +146,9 @@ class InstallService : Service() {
 
             ACTION_STOP -> {
                 Log.i(TAG, "前台服务收尾")
+                foregroundStarted = false
+                lastDone = 0
+                lastText = ""
                 stopForegroundCompat()
                 stopSelf()
             }
@@ -140,6 +159,7 @@ class InstallService : Service() {
     }
 
     override fun onDestroy() {
+        foregroundStarted = false
         stopForegroundCompat()
         super.onDestroy()
     }
