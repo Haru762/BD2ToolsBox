@@ -2110,7 +2110,9 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.WebContentThemeTest' -Abi 'x86_64'
 
 ### T48 — 建立可重复的 APK 组成、ABI 与 native 审计脚本
 
-- [ ] **T48 完成**
+- [x] **T48 完成**
+
+**2026-10-11 DONE。** 新增 `tools/audit_apk_size.py`（只读：ZIP `compress_size` 分类 dex/资源/Chaquopy+IMY/native/其他 + `containerOverhead` 自校验；嵌套 IMY 在内存逐项读、列内部 `.so` 架构与未知平台；ELF 头只读解析；危险路径只记录不落盘；重复条目/畸形 ELF 明确失败）与 `tests/test_apk_size_audit.py` **14/14 PASS**。冻结优化前基线（release 构建 6m42s，exit 0）：arm64 **33.5184 MiB** / x86_64 **33.4246 MiB**，`findings=0`，Chaquopy/IMY 19.86 MiB 为大头；APK+mapping 存入 `local/refactor-artifacts/pre-shrink/`（忽略），`artifact-manifest.json` 加 `pre-shrink` 类目与 `t48Freeze`。两次运行输出字节相同。见 [T48 证据](../../refactor/evidence/T48.md)。
 
 **优先级：** P1　**前置：** T03、T14、T36、T38、T47
 

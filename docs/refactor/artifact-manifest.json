@@ -123,10 +123,49 @@
     },
     {
       "id": "pre-shrink",
-      "role": "本轮专项裁剪前包（T48 冻结后登记，作逐项 A/B 基线）",
+      "role": "本轮重构完成、尚未进行专项裁剪的 release，作为 T49-T54 的 A/B 优化基线（T48 登记；T38/T47 完成后冻结架构/许可/UI 的优化前输入）",
       "localDir": "local/refactor-artifacts/pre-shrink",
       "gitTracked": false,
-      "items": []
+      "items": [
+        {
+          "file": "app-arm64-v8a-release.apk",
+          "bytes": 35146618,
+          "sha256": "28f39f7a1b0d73e35db6e792dadd001076f72ecb4184a3c01bec0c24d8fd490b",
+          "sourcePath": "D:/bd2 mod/worktrees/bdroid-android-refactor/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+          "version": "0.2.16",
+          "versionCode": 17,
+          "abi": "arm64-v8a",
+          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+          "sourceVerifiedAt": "2026-10-11"
+        },
+        {
+          "file": "app-x86_64-release.apk",
+          "bytes": 35048281,
+          "sha256": "0c310c4df46c42893521db0762fdca7b9c8a4bb759dd694afc5d33ee3fdfdf52",
+          "sourcePath": "D:/bd2 mod/worktrees/bdroid-android-refactor/app/build/outputs/apk/release/app-x86_64-release.apk",
+          "version": "0.2.16",
+          "versionCode": 17,
+          "abi": "x86_64",
+          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+          "sourceVerifiedAt": "2026-10-11"
+        },
+        {
+          "file": "mapping-arm64-v8a.txt",
+          "bytes": 43673152,
+          "sha256": "a9379cbb598d8fd656f198b49d764f750b14d59006d0f8b2fe060de1d72450a6",
+          "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
+          "note": "arm64-v8a 与 x86_64 共用同一份 R8 mapping（同一变体一次 R8）",
+          "sourceVerifiedAt": "2026-10-11"
+        },
+        {
+          "file": "mapping-x86_64.txt",
+          "bytes": 43673152,
+          "sha256": "a9379cbb598d8fd656f198b49d764f750b14d59006d0f8b2fe060de1d72450a6",
+          "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
+          "note": "与 mapping-arm64-v8a.txt 字节相同",
+          "sourceVerifiedAt": "2026-10-11"
+        }
+      ]
     },
     {
       "id": "final",
@@ -402,5 +441,43 @@
       "gitTracked": false,
       "sourceVerifiedAt": "2026-09-15"
     }
-  ]
+  ],
+  "t48Freeze": {
+    "task": "T48",
+    "date": "2026-10-11",
+    "sourceCommit": "affeee3",
+    "evidence": "docs/refactor/evidence/T48.md",
+    "tool": "tools/audit_apk_size.py",
+    "toolRun": [
+      {
+        "apk": "local/refactor-artifacts/pre-shrink/app-arm64-v8a-release.apk",
+        "output": "docs/refactor/evidence/apk-before-arm64.json",
+        "sha256": "9df20d4791d3eb038237c927572ef9659a1e07f53fdb8625f809f3f56f9f4e1b",
+        "exitCode": 0
+      },
+      {
+        "apk": "local/refactor-artifacts/pre-shrink/app-x86_64-release.apk",
+        "output": "docs/refactor/evidence/apk-before-x64.json",
+        "sha256": "dcdd13898d335950b1788632c45f4c8ad59b6f8aaff5da156c80a50a0dd93d21",
+        "exitCode": 0
+      }
+    ],
+    "packageIdentity": {
+      "applicationId": "com.bd2toolsbox",
+      "versionName": "0.2.16",
+      "versionCode": 17,
+      "buildType": "release",
+      "minified": true,
+      "signedWith": "debug keystore (本地受控签名)"
+    },
+    "signature": {
+      "certSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1"
+    },
+    "sizeBasis": "ZIP compress_size（每类在 APK 内真实占字节）；MiB = 1024*1024；分类字节 + containerOverhead == APK 文件大小（脚本自校验）",
+    "notCovered": [
+      "未与 0.2.16 历史基线做逐项对照（本轮只冻结优化前输入）",
+      "未验证运行时行为；本工具只读 ZIP/ELF 头，不执行任何 APK 代码",
+      "arm64/x86_64 之外的 universal APK 未纳入本轮 A/B 基线"
+    ]
+  }
 }
