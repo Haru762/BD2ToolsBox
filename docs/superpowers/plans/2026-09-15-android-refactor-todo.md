@@ -1724,6 +1724,8 @@ Invoke-Bd2Gradle :app:assembleRelease --console=plain
 
 - [ ] **T38 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/settings/LicensesScreen`（AboutLibraries M3 `LibrariesContainer`，离线可读、跟随主题），`WorkbenchSheet` 新增「开源许可」全屏入口；x86_64 设备 `LicensesScreenTest` **1/1 PASS**（语义树实测渲染出库名与 `Apache License 2.0`）。**旧 `licenses/` 目录未退役**（AboutLibraries 生成数据不内嵌全文，需交互验证运行时解析后再删）、引用未全清、arm64 未跑、无独立审查，不勾 DONE。见 [T38 证据](../../refactor/evidence/T38.md)。
+
 **优先级：** P1　**前置：** T37、T33
 
 **文件范围（实施工作区）：**

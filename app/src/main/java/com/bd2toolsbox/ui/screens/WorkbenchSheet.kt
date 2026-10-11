@@ -382,6 +382,30 @@ fun WorkbenchSheet(
                         onDismiss = { showAbout = false }
                     )
                 }
+                // T38：开源许可页（AboutLibraries，离线可读、跟随主题）
+                var showLicenses by remember { mutableStateOf(false) }
+                WorkbenchRow(
+                    title = "开源许可",
+                    subtitle = "第三方组件、版本与许可证全文",
+                    onClick = { showLicenses = true },
+                    trailing = { Icon(Icons.Default.ChevronRight, null) }
+                )
+                if (showLicenses) {
+                    androidx.compose.ui.window.Dialog(
+                        onDismissRequest = { showLicenses = false },
+                        properties = androidx.compose.ui.window.DialogProperties(
+                            usePlatformDefaultWidth = false
+                        )
+                    ) {
+                        androidx.compose.material3.Surface(
+                            modifier = androidx.compose.ui.Modifier.fillMaxSize()
+                        ) {
+                            com.bd2toolsbox.feature.settings.LicensesScreen(
+                                onBack = { showLicenses = false }
+                            )
+                        }
+                    }
+                }
                 WorkbenchRow(
                     title = "检查更新",
                     subtitle = if (updateChecking) "正在检查…" else null,
