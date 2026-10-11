@@ -80,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bd2toolsbox.data.model.ModInfo
 import com.bd2toolsbox.data.model.PreviewState
+import com.bd2toolsbox.ui.components.RecoveryBanner
 import com.bd2toolsbox.ui.components.TaskProgressPanel
 import com.bd2toolsbox.ui.components.WallpaperBackdrop
 import com.bd2toolsbox.ui.dialogs.*
@@ -629,6 +630,17 @@ class MainActivity : ComponentActivity() {
                                 prepackRunning != null -> prepackHidden
                                 previewRunning is PreviewState.Preparing -> previewHidden
                                 else -> false
+                            }
+                            // T25：启动恢复处置的可见结论。此前 recoveryDispositions
+                            // 只被算出来、没有任何界面消费 —— 用户永远看不到
+                            // 「上次操作被打断 / 待核对 / 记录读不出来」。
+                            val recovery by viewModel.recoveryDispositions.collectAsState()
+                            var recoveryDismissed by remember { mutableStateOf(false) }
+                            if (!recoveryDismissed) {
+                                RecoveryBanner(
+                                    dispositions = recovery,
+                                    onDismiss = { recoveryDismissed = true }
+                                )
                             }
                             if (activeTitle != null && collapsed) {
                                 TaskProgressPanel(
