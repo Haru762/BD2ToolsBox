@@ -3,9 +3,17 @@ package com.bd2toolsbox.core.storage
 import com.bd2toolsbox.core.fileaccess.AtomicFileWriter
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import com.bd2toolsbox.core.storage.dto.StoredInstalledMod
+import com.bd2toolsbox.core.storage.dto.StoredJournalEntry
+import com.bd2toolsbox.core.storage.dto.StoredJournalRecoveryFacts
+import com.bd2toolsbox.core.storage.dto.StoredJournalTarget
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 
 /**
@@ -301,139 +309,122 @@ class OperationJournalStore(private val journalFile: File) {
      * 新事实必须在 Gson 转换前校验，避免缺字段默认值与宽松类型转换掩盖坏数据。
      */
     private fun parse(text: String): JournalRead {
-        val root = JsonParser.parseString(text)
-        if (!root.isJsonObject) {
-            return JournalRead.Unreadable(
-                OperationError(
-                    kind = OperationErrorKind.MALFORMED_DATA,
-                    message = "操作日志顶层不是 JSON 对象",
-                    target = journalFile.path
-                )
+        val root = try {
+            json.parseToJsonElement(text)
+        } catch (e: Exception) {
+            return unreadable("操作日志不是合法 JSON：" + e.message.orEmpty())
+        }
+        if (root !is JsonObject) return unreadable("操作日志顶层不是 JSON 对象")
+        val obj = root
+        val versionPrimitive = obj[InstalledLedgerStore.SCHEMA_VERSION_KEY] as? JsonPrimitive
+        if (versionPrimitive == null || versionPrimitive.isString) {
+            return unreadable("操作日志缺少数字型 ${InstalledLedgerStore.SCHEMA_VERSION_KEY}")
+        }
+        if (versionPrimitive.content != SCHEMA_VERSION.toString()) {
+            return unreadable(
+                "操作日志 schemaVersion=${versionPrimitive.content}，本版本只认 $SCHEMA_VERSION"
             )
         }
-        val obj = root.asJsonObject
-        val versionElement = obj.get(InstalledLedgerStore.SCHEMA_VERSION_KEY)
-        if (versionElement == null || !versionElement.isJsonPrimitive ||
-            !versionElement.asJsonPrimitive.isNumber
-        ) {
-            return JournalRead.Unreadable(
-                OperationError(
-                    kind = OperationErrorKind.MALFORMED_DATA,
-                    message = "操作日志缺少数字型 ${InstalledLedgerStore.SCHEMA_VERSION_KEY}",
-                    target = journalFile.path
-                )
-            )
-        }
-        if (versionElement.asString != SCHEMA_VERSION.toString()) {
-            return JournalRead.Unreadable(
-                OperationError(
-                    kind = OperationErrorKind.MALFORMED_DATA,
-                    message = "操作日志 schemaVersion=${versionElement.asString}，" +
-                        "本版本只认 $SCHEMA_VERSION",
-                    target = journalFile.path
-                )
-            )
-        }
-        val entriesElement = obj.get(ENTRIES_KEY)
-        if (entriesElement == null || !entriesElement.isJsonArray) {
-            return JournalRead.Unreadable(
-                OperationError(
-                    kind = OperationErrorKind.MALFORMED_DATA,
-                    message = "操作日志缺少 $ENTRIES_KEY 数组",
-                    target = journalFile.path
-                )
-            )
-        }
-        // 先检查原始 JSON 中的恢复事实，再交给 Gson；整个文件任一目标失败即判不可读。
-        for ((i, rawEntry) in entriesElement.asJsonArray.withIndex()) {
-            if (!rawEntry.isJsonObject) continue // 基础形状由下方 DTO 检查统一报错。
-            val rawTargets = rawEntry.asJsonObject.get("targets")
-            if (rawTargets == null || !rawTargets.isJsonArray) continue
-            for ((j, rawTarget) in rawTargets.asJsonArray.withIndex()) {
-                if (!rawTarget.isJsonObject) continue
-                val problem = JournalRecoveryFactsCodec.validate(rawTarget.asJsonObject)
+        val entriesElement = obj[ENTRIES_KEY]
+        if (entriesElement !is JsonArray) return unreadable("操作日志缺少 $ENTRIES_KEY 数组")
+
+        // 先检查原始 JSON 中的恢复事实，再反序列化；整个文件任一目标失败即判不可读。
+        for ((i, rawEntry) in entriesElement.withIndex()) {
+            if (rawEntry !is JsonObject) continue // 基础形状由下方 DTO 检查统一报错。
+            val rawTargets = rawEntry["targets"]
+            if (rawTargets !is JsonArray) continue
+            for ((j, rawTarget) in rawTargets.withIndex()) {
+                if (rawTarget !is JsonObject) continue
+                val problem = JournalRecoveryFactsCodec.validate(rawTarget)
                 if (problem != null) {
-                    return JournalRead.Unreadable(
-                        OperationError(
-                            kind = OperationErrorKind.MALFORMED_DATA,
-                            message = "操作日志第 $i 条的第 $j 个目标恢复事实无效：$problem",
-                            target = journalFile.path
-                        )
-                    )
+                    return unreadable("操作日志第 $i 条的第 $j 个目标恢复事实无效：$problem")
                 }
             }
         }
-        val type = object : com.google.gson.reflect.TypeToken<List<JournalEntry>>() {}.type
-        val entries: List<JournalEntry>? = gson.fromJson(entriesElement, type)
-        if (entries == null) {
-            return JournalRead.Unreadable(
-                OperationError(
-                    kind = OperationErrorKind.MALFORMED_DATA,
-                    message = "操作日志的 $ENTRIES_KEY 解析成了 null",
-                    target = journalFile.path
-                )
-            )
-        }
-        // 条目本身缺字段时**整份判不可读**而不是丢掉那一条：核对判据建立在
-        // 「最后一条 TARGET_REPLACED 说了什么」上，静默丢一条就可能正好丢掉它，
-        // 于是窗口被误判成「没有」。这与账本那边的取向一致。
-        for ((i, entry) in entries.withIndex()) {
-            // 「恒为 false」的 null 判断是**故意的**：Gson 用 Unsafe 造实例、
-            // 不理会 Kotlin 的非空约束，运行期真的会是 null（同 InstalledLedgerStore 的说明）。
-            @Suppress("SENSELESS_COMPARISON")
-            if (entry == null || entry.operationId == null || entry.stage == null) {
-                return JournalRead.Unreadable(
-                    OperationError(
-                        kind = OperationErrorKind.MALFORMED_DATA,
-                        message = "操作日志第 $i 条缺少必需字段",
-                        target = journalFile.path
-                    )
-                )
+
+        // T35：逐条 kotlinx 反序列化；缺必需字段/类型不符即整份判不可读（不静默丢条目）。
+        val entries = ArrayList<JournalEntry>(entriesElement.size)
+        for ((i, rawEntry) in entriesElement.withIndex()) {
+            if (rawEntry !is JsonObject) return unreadable("操作日志第 $i 条不是 JSON 对象")
+            val stored = try {
+                json.decodeFromJsonElement(StoredJournalEntry.serializer(), rawEntry)
+            } catch (e: Exception) {
+                return unreadable("操作日志第 $i 条缺字段或类型不符：" + e.message.orEmpty())
             }
-            if (entry.stageOrNull == null) {
-                return JournalRead.Unreadable(
-                    OperationError(
-                        kind = OperationErrorKind.MALFORMED_DATA,
-                        message = "操作日志第 $i 条的 stage='${entry.stage}' 不是已知阶段",
-                        target = journalFile.path
-                    )
-                )
+            if (JournalStage.values().none { it.id == stored.stage }) {
+                return unreadable("操作日志第 $i 条的 stage='${stored.stage}' 不是已知阶段")
             }
-            // Gson 的 Unsafe 实例化会绕过 Kotlin 非空约束。即使旧日志没有恢复 facts，
-            // targets、bundleName 与 modUris 也必须在此判废，不能让 null 流入投影或内容观察。
-            // 判废而不是回退成空表：缺字段的条目不可信，保留证据并返回「不知道」。
-            @Suppress("SENSELESS_COMPARISON")
-            if (entry.targets == null) {
-                return JournalRead.Unreadable(
-                    OperationError(
-                        kind = OperationErrorKind.MALFORMED_DATA,
-                        message = "操作日志第 $i 条缺少 targets 数组",
-                        target = journalFile.path
-                    )
-                )
-            }
-            for ((j, target) in entry.targets.withIndex()) {
-                @Suppress("SENSELESS_COMPARISON")
-                if (target == null || target.bundleName == null || target.modUris == null) {
-                    return JournalRead.Unreadable(
-                        OperationError(
-                            kind = OperationErrorKind.MALFORMED_DATA,
-                            message = "操作日志第 $i 条的第 $j 个目标缺少必需字段",
-                            target = journalFile.path
-                        )
-                    )
-                }
-            }
+            entries.add(stored.toDomain())
         }
         return JournalRead.Loaded(entries)
     }
 
+    private fun unreadable(message: String): JournalRead.Unreadable =
+        JournalRead.Unreadable(
+            OperationError(
+                kind = OperationErrorKind.MALFORMED_DATA,
+                message = message,
+                target = journalFile.path
+            )
+        )
+
+    private fun StoredJournalEntry.toDomain(): JournalEntry = JournalEntry(
+        operationId = operationId,
+        stage = stage,
+        atMillis = atMillis,
+        targets = targets.map { it.toDomain() },
+        note = note
+    )
+
+    private fun StoredJournalTarget.toDomain(): JournalTarget = JournalTarget(
+        bundleName = bundleName,
+        hashDir = hashDir,
+        dataBytes = dataBytes,
+        modUris = modUris,
+        recoveryFacts = recoveryFacts?.toDomain()
+    )
+
+    private fun StoredJournalRecoveryFacts.toDomain(): JournalRecoveryFacts = JournalRecoveryFacts(
+        formatVersion = formatVersion,
+        expectedContentSha256 = expectedContentSha256,
+        ledgerUpserts = ledgerUpserts.map {
+            LedgerRecord(it.modUri, it.modName, it.familyKey, it.snapshotTargetHash,
+                it.quality, it.usedAstc, it.installedAt)
+        }
+    )
+
+    private fun JournalEntry.toStored(): StoredJournalEntry = StoredJournalEntry(
+        operationId = operationId,
+        stage = stage,
+        atMillis = atMillis,
+        targets = targets.map { it.toStored() },
+        note = note
+    )
+
+    private fun JournalTarget.toStored(): StoredJournalTarget = StoredJournalTarget(
+        bundleName = bundleName,
+        hashDir = hashDir,
+        dataBytes = dataBytes,
+        modUris = modUris,
+        recoveryFacts = recoveryFacts?.toStored()
+    )
+
+    private fun JournalRecoveryFacts.toStored(): StoredJournalRecoveryFacts = StoredJournalRecoveryFacts(
+        formatVersion = formatVersion,
+        expectedContentSha256 = expectedContentSha256,
+        ledgerUpserts = ledgerUpserts.map {
+            StoredInstalledMod(it.modUri, it.modName, it.familyKey, it.snapshotTargetHash,
+                it.quality, it.usedAstc, it.installedAt)
+        }
+    )
+
     private fun write(entries: List<JournalEntry>): OperationError? {
         val payload = try {
-            val root = JsonObject()
-            root.addProperty(InstalledLedgerStore.SCHEMA_VERSION_KEY, SCHEMA_VERSION)
-            root.add(ENTRIES_KEY, gson.toJsonTree(entries))
-            val encoded = gson.toJson(root)
+            val root = buildJsonObject {
+                put(InstalledLedgerStore.SCHEMA_VERSION_KEY, SCHEMA_VERSION)
+                put(ENTRIES_KEY, json.encodeToJsonElement(journalListSerializer, entries.map { it.toStored() }))
+            }
+            val encoded = json.encodeToString(JsonObject.serializer(), root)
             // 写入端也必须满足同一契约；拒绝无效对象时尚未触碰旧日志。
             when (val validation = parse(encoded)) {
                 is JournalRead.Unreadable -> return validation.error
@@ -471,6 +462,12 @@ class OperationJournalStore(private val journalFile: File) {
         /** 单一载荷键。 */
         const val ENTRIES_KEY = "entries"
 
-        private val gson = Gson()
+        private val json = Json {
+            ignoreUnknownKeys = true
+            explicitNulls = false
+            encodeDefaults = true
+        }
+
+        private val journalListSerializer = ListSerializer(StoredJournalEntry.serializer())
     }
 }

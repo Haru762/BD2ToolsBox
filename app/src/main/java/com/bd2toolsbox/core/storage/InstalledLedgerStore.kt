@@ -429,6 +429,8 @@ class InstalledLedgerStore(private val ledgerFile: File) {
         private val json = Json {
             ignoreUnknownKeys = true
             explicitNulls = false
+            // 与 Gson 默认一致：默认值字段也写出（usedAstc=false / installedAt=0 不省）。
+            encodeDefaults = true
         }
 
         private val recordsMapSerializer =

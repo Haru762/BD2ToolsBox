@@ -2,7 +2,6 @@ package com.bd2toolsbox.core.storage
 
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
-import com.google.gson.Gson
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
@@ -35,7 +34,7 @@ class MoveInstallStaging internal constructor(
                 throw IOException("提交目标路径或长度无效")
             }
             if (target.recoveryFacts != null) {
-                JournalRecoveryFactsCodec.validate(Gson().toJsonTree(target).asJsonObject)?.let {
+                JournalRecoveryFactsCodec.validateTarget(target)?.let {
                     throw IOException("提交事实无效：$it")
                 }
             } else if (target.modUris.isNotEmpty()) {

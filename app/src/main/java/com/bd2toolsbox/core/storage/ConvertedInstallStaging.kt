@@ -2,8 +2,10 @@ package com.bd2toolsbox.core.storage
 
 import com.bd2toolsbox.core.model.OperationError
 import com.bd2toolsbox.core.model.OperationErrorKind
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.Closeable
 import java.io.File
 import java.nio.file.Files
@@ -150,24 +152,24 @@ class ConvertedInstallStaging internal constructor(
         bundleName: String, hashDir: String?, frozen: List<LedgerRecord>, modUris: List<String>,
     ): OperationError? {
         if (hashDir == null) return OperationError(OperationErrorKind.INVALID_INPUT, "hashDir 不能为空")
-        val target = JsonObject().apply {
-            addProperty("bundleName", bundleName)
-            addProperty("hashDir", hashDir)
-            addProperty("dataBytes", 0L)
-            add("modUris", JsonArray().apply { modUris.forEach { add(it) } })
-            add("recoveryFacts", JsonObject().apply {
-                addProperty("formatVersion", 1)
-                addProperty("expectedContentSha256", "0".repeat(64))
-                add("ledgerUpserts", JsonArray().apply {
+        val target = buildJsonObject {
+            put("bundleName", bundleName)
+            put("hashDir", hashDir)
+            put("dataBytes", 0L)
+            put("modUris", buildJsonArray { modUris.forEach { add(it) } })
+            put("recoveryFacts", buildJsonObject {
+                put("formatVersion", 1)
+                put("expectedContentSha256", "0".repeat(64))
+                put("ledgerUpserts", buildJsonArray {
                     frozen.forEach { r ->
-                        add(JsonObject().apply {
-                            addProperty("modUri", r.modUri)
-                            addProperty("modName", r.modName)
-                            addProperty("familyKey", r.familyKey)
-                            addProperty("snapshotTargetHash", r.snapshotTargetHash)
-                            addProperty("quality", r.quality)
-                            addProperty("usedAstc", r.usedAstc)
-                            addProperty("installedAt", r.installedAt)
+                        add(buildJsonObject {
+                            put("modUri", r.modUri)
+                            put("modName", r.modName)
+                            put("familyKey", r.familyKey)
+                            put("snapshotTargetHash", r.snapshotTargetHash)
+                            put("quality", r.quality)
+                            put("usedAstc", r.usedAstc)
+                            put("installedAt", r.installedAt)
                         })
                     }
                 })
