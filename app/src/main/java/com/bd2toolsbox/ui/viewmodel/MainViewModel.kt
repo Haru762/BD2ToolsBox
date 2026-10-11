@@ -941,6 +941,16 @@ class MainViewModel @Inject constructor(
      * T25：启动核对的细分结论（中断 / 已替换待核对 / 已提交 / 未知）。
      * 与 [recoveryVerdict] 同一次启动检查产出；UI 尚未消费，保留为恢复入口。
      */
+    /**
+     * 初始化完成的一次性信号（T32）。
+     *
+     * 自动检查更新以前直接在这里调 checkForUpdates(auto = true)；更新逻辑搬进
+     * UpdateViewModel 之后，**ViewModel 不互相注入**（T55 的 R6），改由界面观察这个
+     * 信号后转交 UpdateViewModel。
+     */
+    private val _initializationCompleted = MutableStateFlow(false)
+    val initializationCompleted: StateFlow<Boolean> = _initializationCompleted.asStateFlow()
+
     private val _recoveryDispositions = MutableStateFlow<List<RecoveryDisposition>>(emptyList())
     val recoveryDispositions: StateFlow<List<RecoveryDisposition>> =
         _recoveryDispositions.asStateFlow()
@@ -1360,7 +1370,7 @@ class MainViewModel @Inject constructor(
         // 小图谁也不该等谁。此时角色表已经读完，URL 拼得出来。
         prefetchAvatars()
         // 启动自动检查更新：静默、24h 一次、有新版弹框
-        checkForUpdates(auto = true)
+        _initializationCompleted.value = true
         // 清上次更新残留的安装包（装完即弃）
         cleanupUpdateApk()
     }
@@ -5132,146 +5142,10 @@ class MainViewModel @Inject constructor(
      * 只在手动点「检查更新」且确实有新版本时才有值 —— 没有启动时自动检查，
      * App 不会自己在后台打 GitHub。
      */
-    private val _latestRelease = MutableStateFlow<UpdateRepository.Release?>(null)
-    val latestRelease: StateFlow<UpdateRepository.Release?> = _latestRelease.asStateFlow()
-
-
-    /** 静态预览（无骨架 mod 的贴图查看）：图片路径列表；非空时界面弹查看器。 */
     private val _staticPreviewImages = MutableStateFlow<List<String>>(emptyList())
     val staticPreviewImages: StateFlow<List<String>> = _staticPreviewImages.asStateFlow()
-
-    /** 静态预览的临时目录，查看器关闭时清理。 */
     private val _staticPreviewTempDir = MutableStateFlow<String?>(null)
 
-    /** 下载完成待安装的 APK 文件名；非空时界面弹「安装」确认框。 */
-    private val _updateApkReady = MutableStateFlow<String?>(null)
-    val updateApkReady: StateFlow<String?> = _updateApkReady.asStateFlow()
-    /** 正在检查。同时当防连点用：进行中再点直接忽略。 */
-    private val _updateChecking = MutableStateFlow(false)
-    val updateChecking: StateFlow<Boolean> = _updateChecking.asStateFlow()
-
-    /**
-     * 手动检查更新一次。
-     *
-     * 网络请求在仓库里走 IO 线程，这里回到 viewModelScope 的主线程再弹 toast ——
-     * Toast 在没调过 Looper.prepare 的后台线程上会直接抛异常，结果回调必须落在
-     * 主线程（[toast] 只负责换个 application context，不切线程）。
-     */
-    /**
-     * @param auto 启动时自动检查。与手动点的区别：静默（失败/已是最新不弹
-     * toast，不打扰启动），且 24 小时内只查一次（GitHub 未登录限 60 次/时）；
-     * 查到新版照常弹更新框。
-     */
-    fun checkForUpdates(auto: Boolean = false) {
-        if (_updateChecking.value) return
-        val ctx = appContext ?: return
-        _updateChecking.value = true
-        viewModelScope.launch {
-            try {
-                val repo = updateRepository
-                val release = repo.fetchLatest()
-                when {
-                    release == null ->
-                        if (!auto) toast(ctx, "检查更新失败：连不上 GitHub，请检查网络或代理")
-                    !repo.isNewerThanInstalled(release.version) ->
-                        if (!auto) toast(ctx, "已是最新版本（当前 ${repo.installedVersion()}）")
-                    // 自动检查：被忽略的版本不再弹（手动点「检查更新」不受此限）
-                    auto && release.version == ignoredUpdateVersion() -> Unit
-                    else -> _latestRelease.value = release
-                }
-            } finally {
-                _updateChecking.value = false
-            }
-        }
-    }
-
-    /** 用户点「忽略此版本」后记录：该版本号不再自动弹更新框。 */
-    fun ignoreUpdateVersion(version: String) {
-        _latestRelease.value = null
-        appContext?.getSharedPreferences("update_check", Context.MODE_PRIVATE)
-            ?.edit()?.putString("ignored_version", version)?.apply()
-    }
-
-    private fun ignoredUpdateVersion(): String =
-        appContext?.getSharedPreferences("update_check", Context.MODE_PRIVATE)
-            ?.getString("ignored_version", "").orEmpty()
-
-    /** 关掉更新弹窗。下次再点「检查更新」重新拉。 */
-    fun dismissUpdate() {
-        _latestRelease.value = null
-    }
-
-    /**
-     * 应用内下载更新包。架构选择在仓库层按本机 ABI 自动做；排队成功 toast 提醒
-     * 进度看通知栏，结果由 DownloadManager 的完成广播接回（见 MainActivity 的
-     * 接收器 → [onUpdateDownloadComplete]）。
-     */
-    fun downloadUpdate(release: UpdateRepository.Release) {
-        val ctx = appContext ?: return
-        viewModelScope.launch {
-            val repo = updateRepository
-            // 已经下过这个包就直接弹安装，不再重复下载几十 MB
-            if (withContext(Dispatchers.IO) { repo.isApkDownloaded(release) }) {
-                _updateApkReady.value =
-                    withContext(Dispatchers.IO) { repo.downloadedApkFile()?.name }
-                return@launch
-            }
-            val started = withContext(Dispatchers.IO) {
-                repo.startApkDownload(release)
-            }
-            if (started != null) {
-                toast(ctx, "已开始下载 ${started.name}，进度见通知栏")
-                // 轮询兜底：广播接收器在部分 ROM 上不可靠（NOT_EXPORTED 改
-                // EXPORTED 已修一层），这里再直接查状态——双保险，谁先到谁
-                // 触发弹框；已有 _updateApkReady 非空守卫不会弹两次。
-                viewModelScope.launch(Dispatchers.IO) {
-                    while (_updateApkReady.value == null) {
-                        delay(3000)
-                        val id = repo.currentDownloadId()
-                        if (id != -1L && repo.isDownloadSuccessful(id)) {
-                            val f = repo.downloadedApkFile()
-                            if (f != null) {
-                                _updateApkReady.value = f.name
-                                break
-                            }
-                        }
-                        // 下载不在了（被取消或超时很久）就停
-                        if (!repo.hasActiveDownload() && !repo.isDownloadSuccessful(id)) {
-                            // 已不在进行中也不算成功 → 大概率被用户取消
-                            break
-                        }
-                    }
-                }
-            } else if (withContext(Dispatchers.IO) { updateRepository.hasActiveDownload() }) {
-                toast(ctx, "已有下载在进行中")
-            } else {
-                toast(ctx, "这个版本没有可下载的安装包，请到发布页手动下载")
-            }
-        }
-    }
-
-    /** 下载完成的回执入口（MainActivity 的广播接收器调）。 */
-    fun onUpdateDownloadComplete(id: Long) {
-        val ctx = appContext ?: return
-        viewModelScope.launch {
-            val repo = updateRepository
-            if (id != withContext(Dispatchers.IO) { repo.currentDownloadId() }) return@launch
-            val ok = withContext(Dispatchers.IO) { repo.isDownloadSuccessful(id) }
-            if (ok) {
-                _updateApkReady.value = withContext(Dispatchers.IO) {
-                    repo.downloadedApkFile()?.name
-                }
-                toast(ctx, "更新包下载完成")
-            } else {
-                toast(ctx, "更新包下载失败，请检查网络或代理后重试")
-            }
-        }
-    }
-
-    /** 关掉「下载完成」弹窗（不安装，包文件保留，下次检查更新可重下）。 */
-    fun dismissUpdateReady() {
-        _updateApkReady.value = null
-    }
 
     /** 启动时清掉上次更新留下的安装包（装完就没用了，白占几十 MB）。 */
     fun cleanupUpdateApk() {

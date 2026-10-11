@@ -63,6 +63,7 @@ import com.bd2toolsbox.ui.viewmodel.MainViewModel
 @Composable
 fun WorkbenchSheet(
     viewModel: MainViewModel,
+    updateViewModel: com.bd2toolsbox.feature.update.UpdateViewModel,
     onUninstallAll: () -> Unit,
     onUnpackTool: () -> Unit,
     onRecheckShizuku: () -> Unit,
@@ -89,7 +90,7 @@ fun WorkbenchSheet(
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val updateChecking by viewModel.updateChecking.collectAsState()
+    val updateChecking by updateViewModel.updateChecking.collectAsState()
     // 版本从 PackageManager 读，不写死在代码里 —— 发版只改 build.gradle 的
     // versionName/versionCode，这里跟着变（项目没开 BuildConfig，也不值得为
     // 一行字去开）。
@@ -446,7 +447,7 @@ fun WorkbenchSheet(
                     title = "检查更新",
                     subtitle = if (updateChecking) "正在检查…" else null,
                     enabled = !updateChecking,
-                    onClick = { viewModel.checkForUpdates() },
+                    onClick = { updateViewModel.checkForUpdates() },
                     trailing = {
                         // 转圈同时兼作「本轮已发出」的反馈：没有它就只剩一个
                         // 不会变化的箭头，用户会以为点击没生效而连点。

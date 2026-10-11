@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
             if (id != -1L &&
                 id == updateRepository.currentDownloadId()
             ) {
-                viewModel.onUpdateDownloadComplete(id)
+                updateViewModel.onUpdateDownloadComplete(id)
             }
         }
     }
@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private val guideViewModel: GuideViewModel by viewModels()
     private val cdkViewModel: com.bd2toolsbox.feature.cdk.CdkViewModel by viewModels()
+    private val updateViewModel: com.bd2toolsbox.feature.update.UpdateViewModel by viewModels()
 
     // T20：字段注入，不再经静态 UpdateRepository.get(context)
     @javax.inject.Inject lateinit var updateRepository: UpdateRepository
@@ -652,7 +653,14 @@ class MainActivity : ComponentActivity() {
                             // T25：启动恢复处置的可见结论。此前 recoveryDispositions
                             // 只被算出来、没有任何界面消费 —— 用户永远看不到
                             // 「上次操作被打断 / 待核对 / 记录读不出来」。
-                            val recovery by viewModel.recoveryDispositions.collectAsState()
+                            // T32：初始化完成后把「自动检查更新」转交给 UpdateViewModel
+                // （ViewModel 之间不互相注入）。
+                val initDone by viewModel.initializationCompleted.collectAsState()
+                LaunchedEffect(initDone) {
+                    if (initDone) updateViewModel.checkForUpdates(auto = true)
+                }
+
+                val recovery by viewModel.recoveryDispositions.collectAsState()
                             var recoveryDismissed by remember { mutableStateOf(false) }
                             if (!recoveryDismissed) {
                                 RecoveryBanner(
@@ -779,6 +787,7 @@ class MainActivity : ComponentActivity() {
                 if (settingsOpen) {
                     WorkbenchSheet(
                         viewModel = viewModel,
+                        updateViewModel = updateViewModel,
                         onUninstallAll = { settingsOpen = false; viewModel.prepareUninstallAll() },
                         onUnpackTool = { settingsOpen = false; showUnpackDialog = true },
                         onRecheckShizuku = { recheckShizukuWithFeedback(viewModel) },
@@ -829,17 +838,17 @@ class MainActivity : ComponentActivity() {
 
                 // 检查更新：只在「设置 → 高级」里手动点，结果落在这一个弹窗上。
                 // 「去下载」跳系统浏览器到 release 页，App 自己不下载不安装。
-                val latestRelease by viewModel.latestRelease.collectAsState()
+                val latestRelease by updateViewModel.latestRelease.collectAsState()
                 UpdateDialog(
                     release = latestRelease,
                     onDownload = { release ->
                         // 应用内下载：架构按本机自动选，进度看通知栏，
                         // 完成后由下载广播接回并弹「安装」框
-                        viewModel.downloadUpdate(release)
-                        viewModel.dismissUpdate()
+                        updateViewModel.downloadUpdate(release)
+                        updateViewModel.dismissUpdate()
                     },
-                    onIgnore = { version -> viewModel.ignoreUpdateVersion(version) },
-                    onDismiss = { viewModel.dismissUpdate() }
+                    onIgnore = { version -> updateViewModel.ignoreUpdateVersion(version) },
+                    onDismiss = { updateViewModel.dismissUpdate() }
                 )
 
                 // 无骨架 mod 的静态贴图查看（预览的兜底路径）
@@ -851,11 +860,11 @@ class MainActivity : ComponentActivity() {
 
                 // 下载完成后的安装确认。安装要拉系统安装器与未知来源授权，
                 // 都需要 Activity 上下文，动作在 Activity 层做。
-                val updateApkReady by viewModel.updateApkReady.collectAsState()
+                val updateApkReady by updateViewModel.updateApkReady.collectAsState()
                 UpdateReadyDialog(
                     apkName = updateApkReady,
                     onInstall = { installUpdateApk() },
-                    onDismiss = { viewModel.dismissUpdateReady() }
+                    onDismiss = { updateViewModel.dismissUpdateReady() }
                 )
 
                 // 任务结束（progress 变 null）时复位，否则收起来一次之后，
