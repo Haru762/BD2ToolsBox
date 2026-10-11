@@ -897,7 +897,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.di.RepositoryConstructionTest'
 
 ### T18 — 抽取 Kotlin—Python 引擎适配层并保留协议
 
-- [ ] **T18 完成** — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-29）：旧 4 项真机结果未覆盖有效 bundle 转换，不能收口 DONE。本轮修复协议校验、扫描假空名单、跨 Python 回调取消和默认实例替换；引擎 JVM 20/20、扫描 Python 12/12、x86_64 加强版 NativeEngineSmokeTest 9/9（含真实转换与产物逐字节检查）。**新版仍需原生 arm64 验证**。见 [T18.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T18.md>)。
+- [x] **T18 完成** — 状态 **DONE**（2026-10-11）：x86_64 加强版 `NativeEngineSmokeTest` 9/9（含真实转换与产物逐字节检查）；**原生 arm64 真机 9/9 PASS**（runId `20261011-131429-device-arm64-v8a-…`）；引擎 JVM 20/20、扫描 Python 12/12；两 ABI release 静态审计 PASS。见 [T18.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T18.md>)。
 
 **优先级：** P1　**前置：** T17、T12
 
