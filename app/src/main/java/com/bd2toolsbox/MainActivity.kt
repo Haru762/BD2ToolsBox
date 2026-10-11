@@ -180,10 +180,12 @@ class MainActivity : ComponentActivity() {
             // 取色开关、配色预设、壁纸都会让整个主题重组，所以在这一层收集
             val dynamicColor by viewModel.dynamicColor.collectAsState()
             val appTheme by viewModel.appTheme.collectAsState()
+            val themeMode by viewModel.themeMode.collectAsState()
             val wallpaperUri by viewModel.wallpaperUri.collectAsState()
             val wallpaperScrim by viewModel.wallpaperScrim.collectAsState()
 
             BD2ModManagerTheme(
+                themeMode = themeMode,
                 dynamicColor = dynamicColor,
                 theme = appTheme,
                 // 有壁纸时把 background/surface 抽成透明，壁纸才透得出来

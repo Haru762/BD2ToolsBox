@@ -3,7 +3,10 @@ package com.bd2toolsbox.ui.theme
 import android.app.Activity
 import android.os.Build
 import androidx.compose.material3.MaterialTheme
+import com.bd2toolsbox.core.model.ThemeMode
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
@@ -14,28 +17,34 @@ import androidx.core.view.WindowCompat
 /**
  * 全局主题。
  *
+ * @param themeMode             明/暗/跟随系统（T39）；旧配置缺该键时默认 LIGHT。
  * @param dynamicColor          跟随壁纸取色（Material You），Android 12+ 有效，
  *                              优先于 [theme]（系统给的整套色没法叠预设）。
  * @param theme                 手选配色预设，见 [AppTheme]。
  * @param transparentBackground 用自定义壁纸时置 true：把 background/surface 抽掉
  *                              不透明度让壁纸透出来，状态栏随之透明。
- *
- * 始终浅色：界面大量状态靠颜色区分（生效中/需重新应用/被其他工具改过），
- * 一套配色调准了更可靠，所以不做深浅切换。
+ *                              （分层重构属 T40；[appColorScheme] 本身不接收透明度。）
  */
 @Composable
 fun BD2ModManagerTheme(
+    themeMode: ThemeMode = ThemeMode.LIGHT,
     dynamicColor: Boolean = false,
     theme: AppTheme = AppTheme.PURPLE,
     transparentBackground: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
-    val base = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        dynamicLightColorScheme(context)
-    } else {
-        colorSchemeFor(theme)
+    val dark = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
+    val dynamicScheme = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else {
+        null
+    }
+    val base = appColorScheme(theme, dark, dynamicScheme)
 
     // 壁纸模式只透明这两个面色 —— surfaceVariant（头像位/徽章底）和各种
     // container 必须保持不透明，否则文字直接压在壁纸上没法读
@@ -50,10 +59,10 @@ fun BD2ModManagerTheme(
         SideEffect {
             val window = (view.context as Activity).window
             // 系统栏已由 enableEdgeToEdge 置透明、内容画到其后；这里只管图标深浅。
-            // app 恒为浅色 UI，两栏图标都要深色（浅色栏）
+            // 深色主题用浅色图标，浅色主题用深色图标。
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = true
-                isAppearanceLightNavigationBars = true
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
             }
         }
     }

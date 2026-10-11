@@ -1762,6 +1762,8 @@ rg -n 'licenses[/\\]' (Join-Path $Root 'README.md') (Join-Path $Root 'README.en.
 
 - [ ] **T39 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `appColorScheme(theme, dark, dynamicScheme)`（计划要求的可测入口，不接收壁纸透明度，surface/background 强制不透明）与七套预设的 `darkColorSchemeFor`；`BD2ModManagerTheme` 接 `themeMode`（LIGHT/DARK/SYSTEM + 明暗动态取色 + 系统栏图标）；`MainActivity` 接线。定向 JVM 8/0/0/0、全量 JVM 667/0/0/0。**设置页选择器、values-night 资源、T40 壁纸分层、设备截图验收未完成**，不勾 DONE。见 [T39 证据](../../refactor/evidence/T39.md)。
+
 **优先级：** P1　**前置：** T27、T33
 
 **文件范围（实施工作区）：**
