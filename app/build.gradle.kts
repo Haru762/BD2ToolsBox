@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.chaquopy)
+    alias(libs.plugins.aboutlibraries.android)
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +193,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.documentfile)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.aboutlibraries.compose.m3)
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.mockk)
@@ -211,4 +213,20 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+}
+
+// ---------------------------------------------------------------------------
+// T37：许可证清单。AboutLibraries 按 variant 生成依赖定义（prepareLibraryDefinitions*），
+// 与构建绑定而不是手工跑一次。自定义（非 Maven）组件定义在仓库根的
+// config/aboutlibraries/libraries.json，与自动收集的 Gradle 依赖合并。
+// fetchRemoteLicense=false：保持离线可复现，许可文本来自插件内置 SPDX 映射与
+// config/aboutlibraries 下的本地补充。
+// ---------------------------------------------------------------------------
+aboutLibraries {
+    collect {
+        // 路径相对模块（:app），见 AboutLibraries 文档；指向仓库根的 config/aboutlibraries。
+        configPath.set(file("../config/aboutlibraries"))
+        fetchRemoteLicense.set(false)
+        fetchRemoteFunding.set(false)
+    }
 }

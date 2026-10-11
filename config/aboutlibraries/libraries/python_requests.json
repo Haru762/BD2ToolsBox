@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:requests",
+  "name": "requests",
+  "artifactVersion": "2.31.0",
+  "description": "HTTP 客户端（Chaquopy pip 直接依赖）。",
+  "website": "https://github.com/psf/requests",
+  "developers": [
+    {
+      "name": "Kenneth Reitz"
+    }
+  ],
+  "licenses": [
+    "Apache-2.0"
+  ]
+}

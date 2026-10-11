@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:fsspec",
+  "name": "fsspec",
+  "artifactVersion": "2023.6.0",
+  "description": "文件系统抽象（Chaquopy pip 直接依赖）。",
+  "website": "https://github.com/fsspec/filesystem_spec",
+  "developers": [
+    {
+      "name": "Martin Durant"
+    }
+  ],
+  "licenses": [
+    "BSD-3-Clause"
+  ]
+}

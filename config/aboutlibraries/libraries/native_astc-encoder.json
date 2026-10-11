@@ -1,0 +1,14 @@
+{
+  "uniqueId": "native:astc-encoder",
+  "name": "astc-encoder",
+  "description": "ASTC 纹理编码（jniLibs/*/libastcenc.so）。",
+  "website": "https://github.com/ARM-software/astc-encoder",
+  "developers": [
+    {
+      "name": "Arm Limited"
+    }
+  ],
+  "licenses": [
+    "Apache-2.0"
+  ]
+}

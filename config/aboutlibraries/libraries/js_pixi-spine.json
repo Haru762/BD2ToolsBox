@@ -1,0 +1,15 @@
+{
+  "uniqueId": "js:pixi-spine",
+  "name": "pixi-spine",
+  "artifactVersion": "3.1.2",
+  "description": "Spine 运行时。不随 APK 分发：首次使用预览动画时从 npm CDN 取回应用私有目录（见 THIRD-PARTY-NOTICES.md）。列出仅为让清单完整。",
+  "website": "https://github.com/pixijs/spine",
+  "developers": [
+    {
+      "name": "Ivan Igorevich Popelyshev"
+    }
+  ],
+  "licenses": [
+    "SPINE-LICENSE"
+  ]
+}

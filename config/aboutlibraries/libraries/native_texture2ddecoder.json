@@ -1,0 +1,14 @@
+{
+  "uniqueId": "native:texture2ddecoder",
+  "name": "texture2ddecoder",
+  "description": "BCn/ETC/ASTC 纹理解码（jniLibs/*/libtexture2ddecoder.so）。",
+  "website": "https://github.com/K0lb3/texture2ddecoder",
+  "developers": [
+    {
+      "name": "K0lb3"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}

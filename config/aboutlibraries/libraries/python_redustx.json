@@ -1,0 +1,14 @@
+{
+  "uniqueId": "python:redustx",
+  "name": "ReDustX",
+  "description": "Spine 数据转换参考实现（python/repacker/json_to_skel.py）。",
+  "website": "https://github.com/Jelosus2/ReDustX",
+  "developers": [
+    {
+      "name": "Jelosus2"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}

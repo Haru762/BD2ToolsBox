@@ -1684,6 +1684,8 @@ Test-Bd2ReleaseSmoke -Case 'json-migration' -Abi 'arm64-v8a'
 
 - [ ] **T37 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 接入 AboutLibraries 13.1.0（插件 + Compose M3），生成绑定到 variant（`prepareLibraryDefinitions*`）；非 Maven 组件（Python 12 / 原生 5 / JS 2）自定义定义在 `config/aboutlibraries/libraries/`，离线可复现；`assembleRelease` 成功且 APK 内离线清单含自定义组件；新增 `docs/refactor/license-inventory.md` 并更新 `THIRD-PARTY-NOTICES.md`。**T49 最终 flavor 复验未做、FMOD 授权仍 UNKNOWN、无独立审查**，不勾 DONE。见 [T37 证据](../../refactor/evidence/T37.md)。
+
 **优先级：** P1　**前置：** T12、T14
 
 **文件范围（实施工作区）：**

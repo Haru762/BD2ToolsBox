@@ -1,0 +1,14 @@
+{
+  "uniqueId": "native:fmod",
+  "name": "FMOD Ex / FMOD Studio",
+  "description": "音频运行时（Python 绑定的底层）。授权状态：T12 记录为已接受的 UNKNOWN（分发字节已钉住）；正式分发前需向 Firelight Technologies 确认授权。",
+  "website": "https://www.fmod.com/",
+  "developers": [
+    {
+      "name": "Firelight Technologies Pty Ltd"
+    }
+  ],
+  "licenses": [
+    "FMOD-LICENSE"
+  ]
+}

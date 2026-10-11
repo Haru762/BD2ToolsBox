@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:pillow",
+  "name": "Pillow",
+  "artifactVersion": "9.5.0",
+  "description": "图像处理（Chaquopy pip 直接依赖）。",
+  "website": "https://python-pillow.org/",
+  "developers": [
+    {
+      "name": "Jeffrey A. Clark and contributors"
+    }
+  ],
+  "licenses": [
+    "HPND"
+  ]
+}

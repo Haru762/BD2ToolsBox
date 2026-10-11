@@ -1,0 +1,14 @@
+{
+  "uniqueId": "native:brotli",
+  "name": "Brotli (C)",
+  "description": "Brotli 原生库（Python 绑定的底层）。",
+  "website": "https://github.com/google/brotli",
+  "developers": [
+    {
+      "name": "The Brotli Authors"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}

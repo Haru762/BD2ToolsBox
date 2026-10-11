@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:lz4",
+  "name": "lz4 (python)",
+  "artifactVersion": "4.3.3",
+  "description": "LZ4 压缩绑定（Chaquopy pip 直接依赖）。",
+  "website": "https://github.com/python-lz4/python-lz4",
+  "developers": [
+    {
+      "name": "Jonathan Underwood"
+    }
+  ],
+  "licenses": [
+    "BSD-3-Clause"
+  ]
+}

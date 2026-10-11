@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:brotli",
+  "name": "Brotli (python)",
+  "artifactVersion": "1.1.0",
+  "description": "Brotli 压缩绑定（Chaquopy pip 直接依赖）。",
+  "website": "https://github.com/google/brotli",
+  "developers": [
+    {
+      "name": "The Brotli Authors"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}

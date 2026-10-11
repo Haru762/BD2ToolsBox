@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:attrs",
+  "name": "attrs",
+  "artifactVersion": "23.1.0",
+  "description": "属性类工具（Chaquopy pip 直接依赖）。",
+  "website": "https://github.com/python-attrs/attrs",
+  "developers": [
+    {
+      "name": "Hynek Schlawack"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}

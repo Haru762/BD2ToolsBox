@@ -1,0 +1,16 @@
+{
+  "uniqueId": "python:tqdm",
+  "name": "tqdm",
+  "artifactVersion": "4.66.1",
+  "description": "进度条（Chaquopy pip 直接依赖）。",
+  "website": "https://github.com/tqdm/tqdm",
+  "developers": [
+    {
+      "name": "tqdm developers"
+    }
+  ],
+  "licenses": [
+    "MPL-2.0",
+    "MIT"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "uniqueId": "native:lz4",
+  "name": "LZ4 (C)",
+  "description": "LZ4 原生库（Python 绑定的底层）。",
+  "website": "https://github.com/lz4/lz4",
+  "developers": [
+    {
+      "name": "Yann Collet"
+    }
+  ],
+  "licenses": [
+    "BSD-2-Clause"
+  ]
+}

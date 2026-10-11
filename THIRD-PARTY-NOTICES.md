@@ -55,10 +55,17 @@
 ### Android 依赖（Gradle）
 
 均为 **Apache-2.0**：AndroidX Core / Lifecycle / Activity Compose / DocumentFile、
-Jetpack Compose（BOM 2024.06.00，含 Material 3 与 material-icons-extended）、
-[Gson](https://github.com/google/gson) 2.10.1、
+Jetpack Compose（BOM 2025.08.00，含 Material 3 与 material-icons-extended）、
+[kotlinx.serialization](https://github.com/Kotlin/kotlinx.serialization)（Apache-2.0）、
+[AboutLibraries](https://github.com/mikepenz/AboutLibraries)（Apache-2.0）、
 [Shizuku](https://github.com/RikkaApps/Shizuku) api + provider 13.1.5、
 [compose-shimmer](https://github.com/valentinilk/compose-shimmer) 1.2.0。
+
+> T35/T36（2026-10-11）已移除 Gson：持久化与网络 JSON 改用 kotlinx.serialization。
+> 完整的自动收集依赖清单随 APK 分发（`res/raw/aboutlibraries.json`），
+> 非 Maven 组件（Python / 原生 / JS）的自定义定义见
+> [`config/aboutlibraries/libraries/`](config/aboutlibraries/libraries/)，
+> 人类可读汇总见 [`docs/refactor/license-inventory.md`](docs/refactor/license-inventory.md)。
 
 ### Python 运行时与包
 

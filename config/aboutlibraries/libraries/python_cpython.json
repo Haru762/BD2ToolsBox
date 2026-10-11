@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:cpython",
+  "name": "CPython",
+  "artifactVersion": "3.8",
+  "description": "打包进 APK 的 Python 运行时（Chaquopy 提供；Android 侧为 3.8）。",
+  "website": "https://www.python.org/",
+  "developers": [
+    {
+      "name": "Python Software Foundation"
+    }
+  ],
+  "licenses": [
+    "PSF-2.0"
+  ]
+}

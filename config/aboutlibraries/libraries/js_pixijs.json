@@ -1,0 +1,15 @@
+{
+  "uniqueId": "js:pixijs",
+  "name": "PixiJS",
+  "artifactVersion": "6.5.10",
+  "description": "预览页 WebView 的 2D 渲染（assets/spine-viewer/js/pixi.min.js）。",
+  "website": "https://github.com/pixijs/pixijs",
+  "developers": [
+    {
+      "name": "Mathew Groves, Chad Engler"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}

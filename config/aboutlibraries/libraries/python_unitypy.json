@@ -1,0 +1,14 @@
+{
+  "uniqueId": "python:unitypy",
+  "name": "UnityPy",
+  "description": "Unity 资源读取/写入（python/vendor/UnityPy/）。",
+  "website": "https://github.com/K0lb3/UnityPy",
+  "developers": [
+    {
+      "name": "K0lb3"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}

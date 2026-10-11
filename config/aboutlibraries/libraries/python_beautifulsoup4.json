@@ -1,0 +1,15 @@
+{
+  "uniqueId": "python:beautifulsoup4",
+  "name": "Beautiful Soup",
+  "artifactVersion": "4.12.2",
+  "description": "HTML 解析（Chaquopy pip 直接依赖）。",
+  "website": "https://www.crummy.com/software/BeautifulSoup/",
+  "developers": [
+    {
+      "name": "Leonard Richardson"
+    }
+  ],
+  "licenses": [
+    "MIT"
+  ]
+}
