@@ -1845,6 +1845,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.WallpaperReadabilityTest' -Abi 'x8
 
 - [ ] **T41 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `StatusBadge`（`StatusTone` + 唯一的 `forInstallState` 映射）、`AppDialog`（确认/关闭/可重试语义）、`TaskProgressPanel`（不确定/确定进度、取消安全阶段）与 `docs/refactor/ui-component-contracts.md`；设备 `ComponentContractTest` **7/7 PASS**。**页面未采纳（WorkbenchItems/ModListComponents/Type 未改）、`NavigationStateTest` 未创建**、明暗截图未做、arm64 未跑、无独立审查，不勾 DONE。见 [T41 证据](../../refactor/evidence/T41.md)。
+
 **优先级：** P1　**前置：** T40、T33
 
 **文件范围（实施工作区）：**
