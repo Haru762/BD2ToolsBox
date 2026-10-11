@@ -1050,6 +1050,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.operations.OperationCoordinatorTes
 
 - [ ] **T22 完成**
 
+**2026-10-11 接线完成。** 提交执行已迁入 `InstallService`（`ACTION_RUN` + 自己的 scope + 前台服务），`MainViewModel` 只冻结事实、交宿主、等真实结果。新增 `MoveCommitHost` 接口与 `DirectMoveCommitHost`（JVM 用例用），设备 `InstallServiceRunHostTest` **1/1 PASS**。仍不勾 DONE：真实杀进程恢复与 arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED。** 已把转换产物提交链与单个 mod 移除的账本判定抽成 `InstallExecutor` / `UninstallExecutor` 并接回 `MainViewModel`；定向 JVM 30/0/0/0、全量 JVM 560/0/0/0、androidTest 源码编译通过。**Service 仍未驱动 executor**（循环仍在 ViewModel），设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T22 证据](../../refactor/evidence/T22.md)。
 
 **优先级：** P0　**前置：** T21、T18、T09
@@ -1088,6 +1090,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.InstallServiceLifecycleTest' 
 ### T23 — 把扫描循环迁入 ScanService 并修正分页与错误协议
 
 - [ ] **T23 完成**
+
+**2026-10-11 接线完成。** 扫描循环已迁入 `ScanService`（`ACTION_RUN` + 自己的 scope + 进度映射），VM 注入 `ScanRunHost`。`ScanServiceTest` **5/5 PASS**（MuMu）。仍不勾 DONE：arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 分页快照修复（`BundleListingSnapshot`，`offset==0` 重建、后续页复用，消除 N 页 N 次完整枚举）与游戏 bundle 索引扫描编排抽取（`ScanExecutor`，四种检查结果 + 占用自持）完成，定向 JVM 14/0/0/0、全量 JVM 574/0/0/0。**来源 MOD 扫描循环仍在 ViewModel、ScanService 仍未驱动 executor**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T23 证据](../../refactor/evidence/T23.md)。
 
@@ -1130,6 +1134,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.service.ScanServiceTest' -Abi 'x86_64
 
 - [ ] **T24 完成**
 
+**2026-10-11 接线完成。** 交接加了**任务 ID**并在取走时校验；解包判定与落地收进 `PrepackExecutor.commit/discard`（服务真正驱动执行器）；删掉与 `PrepackTarget` 同形的 `PrepackService.Target`。仍不勾 DONE：`PrepackCacheIntegrationTest` 未建、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 目标筛选与空间计划抽取为 `PrepackExecutor`（两者同源，修掉计划 `todo` 把负缓存算成待办的不一致），定向 JVM 8/0/0/0、全量 JVM 582/0/0/0。**静态 `pendingTargets` 未任务 ID 化、PrepackService 仍未驱动 executor**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T24 证据](../../refactor/evidence/T24.md)。
 
 **优先级：** P0　**前置：** T21、T18
@@ -1167,6 +1173,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.integration.PrepackCacheIntegrationTest
 ### T25 — 实现进程死亡后的安全收尾与可核对恢复
 
 - [ ] **T25 完成**
+
+**2026-10-11 接线完成。** `recoveryDispositions` 接出 `RecoveryBanner`（四态翻人话、`Committed` 不打扰用户、中断/待核对/未知各给下一步）。`RecoveryBannerTest` **6/6 PASS**（MuMu）。仍不勾 DONE：真实杀进程再启动未验证、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `core/operations/OperationRecovery`（四态分类：中断/待核对/已提交/未知 + 清理路径归属校验），启动检查补分类 StateFlow；定向 JVM 11/0/0/0、全量 JVM 593/0/0/0。**真实杀进程再启动未验证、`Bd2Application` 未接入、UI 未消费**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T25 证据](../../refactor/evidence/T25.md)。
 
@@ -1241,6 +1249,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.core.operations.OperationHostLifecycl
 
 - [ ] **T27 完成**
 
+**2026-10-11 接线完成。** 设置页「外观」区已加**明暗模式选择器**（浅色/深色/跟随系统），写回走既有 `SettingsRepository` 持久化。`ThemeModeResolutionTest` **5/5 PASS**（MuMu）。仍不勾 DONE：`values-night` 未加、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `core/storage/SettingsRepository` + `SettingsStore` + `core/model/AppearanceSettings`（ThemeMode LIGHT/DARK/SYSTEM、预设名、dynamicColor、壁纸 URI、遮罩），`MainViewModel` 设置读写全部改走它；迁移/回退（旧单目录键、缺 theme_mode、未知预设、损坏遮罩、非法画质）由定向 JVM 13/0/0/0、全量 JVM 606/0/0/0 固定。**SettingsViewModel/WorkbenchSheet 接线与主题模式接入 UI 未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T27 证据](../../refactor/evidence/T27.md)。
 
 **优先级：** P1　**前置：** T20
@@ -1277,6 +1287,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.SettingsMigrationTest'
 ### T28 — 抽取 MOD 列表状态、投影和交互入口
 
 - [ ] **T28 完成**
+
+**2026-10-11 部分接线。** 搜索词与状态筛选已落 `SavedStateHandle`（此前该参数注入了但**从未使用**），未知枚举名回退「全部」。`ModFilterRestorationTest` **10/10 PASS**。**`ModLibraryViewModel`/`ModRoute` 页面拆分未做**（跨安装/列表两类关注点的大重构）、arm64 未重跑、无独立审查，不勾 DONE。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 四区划分/搜索/筛选/角色分组/可勾选集合抽成 `feature/mods/ModUiState.kt` 的纯 `ModListProjection`，`ModScreen` 改为消费它；定向 JVM 13/0/0/0、全量 JVM 619/0/0/0。**`ModLibraryViewModel`/`ModRoute`/`ModScreen` 页面拆分与 SavedStateHandle 未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T28 证据](../../refactor/evidence/T28.md)。
 
@@ -1395,6 +1407,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.data.repository.GamekeeBattleV2Renderer
 
 - [ ] **T31 完成**
 
+**2026-10-11 接线完成。** `CdkScreen` 改为接收 `CdkViewModel`（不再自建仓储、不再持 8 个 remember 状态）；`CdkUiState` 加账号维度结果。`CdkViewModelTest` **24/24**、`CdkResultPresentationTest` **5/5 PASS**（MuMu）。仍不勾 DONE：arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/cdk/RedeemSummary`（六态 + `summarizeRedemption`，空集合不算全部成功）、`CdkUiState`、`CdkViewModel`（批量/单码共用 Mutex）；`Bd2RedeemRepository` 解析失败补 `UnknownResult`。定向 JVM 9/0/0/0、全量 JVM 635/0/0/0。**`CdkScreen` 接线未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T31 证据](../../refactor/evidence/T31.md)。
 
 **优先级：** P1　**前置：** T20、T08
@@ -1432,6 +1446,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.feature.cdk.CdkViewModelTest'
 ### T32 — 拆分更新检查、下载状态与安装器交接
 
 - [ ] **T32 完成**
+
+**2026-10-11 接线完成。** 更新检查/下载调度/完成回调独立成 `feature/update/UpdateViewModel`（调度器 `@IoDispatcher` 注入）；自动检查改由界面观察 `initializationCompleted` 转交（VM 之间不互相注入）。`UpdateViewModelTest` **14/14**。仍不勾 DONE：`UpdateFlowTest`（设备）未建、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/update/ApkSelector`（按 ABI 顺序选包、独立 token 匹配、无匹配明确失败、不回退 universal），`UpdateRepository.pickApkAsset` 改用它并删掉两级兜底。定向 JVM 11/0/0/0、全量 JVM 646/0/0/0。**UpdateViewModel 与 MainActivity 拆分未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T32 证据](../../refactor/evidence/T32.md)。
 
@@ -1547,6 +1563,8 @@ Show-Bd2Dependencies -Dependency 'coil'
 ### T62 — 防止 MOD 贴图进入系统相册的目录级媒体扫描隔离
 
 - [ ] **T62 完成**
+
+**2026-10-11 接线完成。** 新增 `core/storage/SafMediaExclusion.kt`：SAF 树 URI 下也能建 `.nomedia`（此前只实现了 `java.io.File` 那一半，**用户通过目录选择器加的 MOD 目录从未被保护过**）。`MediaExclusionManagerTest` **24/24 PASS**。仍不勾 DONE：真实树 URI 上建标记未验证（需交互授权）、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `core/storage/MediaExclusionManager`（`.nomedia` 精确同名、混合用途根默认拒绝、已有文件不覆盖、provider 改名不算保护、MOD 扫描跳过标记）；`ModRepository`/`MainViewModel` 的 MOD 忽略逻辑接入；Python `repacker.should_ignore_entry` + `_build_file_index` 排除，新增 `test_nomedia_ignored.py`。JVM 10/0/0/0 + 全量 677/0/0/0、Python 9/9。**SAF/设置页/导出时序接线与设备验收未完成**，不勾 DONE。见 [T62 证据](../../refactor/evidence/T62.md)。
 
@@ -1773,6 +1791,8 @@ rg -n 'licenses[/\\]' (Join-Path $Root 'README.md') (Join-Path $Root 'README.en.
 
 - [ ] **T39 完成**
 
+**2026-10-11 接线完成。** 设置页明暗模式选择器已接出（见 T27）。`ThemeModeResolutionTest` **5/5 PASS**。仍不勾 DONE：`values-night` 未加、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `appColorScheme(theme, dark, dynamicScheme)`（计划要求的可测入口，不接收壁纸透明度，surface/background 强制不透明）与七套预设的 `darkColorSchemeFor`；`BD2ModManagerTheme` 接 `themeMode`（LIGHT/DARK/SYSTEM + 明暗动态取色 + 系统栏图标）；`MainActivity` 接线。定向 JVM 8/0/0/0、全量 JVM 667/0/0/0。**设置页选择器、values-night 资源、T40 壁纸分层、设备截图验收未完成**，不勾 DONE。见 [T39 证据](../../refactor/evidence/T39.md)。
 
 **优先级：** P1　**前置：** T27、T33
@@ -1852,6 +1872,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.WallpaperReadabilityTest' -Abi 'x8
 
 - [ ] **T41 完成**
 
+**2026-10-11 接线完成。** `ModScreen` 的 `InstallStateBadge` 改走 `StatusBadge` + `StatusTone`；`StatusTone.forInstallState` 改接**真实枚举**（旧的字符串版与真实枚举一个都对不上，映射实际从未生效）。`ComponentContractTest` **7/7 PASS**（MuMu）。仍不勾 DONE：`Type.kt` 字体层级未整理、明暗截图未做、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `StatusBadge`（`StatusTone` + 唯一的 `forInstallState` 映射）、`AppDialog`（确认/关闭/可重试语义）、`TaskProgressPanel`（不确定/确定进度、取消安全阶段）与 `docs/refactor/ui-component-contracts.md`；设备 `ComponentContractTest` **7/7 PASS**。**页面未采纳（WorkbenchItems/ModListComponents/Type 未改）、`NavigationStateTest` 未创建**、明暗截图未做、arm64 未跑、无独立审查，不勾 DONE。见 [T41 证据](../../refactor/evidence/T41.md)。
 
 **优先级：** P1　**前置：** T40、T33
@@ -1892,6 +1914,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.NavigationStateTest' -Abi 'x86_64'
 
 - [ ] **T42 完成**
 
+**2026-10-11 接线完成。** `ModCard` 加可见的 `ModActionButtons`（预览 + 更多），长按保留为熟手捷径但不再是唯一入口。`ModActionsTest` **4/4 PASS**（MuMu）。仍不勾 DONE：点击区域区分未逐项核对、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `ui/components/ModActionButtons`（预览/更多两个独立可见入口、语义名可辨识、点击不串；预览禁用时说明原因且仍可见）与设备 `ModActionsTest` **4/4 PASS**。**未接入 ModScreen/ModListComponents**、点击区域区分未改、arm64 未跑、无独立审查，不勾 DONE。见 [T42 证据](../../refactor/evidence/T42.md)。
 
 **优先级：** P1　**前置：** T41、T28、T29
@@ -1928,6 +1952,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.ModActionsTest' -Abi 'x86_64'
 ### T43 — 任务面板可收起，取消只在安全阶段开放
 
 - [ ] **T43 完成**
+
+**2026-10-11 接线完成。** 预览准备阶段改「收起，继续处理」（此前 `onDismissRequest = {}` + `confirmButton = {}`，**完全无法退出**）；内容区顶部加统一重开横幅。`TaskPanelLifecycleTest` **6/6 PASS**（MuMu）。仍不勾 DONE：按任务 ID 重连未做、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** `TaskProgressPanel` 新增 `collapsed`/`onToggleCollapse`（收起只改展示、不取消任务、可重开）与纯数据 `TaskPanelUiState.toggled()`；提交临界区取消禁用但仍可收起。设备 `TaskPanelLifecycleTest` **4/4 PASS**。**真实 InstallDialogs/PreviewViewModel/AppRoot 未接线**、按任务 ID 重连未做、arm64 未跑、无独立审查，不勾 DONE。见 [T43 证据](../../refactor/evidence/T43.md)。
 
@@ -1966,6 +1992,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.TaskPanelLifecycleTest' -Abi 'x86_
 
 - [ ] **T44 完成**
 
+**2026-10-11 接线完成。** 清空备份改**两步确认**（写明数量/空间/后果，按钮写动作）；`clearAllTracked()` 逐项删除 + **重新统计**（不再删失败也把用量置 0）；确认后按指纹复核目标集合；活跃任务互斥；结果框显示真实部分成功。`BundleBackupRepositoryTest` **36/36**、`DestructiveActionConfirmationTest` **12/12 PASS**（MuMu）。仍不勾 DONE：arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/settings/BackupPurgeConfirmation`（后果文案含数量/空间/失去恢复资源；标题与按钮不同名、按钮写明动作；确认后按指纹复核目标集合，变了必须重新确认；成功/部分成功/全失败真实文案且剩余量重新统计；活跃任务互斥）与设备 `DestructiveActionConfirmationTest` **8/8 PASS**。测试首轮发现并修复了「弹窗标题与确认按钮同名」的真实语义重复缺陷。**WorkbenchSheet/SettingsDialogs 未接线、BundleBackupRepository.clearAll 仍是裸 deleteRecursively（无逐项删除+重统计+部分失败上报）、活跃任务互斥未接**、arm64 未跑、无独立审查，不勾 DONE。见 [T44 证据](../../refactor/evidence/T44.md)。
 
 **优先级：** P0　**前置：** T41、T21、T27
@@ -2002,6 +2030,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.DestructiveActionConfirmationTest'
 ### T45 — 纠正兑换“已处理”等同“已兑换”的界面语义
 
 - [ ] **T45 完成**
+
+**2026-10-11 接线完成。** `CdkScreen` 的结果弹层按**账号逐行**展示（`RedeemAccountResultRow` + `batchResultText`），行级标签走 `resultLabel()`，全终局失败不出现任何成功字样。`CdkViewModelTest` **24/24**、`CdkResultPresentationTest` **5/5 PASS**。仍不勾 DONE：arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** `RedeemSummary` 新增 `canRetry`（由结果性质决定）与 `resultLabel`（成功标签只在真有成功时出现，未知优先）；新增账号维度 `AccountRedeemResult`/`BatchRedeemSummary` 与 `describe`；新增 `CdkResultPresentation`（`toneFor`/`RedeemAccountResultRow`/`batchResultText`）。JVM `RedeemSummaryTest` **10/10 PASS**、设备 `CdkResultPresentationTest` **5/5 PASS**；首轮 JVM FAILED 暴露并修复了「纯未知集合被标成待重试」的真实语义错误。**CdkScreen 未接线、CdkUiState 无账号维度字段、复制/历史/账号切换反馈未统一**、arm64 未跑、无独立审查，不勾 DONE。见 [T45 证据](../../refactor/evidence/T45.md)。
 
@@ -2040,6 +2070,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.CdkResultPresentationTest' -Abi 'x
 ### T46 — 完成手机横竖屏、大字体、Insets 与辅助功能适配
 
 - [ ] **T46 完成**
+
+**2026-10-11 接线完成。** `Scaffold(contentWindowInsets = WindowInsets.safeDrawing)` + 内容面 `.imePadding()`（此前全项目**没有一处** `imePadding`，键盘会盖住底部输入）。`InsetsAdaptationTest` **4/4 PASS**（MuMu）。仍不勾 DONE：真实软键盘与刘海/横屏的观感未截图核对、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增设备 `AdaptiveAccessibilityTest` **8/8 PASS**：用 `SemanticsNode.touchBoundsInRoot`（按 density 换算）判定预览/更多/确定/关闭/收起/取消的**真实触控边界 >= 48dp**；装饰图标不重复朗读；状态不只靠颜色；字体 2.0/1.3 倍与窄屏 320dp 下关键操作仍可见。全量 JVM **687/0/0/0**。**AppRoot/TopLevelNavigation/ModScreen/GuideScreen/CdkScreen 的 insets 未处理**、横屏与 IME、旋转不重复执行、预测返回、TalkBack 真机走查未做，不勾 DONE。见 [T46 证据](../../refactor/evidence/T46.md)。
 
