@@ -19,9 +19,13 @@
 | `platform.PlatformBehaviorTest#packagedJniLibrariesAre16KbAligned` | **PASS** | **T51 / T15**（arm64 APK 内每个 `lib/*.so` 未压缩存放、ZIP 数据偏移 16 KB 对齐、`PT_LOAD p_align` 达标；`libastcenc.so` 仍是登记在案的 4 KB 例外） |
 | `platform.PlatformBehaviorTest#jniLibrariesLoadOnThisPageSize` | **PASS** | **T51**（真机 `System.loadLibrary("texture2ddecoder")` + `System.loadLibrary("astcenc")` 成功，无 `UnsatisfiedLinkError`） |
 | `ui.WebContentThemeTest` | **6/6 PASS** | **T47**（真实 WebView 读 `getComputedStyle`：深色下正文 `rgb(230,225,229)`、浅色下 `rgb(34,34,34)`、链接与 `.mention` 底色正确、`colorScheme` 正确） |
-| `service.InstallServiceLifecycleTest` | **4/4 PASS**（第 2 次尝试） | T22 |
+| `service.InstallServiceLifecycleTest` | **4/4 PASS** | T22 |
 | `service.ScanServiceTest` | **5/5 PASS** | **T23**（此前真机上卡住的用例） |
 | `core.operations.ProcessDeathRecoveryTest` | **4/4 PASS** | **T25**（此前真机上卡住的用例） |
+| `service.GameFileCommitTest` | **13/13 PASS**（修复后；修复前 11/13） | **发现并修掉一个真实回归**，见 [game-file-commit-permissions.md](game-file-commit-permissions.md) |
+| `data.repository.LogExporterTest` / `ModDiscoveryTest` / `ModSnapshotTest` / `PreviewCacheNegativeTest` / `PreviewCacheSizeSlotTest` / `SnapshotStoreInstanceReuseTest` | **3/12/5/5/6/1 PASS** | T21–T26 的仓储/缓存面 |
+| `service.BackupFailureSummaryTest` / `LedgerRecoveryStartupTest` / `SidecarRoundTripDeviceTest` / `TryUseBackupTrustGateTest` / `ContentRecoveryDeviceTest` / `ShizukuFileServiceListingTest` | **5/4/1/2/1/5 PASS** | T08/T19/T21/T25 |
+| `di.HiltEntryPointTest`（3 个不用 ActivityScenario 的方法） | **1/1/1 PASS** | T20 |
 
 ## 2. 真机上的 release 实测（T54 的 arm64 侧 + T20 的 minified Release 冷启动）
 
@@ -75,6 +79,7 @@ D ActivityStarterImpl: MIUILOG- Permission Denied Activity : Intent {
 | 用例 | 类型 | x86_64 MuMu 结果 |
 |---|---|---|
 | `di.ObjectGraphLifecycleTest` | `ActivityScenario` | 3/3 PASS |
+| `di.HiltEntryPointTest#mainActivityColdStartsUnderHilt` | `ActivityScenario` | PASS |
 | `platform.PlatformBehaviorTest` 的 3 个前台服务用例（`foregroundServiceStartsWhenAppIsInForeground`、`deniedNotificationPermissionDoesNotBlockForegroundService`、`refusedForegroundServiceStartIsReported`） | 需把 Activity 带到前台 | 通过 |
 | `feature.settings.LicensesScreenTest` | Compose | 1/1 PASS |
 | `ui.WallpaperReadabilityTest` / `ComponentContractTest` / `ModActionsTest` / `TaskPanelLifecycleTest` / `DestructiveActionConfirmationTest` / `AdaptiveAccessibilityTest` / `CdkResultPresentationTest` | Compose | 全部 PASS |
@@ -87,6 +92,24 @@ D ActivityStarterImpl: MIUILOG- Permission Denied Activity : Intent {
 `packagedJniLibrariesAre16KbAligned` 只证明**打包侧**（ZIP 对齐 + `p_align`）达标，
 `jniLibrariesLoadOnThisPageSize` 在 4 KB 页设备上只作对照。
 **16 KB 页设备上的真实 dlopen 仍未验**（T15/T51 的登记项）。
+
+## 3.3 发现并修掉一个真实回归（本次真机验收的主要产出）
+
+跑 `GameFileCommitTest` 时红了 2 条，且在 x86_64 MuMu 上**同样复现**（→ 不是设备差异）。
+根因是 `e993800`（T08/T10）在 `ShizukuFileService.copyFile` 之后加的
+`makeWorldReadable(dest)` 里**硬编码 `chmod 0600`**，把 `AtomicFileWriter` 刚按契约
+搬好的权限覆盖掉。T07 的 13 条用例当时全绿，之后 19 天没人再跑过这个类，回归因此静默。
+
+修法：只保留 chown（属主才是「shell/root 写的文件 app 读不到」的成因），
+去掉 chmod 与 `setReadable` 回退；函数改名 `restoreParentOwner`。
+修复后 arm64 真机与 x86_64 MuMu **都回到 13/13**，全量 JVM **694/694 × 2**。
+
+完整根因、`git log -S` 证据、两个设备上的不同表现与取舍见
+[game-file-commit-permissions.md](game-file-commit-permissions.md)。
+
+顺带修掉一个**门禁缺口**：`install -r` 会把 `POST_NOTIFICATIONS` 打回未授权，
+而 `Test-Bd2Device` 没有补 `pm grant`，导致 `InstallServiceLifecycleTest` /
+`ScanServiceTest` 表现为假抖动。已在 `verification.ps1` 的安装循环后补上。
 
 ## 4. 环境扰动与恢复
 

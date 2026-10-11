@@ -877,6 +877,15 @@ function Test-Bd2Device {
                 throw "安装失败：$apk -> $install (exit $LASTEXITCODE)"
             }
         }
+        # 每次 install -r 都会把 POST_NOTIFICATIONS 打回未授权，而 Install/ScanService 的
+        # 通知断言（以及它们的 @Before 前置检查）要求它已授权。不补这一步的话，
+        # 「刚装完就跑」必然红，而重跑一次（权限已被上一轮用例打开）又会绿 —— 假的抖动。
+        # 权限本身不在本仓库的门禁范围内，这里只把它恢复成用例声明的运行前提。
+        # API 33 以下没有该权限，grant 会失败，忽略即可。
+        $grant = (& $Bd2Adb -s $serial shell pm grant com.bd2toolsbox android.permission.POST_NOTIFICATIONS 2>&1) -join ' '
+        if ($LASTEXITCODE -ne 0) {
+            Write-Verbose "pm grant POST_NOTIFICATIONS skipped: $grant"
+        }
         $result = Invoke-Bd2Instrumentation -Serial $serial -TestClass $TestClass
         # 先落盘再断言：断言失败时归档里必须留下现场，不能只剩一个空目录（见 T04.md §5.3）
         [IO.File]::WriteAllText((Join-Path $runDir 'instrumentation.txt'), $result.output, (New-Object Text.UTF8Encoding($false)))

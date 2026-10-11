@@ -25,7 +25,7 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
         val dest = File(destPath)
         dest.parentFile?.mkdirs()
         copyStream(File(sourcePath), dest)
-        makeWorldReadable(dest)
+        restoreParentOwner(dest)
         Log.d(TAG, "Successfully copied $sourcePath to $destPath")
         true
     } catch (e: Exception) {
@@ -142,16 +142,36 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
      *   判定本身仍然**只在这一处**，由调用方声明意图（[copyFile] 用默认的 false、
      *   [copyTree] 显式传 true），不散成多份 `if`。
      */
-    /** shell/root 写入 app 私有目录后，把属主改回父目录的 uid，否则 app 读 EACCES。 */
-    private fun makeWorldReadable(dest: File) {
+    /**
+     * shell/root 写入后，把属主改回父目录的 uid/gid，否则 app 侧读 EACCES。
+     *
+     * **只改属主，绝不碰权限位。**
+     *
+     * 权限（已存在的目标保持原样；新建目标先抄同目录兄弟、没兄弟才退回父目录的 rw 位）
+     * 是 [AtomicFileWriter] 的契约，由 `GameFileCommitTest` 的
+     * `commitDoesNotDowngradeTargetPermissions` 与两条 new-target 用例直接守着。
+     *
+     * ## 这里曾经有一个真实回归（2026-10-11 真机跑用例时暴露）
+     *
+     * `e993800`（T08/T10）在这段里加了 `Os.chmod(dest, 0600)`，并在 catch 里
+     * 退回 `dest.setReadable(true, false)`（即 0644）。两者都会把
+     * `AtomicFileWriter` 刚搬好的权限**覆盖掉**：
+     *   - arm64 真机：chown+chmod 都成功 → 目标被降级成 `0600`（游戏进程读不到）；
+     *   - x86_64 模拟器：chmod 抛异常 → 退回 0644（把原本 `0640` 的目标悄悄放宽）。
+     * 两种结果都违反契约，而且**跟设备走**——同一份代码在两台设备上产出不同权限。
+     * 函数名 `makeWorldReadable` 与它实际做的 `chmod 0600` 也自相矛盾。
+     *
+     * 修法：只保留 chown（这才是「shell/root 写的文件 app 读不到」的真正成因），
+     * 去掉 chmod 与 setReadable 回退。若 chown 失败，保持**可见的失败**
+     * （调用方读到 EACCES），不用「偷偷放宽权限」把它盖过去。
+     */
+    private fun restoreParentOwner(dest: File) {
         try {
             val parent = dest.parentFile ?: return
             val st = android.system.Os.stat(parent.absolutePath)
             android.system.Os.chown(dest.absolutePath, st.st_uid, st.st_gid)
-            android.system.Os.chmod(dest.absolutePath, 384) // 0600
         } catch (e: Exception) {
-            Log.w(TAG, "chown/chmod dest failed: ${dest.absolutePath}", e)
-            dest.setReadable(true, false)
+            Log.w(TAG, "chown dest failed: ${dest.absolutePath}", e)
         }
     }
 
