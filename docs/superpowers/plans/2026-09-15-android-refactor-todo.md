@@ -1604,7 +1604,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.storage.MediaExclusionTest' -Abi 'x86
 
 - [ ] **T35 完成**
 
-**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 引入 kotlinx.serialization（1.9.0 / 插件 2.2.20，offline 可解析）；新增 `dto/StoredInstalledMod` 与 `LegacyJsonReader`（旧格式账本兼容读取：未知字段忽略、可选字段默认、缺必需字段/未知 schema/截断一律 Corrupt）。定向 JVM 13/0/0/0、全量 JVM 659/0/0/0。**各 Store 单写新格式、StoredModSnapshot、GamekeeApi 迁移未完成**，release smoke 与设备 NOT_RUN、无独立审查，不勾 DONE。见 [T35 证据](../../refactor/evidence/T35.md)。
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED。** 引入 kotlinx.serialization（1.9.0 / 插件 2.2.20）；**生产代码与测试已 0 处 Gson**：账本/日志/快照/兑换历史/备份 sidecar/mod 缓存/更新/引擎/Gamekee 网络与渲染全部改 kotlinx，动态 Wiki 树继续按 JsonElement 读取。全量 JVM 659/0/0/0；release/R8 构建成功且 dex 中序列化键名仍在。**release `json-migration` smoke 未跑、无独立审查**，不勾 DONE。见 [T35 证据](../../refactor/evidence/T35.md)。
 
 **优先级：** P0　**前置：** T10、T27、T30、T31、T14
 
@@ -1644,6 +1644,8 @@ Test-Bd2ReleaseSmoke -Case 'json-migration' -Abi 'x86_64'
 ### T36 — 删除 App 的 Gson 使用与过渡保留规则
 
 - [ ] **T36 完成**
+
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED。** 删除 gson 依赖与版本目录条目；最后 3 个测试文件改 kotlinx；proguard 去掉 Gson 的 TypeToken/Signature/RuntimeVisibleAnnotations 规则。全量 JVM 659/0/0/0；`:app:assembleRelease`（受控 debug 签名）成功、`minifyReleaseWithR8` 通过、release dex 中序列化键名仍在；`app/src` 下 0 处 `com.google.gson`。**release `json-migration` smoke 未跑、无独立审查**，不勾 DONE。见 [T36 证据](../../refactor/evidence/T36.md)。
 
 **优先级：** P1　**前置：** T35、T34
 
