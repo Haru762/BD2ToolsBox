@@ -819,11 +819,29 @@ class MainActivity : ComponentActivity() {
                 if (showBackupManage) {
                     val backupOn by viewModel.backupOriginals.collectAsState()
                     val backupUsage by viewModel.backupUsage.collectAsState()
+                    val purgeResult by viewModel.backupPurgeResult.collectAsState()
                     BackupManageDialog(
                         enabled = backupOn,
                         usage = backupUsage,
                         onToggle = { viewModel.setBackupOriginals(it) },
-                        onClear = { viewModel.clearBackups() },
+                        onConfirmClear = { confirmedFingerprint ->
+                            // T44：确认后**复核目标集合** —— 确认期间新产生的备份不删，
+                            // 指纹变了就把这次确认作废（界面会退回确认步骤重新问一次）。
+                            val current = viewModel.backupFingerprint()
+                            if (confirmedFingerprint.isNotEmpty() &&
+                                confirmedFingerprint != current
+                            ) {
+                                android.util.Log.i(
+                                    "BackupPurge",
+                                    "目标集合在确认后发生变化，已作废本次确认"
+                                )
+                            } else {
+                                viewModel.clearBackups()
+                            }
+                        },
+                        blocker = viewModel.backupPurgeBlocker(),
+                        result = purgeResult,
+                        onAcknowledgeResult = { viewModel.clearBackupPurgeResult() },
                         onDismiss = { showBackupManage = false }
                     )
                 }

@@ -8,6 +8,8 @@ import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.core.storage.Digester
 import com.bd2toolsbox.core.storage.StreamingDigest
 import com.bd2toolsbox.core.storage.TrustedBaseline
+import com.bd2toolsbox.feature.settings.BackupPurge
+import com.bd2toolsbox.feature.settings.PurgeOutcome
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -304,6 +306,37 @@ class BundleBackupRepository(
     fun clearAll() {
         root().deleteRecursively()
     }
+
+    /**
+     * 逐 bundle 删除并**重新统计**真实结果（T44）。
+     *
+     * 为什么不用 [clearAll] 的裸 `deleteRecursively()`：那会「不管成没成都说清空了」——
+     * 删一半失败时调用方拿不到任何信号，界面直接把数量/空间置 0，用户以为清干净了。
+     *
+     * 这里逐 bundle 删、失败单独计数，剩余量与剩余字节都用**重新统计**的值，
+     * 不把未删成功的项算成 0。
+     */
+    fun clearAllTracked(): PurgeOutcome {
+        val targets = listBackups().keys.sorted()
+        var deleted = 0
+        for (bundle in targets) {
+            val dir = File(root(), bundle)
+            try {
+                if (dir.deleteRecursively()) deleted++
+            } catch (e: Exception) {
+                Log.w(TAG, "删除备份失败：$bundle", e)
+            }
+        }
+        return BackupPurge.outcome(
+            attempted = targets.size,
+            deleted = deleted,
+            remainingCount = count(),
+            remainingBytes = totalBytes()
+        )
+    }
+
+    /** 当前目标集合的指纹（T44 的确认/复核用）。 */
+    fun fingerprint(): String = BackupPurge.fingerprint(listBackups())
 
     // ---------------------------------------------------------------- sidecar 读写
 

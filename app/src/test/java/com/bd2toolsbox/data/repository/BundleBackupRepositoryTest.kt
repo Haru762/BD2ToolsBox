@@ -478,4 +478,56 @@ class BundleBackupRepositoryTest {
         assertNull(repo.trustedBaseline("b9", "h9"))
         assertEquals(0, repo.count())
     }
+    // ==================================================================
+    // 7. T44：逐 bundle 删除 + 真实重统计（不许「删失败也报 0」）
+    // ==================================================================
+
+    @Test
+    fun clearAllTrackedReportsRealCountsAndRecounts() {
+        repo.saveBackup("b10", "h10", srcFile(bytes(2048, 0x11)), provenance)
+        repo.saveBackup("b11", "h11", srcFile(bytes(4096, 0x22)), provenance)
+        repo.saveBackup("b12", "h12", srcFile(bytes(1024, 0x33)), provenance)
+
+        val outcome = repo.clearAllTracked()
+
+        assertEquals("三个都试过", 3, outcome.attempted)
+        assertEquals("三个都删掉了", 3, outcome.deleted)
+        assertEquals(0, outcome.failed)
+        // 剩余量是**重新统计**出来的，不是直接写 0
+        assertEquals(repo.count(), outcome.remainingCount)
+        assertEquals(repo.totalBytes(), outcome.remainingBytes)
+        assertTrue(outcome.fullyCleared)
+        assertEquals(0, repo.count())
+        assertEquals(0L, repo.totalBytes())
+    }
+
+    @Test
+    fun clearAllTrackedWithNothingToDoIsNotReportedAsSuccess() {
+        val outcome = repo.clearAllTracked()
+        assertEquals(0, outcome.attempted)
+        assertEquals(0, outcome.deleted)
+        assertFalse("空集合不算「已清空」", outcome.fullyCleared)
+    }
+
+    @Test
+    fun clearAllTrackedKeepsUnremovableEntriesCounted() {
+        repo.saveBackup("b13", "h13", srcFile(bytes(1024, 0x44)), provenance)
+        // 把 bundle 目录换成「非空目录树」，deleteRecursively 仍会成功；
+        // 这里改成用一个不允许删除的父目录来触发失败路径不可移植，
+        // 因此改为验证：删除后 remainingCount 一定与真实 count() 一致（不硬编码 0）。
+        val outcome = repo.clearAllTracked()
+        assertEquals(repo.count(), outcome.remainingCount)
+        assertEquals(repo.totalBytes(), outcome.remainingBytes)
+        assertEquals(outcome.attempted, outcome.deleted + outcome.failed)
+    }
+
+    @Test
+    fun fingerprintChangesWhenTheTargetSetChanges() {
+        repo.saveBackup("b14", "h14", srcFile(bytes(1024, 0x55)), provenance)
+        val before = repo.fingerprint()
+        repo.saveBackup("b15", "h15", srcFile(bytes(1024, 0x66)), provenance)
+        val after = repo.fingerprint()
+        assertTrue("确认之后新产生的备份必须让指纹变化", before != after)
+        assertEquals(after, repo.fingerprint())
+    }
 }

@@ -3,12 +3,14 @@ package com.bd2toolsbox.ui
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bd2toolsbox.feature.settings.BackupPurge
 import com.bd2toolsbox.feature.settings.PurgeRevalidation
 import com.bd2toolsbox.ui.components.AppDialog
+import com.bd2toolsbox.ui.dialogs.BackupManageDialog
 import com.bd2toolsbox.ui.theme.BD2ModManagerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -144,5 +146,114 @@ class DestructiveActionConfirmationTest {
             }
         }
         composeRule.onNodeWithText(BackupPurge.consequence(7, "1.1 GB")).assertIsDisplayed()
+    }
+    // ------------------------------------------------ T44：接进真实备份管理弹层
+
+    @Test
+    fun backupManageDialogNeedsASecondStepBeforeClearing() {
+        var cleared = 0
+        composeRule.setContent {
+            BD2ModManagerTheme {
+                BackupManageDialog(
+                    enabled = true,
+                    usage = 3L * 1024 * 1024 to 3,
+                    onToggle = {},
+                    onConfirmClear = { cleared++ },
+                    blocker = null,
+                    result = null,
+                    onAcknowledgeResult = {},
+                    onDismiss = {}
+                )
+            }
+        }
+        // 第一步只显示占用与后果，不产生任何文件操作
+        composeRule.onNodeWithText("当前已备份 3 个，占用 3.0 MB").assertIsDisplayed()
+        composeRule.onNodeWithText("清空备份").assertIsDisplayed().performClick()
+        assertEquals("点「清空备份」不得直接执行", 0, cleared)
+
+        // 第二步：确认框写明数量/空间/后果，按钮写动作
+        composeRule.onNodeWithText(BackupPurge.DIALOG_TITLE).assertIsDisplayed()
+        composeRule.onNodeWithText(BackupPurge.CONFIRM_LABEL).assertIsDisplayed()
+        composeRule.onNodeWithText(BackupPurge.CANCEL_LABEL).assertIsDisplayed()
+        composeRule.onNodeWithText(BackupPurge.CONFIRM_LABEL).performClick()
+        assertEquals("确认后才执行一次", 1, cleared)
+    }
+
+    @Test
+    fun cancellingTheConfirmationStepClearsNothing() {
+        var cleared = 0
+        composeRule.setContent {
+            BD2ModManagerTheme {
+                BackupManageDialog(
+                    enabled = true,
+                    usage = 512L * 1024 to 1,
+                    onToggle = {},
+                    onConfirmClear = { cleared++ },
+                    blocker = null,
+                    result = null,
+                    onAcknowledgeResult = {},
+                    onDismiss = {}
+                )
+            }
+        }
+        composeRule.onNodeWithText("清空备份").performClick()
+        composeRule.onNodeWithText(BackupPurge.CANCEL_LABEL).performClick()
+        assertEquals("取消确认不得产生任何文件操作", 0, cleared)
+        // 回到第一步，清空入口仍在
+        composeRule.onNodeWithText("清空备份").assertIsDisplayed()
+    }
+
+    @Test
+    fun activeTaskBlocksTheClearConfirmation() {
+        var cleared = 0
+        val blocker = BackupPurge.blockedByActiveTask("install-42")!!
+        composeRule.setContent {
+            BD2ModManagerTheme {
+                BackupManageDialog(
+                    enabled = true,
+                    usage = 1024L * 1024 to 2,
+                    onToggle = {},
+                    onConfirmClear = { cleared++ },
+                    blocker = blocker,
+                    result = null,
+                    onAcknowledgeResult = {},
+                    onDismiss = {}
+                )
+            }
+        }
+        composeRule.onNodeWithText("清空备份").performClick()
+        // 确认框里说明了为什么现在不能清
+        composeRule.onNodeWithText(blocker, substring = true).assertIsDisplayed()
+        // 且没有可点的确认按钮
+        assertEquals(
+            "有活跃任务时不得出现确认按钮",
+            0,
+            composeRule.onAllNodesWithText(BackupPurge.CONFIRM_LABEL).fetchSemanticsNodes().size
+        )
+        assertEquals(0, cleared)
+    }
+
+    @Test
+    fun resultDialogShowsTheRealPartialOutcome() {
+        val outcome = BackupPurge.outcome(
+            attempted = 4, deleted = 2, remainingCount = 2, remainingBytes = 700L * 1024
+        )
+        composeRule.setContent {
+            BD2ModManagerTheme {
+                BackupManageDialog(
+                    enabled = true,
+                    usage = 0L to 0,
+                    onToggle = {},
+                    onConfirmClear = {},
+                    blocker = null,
+                    result = outcome,
+                    onAcknowledgeResult = {},
+                    onDismiss = {}
+                )
+            }
+        }
+        composeRule.onNodeWithText("部分成功", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("700 KB", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("知道了").assertIsDisplayed()
     }
 }

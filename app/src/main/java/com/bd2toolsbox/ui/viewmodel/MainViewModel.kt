@@ -42,6 +42,8 @@ import com.bd2toolsbox.core.model.PrepackPlan
 import com.bd2toolsbox.core.model.PreviewAssets
 import com.bd2toolsbox.core.model.RepackPlanBuilder
 import com.bd2toolsbox.core.model.UninstallPlan
+import com.bd2toolsbox.feature.settings.BackupPurge
+import com.bd2toolsbox.feature.settings.PurgeOutcome
 import com.bd2toolsbox.core.storage.BackupProvenance
 import com.bd2toolsbox.core.storage.BaselineSource
 import com.bd2toolsbox.core.storage.CatalogAnchor
@@ -750,12 +752,47 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 清空原版备份（T44）。
+     *
+     * 与旧实现的区别（都是真实缺陷，不是风格）：
+     * - 旧版直接 `clearAll()`（裸 `deleteRecursively()`）+ `_backupUsage.value = 0L to 0`，
+     *   **删除失败时也把用量报成 0**；
+     * - 新版逐 bundle 删除、**重新统计**剩余量，并把真实结果写进 [backupPurgeResult]，
+     *   由界面如实展示（成功/部分成功/全失败三种）。
+     *
+     * 确认步骤（数量/空间/后果 + 复核目标集合）在界面层，见 `BackupPurge`。
+     */
     fun clearBackups() {
         if (!true) return
         viewModelScope.launch(Dispatchers.IO) {
-            backupRepository.clearAll()
-            _backupUsage.value = 0L to 0
+            val outcome = backupRepository.clearAllTracked()
+            _backupUsage.value = backupRepository.totalBytes() to backupRepository.count()
+            _backupPurgeResult.value = outcome
         }
+    }
+
+    /** 上一次清空备份的真实结果；null 表示本次会话还没清过。 */
+    private val _backupPurgeResult = MutableStateFlow<PurgeOutcome?>(null)
+    val backupPurgeResult: StateFlow<PurgeOutcome?> = _backupPurgeResult.asStateFlow()
+
+    fun clearBackupPurgeResult() {
+        _backupPurgeResult.value = null
+    }
+
+    /** 当前备份集合的指纹（确认后执行前复核用，T44）。 */
+    fun backupFingerprint(): String = backupRepository.fingerprint()
+
+    /**
+     * 活跃任务与清空互斥（T44）：有任务在用时不允许清空。
+     *
+     * 返回阻塞原因，null 表示可以清。
+     */
+    fun backupPurgeBlocker(): String? {
+        val busy = installJobs.value.isNotEmpty() ||
+            prepackProgress.value != null ||
+            ShizukuManager.scanRunning
+        return if (busy) BackupPurge.blockedByActiveTask("安装/扫描/预解包") else null
     }
 
     // ------------------------------------------------ 批量预解包

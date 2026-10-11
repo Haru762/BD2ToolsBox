@@ -47,6 +47,9 @@ import com.bd2toolsbox.core.model.ConvertedOverwritePlan
 import com.bd2toolsbox.core.model.PrepackPlan
 import com.bd2toolsbox.core.model.UninstallPlan
 import com.bd2toolsbox.data.repository.UpdateRepository
+import com.bd2toolsbox.feature.settings.BackupPurge
+import com.bd2toolsbox.feature.settings.PurgeOutcome
+import com.bd2toolsbox.ui.components.AppDialog
 import com.bd2toolsbox.ui.components.InstallJobRow
 import com.bd2toolsbox.ui.components.SelectionRow
 import com.bd2toolsbox.service.PrepackService
@@ -354,15 +357,70 @@ fun UninstallAllDialog(
     )
 }
 
-/** 原版备份管理：开关、占用、清理。 */
+/**
+ * 原版备份管理：开关、占用、清理（T44）。
+ *
+ * 清空是**危险操作**，分两步：
+ *  1. 点「清空备份」只进入确认步骤，不产生任何文件操作；
+ *  2. 确认框写明**数量 / 空间 / 后果**，按钮写「清空原版备份」（不是泛化的「确定」）；
+ *     执行前还会用指纹**复核目标集合** —— 确认之后新产生的备份不会被顺手删掉。
+ *
+ * 清空结果按真实统计展示（成功 / 部分成功 / 全失败三种），**不把未删成功的项报成 0**。
+ * 有活跃任务在跑时清空被拒并说明原因。
+ */
 @Composable
 fun BackupManageDialog(
     enabled: Boolean,
     usage: Pair<Long, Int>,
     onToggle: (Boolean) -> Unit,
-    onClear: () -> Unit,
+    onConfirmClear: (String) -> Unit,
+    blocker: String?,
+    result: PurgeOutcome?,
+    onAcknowledgeResult: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var confirming by remember { mutableStateOf(false) }
+    // 确认时的目标集合指纹：执行前复核，变了就要求重新确认
+    var confirmedFingerprint by remember { mutableStateOf<String?>(null) }
+
+    if (result != null) {
+        AppDialog(
+            title = "清空原版备份",
+            message = BackupPurge.resultText(result, formatBytes(result.remainingBytes)),
+            confirmLabel = "知道了",
+            onConfirm = onAcknowledgeResult,
+            dismissLabel = "关闭",
+            onDismiss = onAcknowledgeResult
+        )
+        return
+    }
+
+    if (confirming) {
+        AppDialog(
+            title = BackupPurge.DIALOG_TITLE,
+            message = buildString {
+                append(BackupPurge.consequence(usage.second, formatBytes(usage.first)))
+                if (blocker != null) {
+                    append("\n\n")
+                    append(blocker)
+                }
+            },
+            confirmLabel = BackupPurge.CONFIRM_LABEL,
+            onConfirm = if (blocker == null) {
+                {
+                    // 复核交给调用方：指纹不一致时它会要求重新确认（回调再进一次确认步骤）
+                    onConfirmClear(confirmedFingerprint.orEmpty())
+                    confirming = false
+                }
+            } else {
+                null
+            },
+            dismissLabel = BackupPurge.CANCEL_LABEL,
+            onDismiss = { confirming = false }
+        )
+        return
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = dialogContainerColor(),
@@ -399,7 +457,10 @@ fun BackupManageDialog(
         dismissButton = {
             if (usage.second > 0) {
                 TextButton(
-                    onClick = onClear,
+                    onClick = {
+                        confirmedFingerprint = null
+                        confirming = true
+                    },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("清空备份") }
             }
