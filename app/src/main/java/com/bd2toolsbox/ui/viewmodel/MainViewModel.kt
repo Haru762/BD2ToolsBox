@@ -155,6 +155,10 @@ class MainViewModel @Inject constructor(
         /** Shizuku 官方 app 的包名，用于「打开 Shizuku」按钮。 */
         const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
+        // T28：只落这两个小型恢复参数（搜索词 + 状态筛选名）。
+        private const val KEY_SEARCH_QUERY = "mod_search_query"
+        private const val KEY_STATE_FILTER = "mod_state_filter"
+
 
         /**
          * mod 源目录列表在 SharedPreferences 里的分隔符。
@@ -340,15 +344,34 @@ class MainViewModel @Inject constructor(
     private val _isSearchActive = MutableStateFlow(false)
     val isSearchActive: StateFlow<Boolean> = _isSearchActive.asStateFlow()
 
-    private val _searchQuery = MutableStateFlow("")
+    /**
+     * 搜索词与状态筛选（T28：**落 SavedStateHandle**）。
+     *
+     * 以前它们是裸 `MutableStateFlow`，旋转屏幕或进程被回收重建后筛选条件就丢了 ——
+     * 用户回到「全部」的几十上百条里重新找一遍。`savedStateHandle` 早就在构造函数里
+     * 注入着，但**一次都没被用过**（死参数）。
+     *
+     * 只存这两个**小型恢复参数**（一个字符串 + 一个枚举名）：不塞 MOD 列表、
+     * 不塞图片、不塞大批文件对象 —— 那些由仓库与任务状态自己恢复。
+     */
+    private val _searchQuery = MutableStateFlow(savedStateHandle.get<String>(KEY_SEARCH_QUERY) ?: "")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     /** 状态筛选。null = 全部。上百个 mod 时靠它快速找出「当前生效的是哪些」。 */
-    private val _stateFilter = MutableStateFlow<ModInstallState?>(null)
+    private val _stateFilter = MutableStateFlow(
+        savedStateHandle.get<String>(KEY_STATE_FILTER)
+            ?.let { name -> ModInstallState.entries.firstOrNull { it.name == name } }
+    )
     val stateFilter: StateFlow<ModInstallState?> = _stateFilter.asStateFlow()
 
     fun setStateFilter(state: ModInstallState?) {
         _stateFilter.value = if (_stateFilter.value == state) null else state
+        persistFilterState()
+    }
+
+    private fun persistFilterState() {
+        savedStateHandle[KEY_SEARCH_QUERY] = _searchQuery.value
+        savedStateHandle[KEY_STATE_FILTER] = _stateFilter.value?.name
     }
 
     val filteredModsList: StateFlow<List<ModInfo>> =
@@ -1463,11 +1486,13 @@ class MainViewModel @Inject constructor(
         _isSearchActive.value = isActive
         if (!isActive) {
             _searchQuery.value = ""
+            persistFilterState()
         }
     }
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
+        persistFilterState()
     }
 
     fun toggleModSelection(modUri: Uri) {
