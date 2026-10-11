@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  T53：资源收缩的最小保留清单。
+
+  只列**已确认按名字动态查表**的资源，不用覆盖全项目的通配符。
+
+  `@raw/aboutlibraries`：
+    AboutLibraries 的 Compose 运行时不是通过 `R.raw.aboutlibraries` 静态引用，而是
+    `Resources.getIdentifier("aboutlibraries", "raw", <package>)` —— 设备侧 DEX 里
+    能直接读到这三段 const-string（见 docs/refactor/evidence/resource-shrink.md §3）。
+    静态分析看不到这条引用，只能靠 AGP 收缩器的「检测到 getIdentifier 就进安全模式」
+    兜住；这条显式 keep 让许可证数据不依赖那个启发式（AGP 8.12+ 的新资源优化管线会
+    改这套判定）。
+
+  为什么不用 tools:shrinkMode="strict"：
+    strict 会连带删掉其它只能按名字到达的资源（Compose/Material 的若干 id 与 string
+    就走这条路），风险远大于收益。保持默认安全模式 + 精确 keep。
+
+  注：AGP 会把本文件本身从 APK 里排除，不会额外占体积。
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/aboutlibraries" />

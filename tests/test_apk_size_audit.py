@@ -313,5 +313,31 @@ class AuditApkSizeTest(unittest.TestCase):
         self.assertTrue(audit._token_matches("stdlib-arm64-v8a.imy", "arm64"))
 
 
+    # ---------------------------------------------------------------- T53 资源保留
+
+    def test_required_resource_name_present(self):
+        apk = self._apk([("resources.arsc", b"\x02\x00\x0c\x00\x61\x62\x6f\x75\x74\x6c\x69\x62\x72\x61\x72\x69\x65\x73\x00\x72\x61\x77\x00")])
+        report = audit.audit(apk)
+        self.assertEqual([], audit.check_required_resource_names(apk, ["raw/aboutlibraries"]))
+
+    def test_required_resource_name_missing(self):
+        apk = self._apk([("resources.arsc", b"\x02\x00\x0c\x00\x73\x6f\x6d\x65\x74\x68\x69\x6e\x67\x65\x6c\x73\x65\x00\x72\x61\x77\x00")])
+        problems = audit.check_required_resource_names(apk, ["raw/aboutlibraries"])
+        self.assertEqual(1, len(problems))
+        self.assertEqual("missing-resource-name", problems[0]["kind"])
+
+    def test_missing_arsc_is_reported(self):
+        apk = self._apk([("classes.dex", b"D" * 10)])
+        problems = audit.check_required_resource_names(apk, ["raw/aboutlibraries"])
+        self.assertEqual("missing-resources-arsc", problems[0]["kind"])
+
+    def test_cli_require_resource_name_exit_code(self):
+        ok = self._apk([("resources.arsc", b"aboutlibraries")], name="res-ok.apk")
+        self.assertEqual(0, audit.main(["--apk", ok, "--require-resource-name",
+                                        "raw/aboutlibraries", "--quiet"]))
+        self.assertEqual(1, audit.main(["--apk", ok, "--require-resource-name",
+                                        "raw/nope", "--quiet"]))
+
+
 if __name__ == "__main__":
     unittest.main()

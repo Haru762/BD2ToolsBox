@@ -65,8 +65,18 @@
 - 随仓库分发：`licenses/ReDustX-LICENSE.txt`、`licenses/UnityPy-LICENSE.txt`、
   `licenses/astc-encoder-LICENSE.txt`、`licenses/texture2ddecoder-LICENSE.txt`、
   `licenses/pixijs-LICENSE.txt`；根 `LICENSE` 为项目自身的 GPL-3.0。
-- SPDX 标准许可（MIT / Apache-2.0 / BSD-* / PSF-2.0 / HPND / MPL-2.0）由 AboutLibraries
-  内置映射提供，APK 内 `aboutlibraries.json` 以 SPDX id 引用。
+- SPDX 标准许可全文**确实内嵌在 APK 里**：`res/raw/aboutlibraries.json` 的
+  `licenses` 是一个按 SPDX id 索引的对象，每个条目带 `content`（实测 Apache-2.0
+  10,279 字符、MPL-2.0 16,726、MIT 1,077、BSD-2/3-Clause、HPND）。
+  因此许可页面**不依赖联网**。
+
+  > 更正（T53，2026-10-11）：T37/T38 曾写「生成 JSON 不内嵌许可全文（实测
+  > `licenseContent` 不存在），全文由库内置 SPDX 映射在运行时解析」——**该结论有误**。
+  > 实测字段名是 `licenses[<spdxId>].content`（不是 `licenseContent`），内容存在且完整。
+  > 随之产生的后果：这份全文是**资源收缩的对象**，因此 T53 加了
+  > `res/raw/keep.xml` 的精确 keep（见 [evidence/resource-shrink.md](evidence/resource-shrink.md)）。
+
+  自定义许可（`FMOD-LICENSE` / `SPINE-LICENSE`）**没有** `content` 条目，属 §4 的已登记缺口。
 - 人类可读的完整清单与说明：根 [`THIRD-PARTY-NOTICES.md`](../../THIRD-PARTY-NOTICES.md)。
 
 ## 4. 已知缺口（不静默）

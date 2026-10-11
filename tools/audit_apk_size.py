@@ -279,6 +279,25 @@ def check_expected_abi(report: dict, expected: str) -> List[dict]:
     return problems
 
 
+def check_required_resource_names(apk_path: str, required: List[str]) -> List[dict]:
+    """T53：确认被**按名字动态查表**的资源没有被资源收缩删掉。
+
+    资源名在 `resources.arsc` 的字符串池里（即使文件路径被混淆，资源名也会保留 ——
+    否则 `Resources.getIdentifier` 就无法工作），因此可以直接在 arsc 字节里找。
+    只读，不解析 arsc 结构。
+    """
+    problems = []
+    with zipfile.ZipFile(apk_path) as zf:
+        if "resources.arsc" not in zf.namelist():
+            return [{"kind": "missing-resources-arsc"}]
+        blob = zf.read("resources.arsc")
+    for name in required:
+        leaf = name.split("/")[-1]
+        if leaf.encode("utf-8") not in blob:
+            problems.append({"kind": "missing-resource-name", "name": name})
+    return problems
+
+
 def audit(apk_path: str) -> dict:
     if not os.path.isfile(apk_path):
         raise AuditError("APK not found: %s" % apk_path)
@@ -412,6 +431,9 @@ def main(argv=None) -> int:
     parser.add_argument("--output", default=None, help="JSON 输出路径（省略则打印）")
     parser.add_argument("--expected-abi", default=None,
                         help="断言该包只含此 ABI（arm64-v8a / x86_64）；不符则退出码 1")
+    parser.add_argument("--require-resource-name", action="append", default=[],
+                        metavar="NAME",
+                        help="断言 resources.arsc 里仍有该资源名（可重复，如 raw/aboutlibraries）")
     parser.add_argument("--quiet", action="store_true", help="不打印摘要")
     args = parser.parse_args(argv)
 
@@ -432,6 +454,12 @@ def main(argv=None) -> int:
         report["expectedAbi"] = args.expected_abi
         report["expectedAbiProblems"] = abi_problems
         problems = problems + abi_problems
+
+    if args.require_resource_name:
+        res_problems = check_required_resource_names(args.apk, args.require_resource_name)
+        report["requiredResourceNames"] = sorted(set(args.require_resource_name))
+        report["requiredResourceProblems"] = res_problems
+        problems = problems + res_problems
 
     text = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     if args.output:

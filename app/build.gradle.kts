@@ -161,6 +161,10 @@ android {
         }
         release {
             isMinifyEnabled = true
+            // T53：开启资源收缩（保留代码收缩）。AGP 8.11.1 没有 8.12 起的「新资源优化
+            // 管线」，因此不添加 android.enableResourceOptimizations 这类开关 ——
+            // 对不支持的版本盲加开关只会制造假配置。
+            isShrinkResources = true
             // Chaquopy 16.1.0 自己把 build/python/proguard-rules.pro 接入 R8
             // （见 mapping/<variant>Release/configuration.txt 的 section 头）。
             // 这里曾写死 build/generated/chaquopy/proguard.pro —— 该路径在 16.1.0

@@ -2308,6 +2308,8 @@ Test-Bd2ReleaseSmoke -Case 'full-r8-contract' -Abi 'x86_64'
 
 - [ ] **T53 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** release 开启 `isShrinkResources = true`（AGP 8.11.1 无 8.12+ 新资源优化管线，不盲加开关）：`androidResources` 52 项/460,080 B → **38 项/166,002 B**，APK 两 ABI 各 **−295,428 B**。用 `dexdump`+`mapping.txt` 追踪到**真实的动态资源访问**：AboutLibraries 按名字查 `getIdentifier("aboutlibraries","raw",…)`（应用自身代码零处 `getIdentifier`；另一处是 framework 的 `navigation_bar_height`），因此新增 `res/raw/keep.xml` 精确保留（非通配符、不开 strict）。`audit_apk_size.py` 加 `--require-resource-name`，两个包 exit 0。**并纠正了 T37/T38 的错误结论**：许可证全文**确实内嵌**在 `licenses[<spdxId>].content`（Apache-2.0 10,279 字符）。**`resources-and-licenses` smoke 用例不存在、release 页面未人工验、arm64 未跑**，不勾 DONE。见 [T53 证据](../../refactor/evidence/T53.md) 与 [resource-shrink.md](../../refactor/evidence/resource-shrink.md)。
+
 **优先级：** P1　**前置：** T52、T38、T47
 
 **文件范围（实施工作区）：**
