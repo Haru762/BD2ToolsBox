@@ -111,11 +111,29 @@ D ActivityStarterImpl: MIUILOG- Permission Denied Activity : Intent {
 而 `Test-Bd2Device` 没有补 `pm grant`，导致 `InstallServiceLifecycleTest` /
 `ScanServiceTest` 表现为假抖动。已在 `verification.ps1` 的安装循环后补上。
 
+## 3.4 arm64 回归集（修复后重跑，24 个目标全部一次通过）
+
+`GameFileCommitTest` 13、`InstallServiceLifecycleTest` 4、`ScanServiceTest` 5、
+`ProcessDeathRecoveryTest` 4、`ModDiscoveryTest` 12、`BackupFailureSummaryTest` 5、
+`LedgerRecoveryStartupTest` 4、`SidecarRoundTripDeviceTest` 1、`TryUseBackupTrustGateTest` 2、
+`ContentRecoveryDeviceTest` 1、`ShizukuFileServiceListingTest` 5、`NativeEngineSmokeTest` 9、
+`AndroidPythonStagingTest` 4、`WebContentThemeTest` 6、`LogExporterTest` 3、`ModSnapshotTest` 5、
+`PreviewCacheNegativeTest` 5、`PreviewCacheSizeSlotTest` 6、`SnapshotStoreInstanceReuseTest` 1、
+`HiltEntryPointTest` 三个非 ActivityScenario 方法各 1、`PlatformBehaviorTest` 的
+native 对齐/加载各 1 —— **共 99 次用例执行，全部 PASS，且都是第 1 次尝试。**
+
 ## 4. 环境扰动与恢复
 
 - 为跑用例安装过 arm64 debug / pre-shrink release / final release 三份包；
   最终停在 **final release**，数据未清（`install -r` 保留 `filesDir`）。
-- `com.bd2toolsbox.test` 已卸载。
+- 收尾状态核对：`com.bd2toolsbox` = final release 0.2.16 / versionCode 17 /
+  `primaryCpuAbi=arm64-v8a` / 设备上 22,661,146 B；`com.bd2toolsbox.test` **已卸载**；
+  `logcat -b all -c` 后干净冷启动 `Status: ok` / `TotalTime: 220 ms`、
+  crash buffer **为空**、`TOTAL PSS` 228,927 KB。
+- 中途出现的两条 crash 记录均为**测试脚手架产物**，不是产品崩溃：
+  ① `ClassNotFoundException: kotlin.jvm.internal.Intrinsics`（在 release 包上跑 debug
+  androidTest 包，即 T04 记录过的形态）；② `Unable to find instrumentation info`
+  （测试包刚被卸载时的残留 instrumentation 请求）。清缓冲后复跑不再出现。
 - 未改动设备系统设置（`font_scale` / `ui_night_mode` 与测试前一致）。
 - **未触碰真实游戏目录**（本轮所有用例都是自建夹具或只读检查）。
 - 一次性脚本 `local/device/batch_arm64.ps1`、`arm64_direct.sh`、`arm64_targeted.sh`
