@@ -106,6 +106,7 @@ class MoveInstallWiringTest {
             mockk(relaxed = true),
             DirectMoveCommitHost(executor),
             uninstallExecutor,
+            com.bd2toolsbox.feature.mods.DirectScanRunHost(mockk(relaxed = true)),
             mockk(relaxed = true), // scan executor is not used by move-install tests
             mockk(relaxed = true), // prepack executor is not used by move-install tests
         )

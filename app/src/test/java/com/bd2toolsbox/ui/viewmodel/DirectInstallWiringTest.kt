@@ -83,6 +83,7 @@ class DirectInstallWiringTest {
             mockk(relaxed = true),
             DirectMoveCommitHost(mockk(relaxed = true)),
             mockk(relaxed = true), // uninstall executor is not used by direct-install tests
+            com.bd2toolsbox.feature.mods.DirectScanRunHost(mockk(relaxed = true)),
             mockk(relaxed = true), // scan executor is not used by direct-install tests
             mockk(relaxed = true), // prepack executor is not used by direct-install tests
         ), recordPrivateCalls = true)

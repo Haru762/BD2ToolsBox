@@ -50,6 +50,16 @@ object RepositoryModule {
      * [com.bd2toolsbox.feature.install.DirectMoveCommitHost] 验证提交语义本身；
      * 生产路径由设备用例 `InstallServiceRunHostTest` 覆盖。
      */
+    /**
+     * 扫描执行的宿主（T23）：生产把扫描交给 `ScanService`（自己的 scope + 前台通知）。
+     * 与 MoveCommitHost 同一理由与同一可替换性。
+     */
+    @Provides
+    @Singleton
+    fun provideScanRunHost(
+        impl: com.bd2toolsbox.service.ScanService.Host
+    ): com.bd2toolsbox.feature.mods.ScanRunHost = impl
+
     @Provides
     @Singleton
     fun provideMoveCommitHost(

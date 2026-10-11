@@ -12,7 +12,22 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bd2toolsbox.MainActivity
+import com.bd2toolsbox.feature.mods.ScanExecutor
+import com.bd2toolsbox.feature.mods.ScanRun
+import com.bd2toolsbox.feature.mods.ScanRunHost
+import com.bd2toolsbox.feature.mods.ScanRunProgress
+import com.bd2toolsbox.feature.mods.ScanRunRequest
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * 游戏资源扫描期间的前台服务：把进程钉在前台，并在通知栏显示进度条。
@@ -29,8 +44,32 @@ import dagger.hilt.android.AndroidEntryPoint
  *  - 重复 start 不重置进度：扫描中途的 start 只可能来自异常路径（误触、
  *    界面重建后的初始化检查），归零会让用户以为扫描从头来过。
  */
-@AndroidEntryPoint // T16：本进程前台服务接入 Hilt（当前无注入字段，留给 T17）
+@AndroidEntryPoint // T16：本进程前台服务接入 Hilt；T23 注入 ScanExecutor
 class ScanService : Service() {
+
+    @Inject lateinit var scanExecutor: ScanExecutor
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var worker: Job? = null
+
+    /**
+     * 生产宿主（T23）：把扫描交给本服务执行。
+     *
+     * 服务持有自己的 scope 与前台状态，**界面销毁不会取消它** —— 这正是把扫描从
+     * viewModelScope 搬过来的理由。进度同时走通知栏（服务自己的）与 [onProgress]。
+     */
+    class Host @Inject constructor(
+        @dagger.hilt.android.qualifiers.ApplicationContext private val context: Context
+    ) : ScanRunHost {
+        override suspend fun run(
+            request: ScanRunRequest,
+            onProgress: (ScanRunProgress) -> Unit
+        ): ScanRun? {
+            clearRunResult()
+            if (!run(context, request)) return null
+            return scanRunResult.first { it != null }
+        }
+    }
 
     companion object {
         private const val TAG = "ScanService"
@@ -82,6 +121,39 @@ class ScanService : Service() {
             send(context, ACTION_STOP) {}
         }
 
+        const val ACTION_RUN = "com.bd2toolsbox.action.SCAN_RUN"
+
+        @Volatile
+        private var pendingRun: ScanRunRequest? = null
+
+        private val _runResult = MutableStateFlow<ScanRun?>(null)
+        val scanRunResult: StateFlow<ScanRun?> = _runResult.asStateFlow()
+
+        fun clearRunResult() {
+            _runResult.value = null
+        }
+
+        /**
+         * 把一次扫描交给服务执行（T23）。返回 false 表示前台服务启动被拒。
+         *
+         * 请求经 companion 直传（同进程，与 InstallService/PrepackService 同一手法）。
+         */
+        fun run(context: Context, request: ScanRunRequest): Boolean {
+            pendingRun = request
+            val intent = Intent(context, ScanService::class.java).apply {
+                action = ACTION_RUN
+                putExtra(EXTRA_TOTAL, request.checkResult.needsScanCount)
+            }
+            return try {
+                context.startForegroundService(intent)
+                true
+            } catch (e: Exception) {
+                pendingRun = null
+                Log.w(TAG, "扫描的前台服务启动被拒: ${e.message}")
+                false
+            }
+        }
+
         private inline fun send(context: Context, action: String, fill: Intent.() -> Unit): Boolean {
             val intent = Intent(context, ScanService::class.java).apply {
                 this.action = action
@@ -123,6 +195,26 @@ class ScanService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_RUN -> {
+                val request = pendingRun
+                pendingRun = null
+                if (request == null) {
+                    Log.w(TAG, "收到 ACTION_RUN 但没有待执行扫描，忽略")
+                    stopForegroundCompat()
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                started = true
+                done = 0
+                bundleName = ""
+                text = ""
+                summaryPosted = false
+                total = request.checkResult.needsScanCount
+                startForeground(NOTIFICATION_ID, buildProgressNotification())
+                worker?.cancel()
+                worker = scope.launch { executeRun(request) }
+            }
+
             ACTION_START -> {
                 if (!started) {
                     started = true
@@ -174,6 +266,33 @@ class ScanService : Service() {
         }
         // 同 InstallService：进程被杀后重启空服务毫无意义，真正在扫的协程已随进程没了
         return START_NOT_STICKY
+    }
+
+    /**
+     * 真正执行扫描（T23）。跑在服务自己的 scope 上，不随 ViewModel 销毁而取消。
+     * 结果（含失败原因）一律落进 [_runResult]，界面只负责展示。
+     */
+    private suspend fun executeRun(request: ScanRunRequest) {
+        val result = try {
+            scanExecutor.run(
+                outputDir = request.outputDir,
+                cacheDir = request.cacheDir,
+                checkResult = request.checkResult
+            ) { index, totalCount, name, message ->
+                // 通知栏：主进度通道，界面死活无关
+                update(this, index, totalCount, name, message)
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            ScanRun.Failed("扫描被中断：服务已停止")
+        } catch (e: Exception) {
+            Log.e(TAG, "扫描执行失败", e)
+            ScanRun.Failed(e.message ?: e.javaClass.simpleName)
+        }
+        _runResult.value = result
+        when (result) {
+            is ScanRun.Finished -> finish(this, result.scanned, result.failed)
+            is ScanRun.Failed -> stop(this)
+        }
     }
 
     override fun onDestroy() {

@@ -85,6 +85,9 @@ import com.bd2toolsbox.feature.install.MoveCommitRequest
 import com.bd2toolsbox.feature.install.UninstallExecutor
 import com.bd2toolsbox.feature.mods.ScanCheck
 import com.bd2toolsbox.feature.mods.ScanExecutor
+import com.bd2toolsbox.feature.mods.ScanRunHost
+import com.bd2toolsbox.feature.mods.ScanRunProgress
+import com.bd2toolsbox.feature.mods.ScanRunRequest
 import com.bd2toolsbox.feature.mods.ScanRun
 import com.bd2toolsbox.feature.preview.PrepackExecutor
 import com.bd2toolsbox.data.repository.LedgerTake
@@ -142,6 +145,7 @@ class MainViewModel @Inject constructor(
     private val updateRepository: UpdateRepository,
     private val commitHost: MoveCommitHost,
     private val uninstallExecutor: UninstallExecutor,
+    private val scanRunHost: ScanRunHost,
     private val scanExecutor: ScanExecutor,
     private val prepackExecutor: PrepackExecutor,
 ) : ViewModel() {
@@ -1237,6 +1241,9 @@ class MainViewModel @Inject constructor(
      * [ScanService] 钉住进程 + 通知栏进度；界面销毁后 in-app 进度条没了就没了，
      * 通知栏是主进度通道。
      */
+    /** 扫描进度（由服务驱动的宿主推入；界面状态是它的映射）。 */
+    private val scanProgress = MutableStateFlow(ScanRunProgress(0, 0, "", ""))
+
     fun confirmBundleScan() {
         val context = appContext ?: return
         val checkResult = pendingCheckResult ?: return
@@ -1266,45 +1273,52 @@ class MainViewModel @Inject constructor(
                 return@launch
             }
             // T19：扫描全程在 installScope——界面销毁也不能让连接断。
-            // T23：连接占用改由 ScanExecutor.run 内部持有，ViewModel 不再自己 acquire/release。
+            // T23：**扫描循环搬进 ScanService**。以前这里直接调 executor，协程挂在
+            // installScope 上；现在服务持有自己的 scope 与前台通知，界面死活无关。
+            // ViewModel 只提交冻结输入、观察进度与结果、做 UI 收尾。
             try {
                 // Shizuku 服务跑在 shell UID，写不了 app 的内部 cacheDir（/data/data/…），
                 // 扫描临时文件得放 externalCacheDir
                 val shizukuCacheDir = (context.externalCacheDir ?: context.cacheDir).absolutePath
-
-                val outcome = withContext(Dispatchers.IO) {
-                    scanExecutor.run(
-                        outputDir = context.filesDir.absolutePath,
-                        cacheDir = shizukuCacheDir,
-                        checkResult = checkResult
-                    ) { currentIndex, total, bundleName, message ->
-                        // 通知栏：主进度通道，界面死活无关
-                        ScanService.update(svcCtx, currentIndex, total, bundleName, message)
-                        // 界面内进度条：VM 已销毁时这里静默不生效，可接受
-                        viewModelScope.launch(Dispatchers.Main) {
-                            _bundleScanState.value = BundleScanState.Scanning(
-                                currentIndex = currentIndex,
-                                totalCount = total,
-                                currentBundle = bundleName,
-                                progressMessage = message
-                            )
-                        }
+                val request = ScanRunRequest(
+                    outputDir = context.filesDir.absolutePath,
+                    cacheDir = shizukuCacheDir,
+                    checkResult = checkResult
+                )
+                // 进度：服务通过通知栏自己推，这里只把同一份进度映射到界面状态。
+                // VM 已销毁时 launch 静默不生效，可接受（通知栏才是主通道）。
+                val progressJob = viewModelScope.launch(Dispatchers.Main) {
+                    scanProgress.collect { p ->
+                        _bundleScanState.value = BundleScanState.Scanning(
+                            currentIndex = p.currentIndex,
+                            totalCount = p.total,
+                            currentBundle = p.bundleName,
+                            progressMessage = p.message
+                        )
                     }
+                }
+                val outcome = try {
+                    withContext(Dispatchers.IO) { scanRunHost.run(request) { scanProgress.value = it } }
+                } finally {
+                    progressJob.cancel()
                 }
 
                 when (outcome) {
+                    null -> {
+                        // 宿主没能开始跑（前台服务被拒）：回到确认态，让用户回前台再点
+                        pendingCheckResult = checkResult
+                        _bundleScanState.value = BundleScanState.Confirmation(checkResult.needsScanCount)
+                        withContext(Dispatchers.Main) { toast(context, FGS_REFUSED_MESSAGE) }
+                    }
                     is ScanRun.Finished -> {
                         _bundleScanState.value = BundleScanState.Finished(
                             scannedCount = outcome.scanned,
                             failedCount = outcome.failed,
                             message = "扫描完成：成功 ${outcome.scanned} 个，失败 ${outcome.failed} 个。"
                         )
-                        // 摘要通知留着给用户看（可划掉）；失败走 stop 直接收掉
-                        ScanService.finish(svcCtx, outcome.scanned, outcome.failed)
                     }
                     is ScanRun.Failed -> {
                         _bundleScanState.value = BundleScanState.Failed(outcome.message)
-                        ScanService.stop(svcCtx)
                     }
                 }
             } catch (e: Exception) {
