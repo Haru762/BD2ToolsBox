@@ -1959,6 +1959,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.TaskPanelLifecycleTest' -Abi 'x86_
 
 - [ ] **T44 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/settings/BackupPurgeConfirmation`（后果文案含数量/空间/失去恢复资源；标题与按钮不同名、按钮写明动作；确认后按指纹复核目标集合，变了必须重新确认；成功/部分成功/全失败真实文案且剩余量重新统计；活跃任务互斥）与设备 `DestructiveActionConfirmationTest` **8/8 PASS**。测试首轮发现并修复了「弹窗标题与确认按钮同名」的真实语义重复缺陷。**WorkbenchSheet/SettingsDialogs 未接线、BundleBackupRepository.clearAll 仍是裸 deleteRecursively（无逐项删除+重统计+部分失败上报）、活跃任务互斥未接**、arm64 未跑、无独立审查，不勾 DONE。见 [T44 证据](../../refactor/evidence/T44.md)。
+
 **优先级：** P0　**前置：** T41、T21、T27
 
 **文件范围（实施工作区）：**
