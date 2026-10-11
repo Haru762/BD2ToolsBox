@@ -19,13 +19,24 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 /**
- * 任务进度面板（T41）。
+ * 任务面板的展示态（T43）。**收起只改展示，绝不取消任务或释放 Binder。**
+ *
+ * 纯数据、可 JVM 测：`toggled()` 只翻转 collapsed；任务本身的状态由任务宿主
+ * （协调器/executor）持有，与这里无关。
+ */
+data class TaskPanelUiState(val collapsed: Boolean = false) {
+    fun toggled(): TaskPanelUiState = copy(collapsed = !collapsed)
+}
+
+/**
+ * 任务进度面板（T41 建立，T43 加可收起）。
  *
  * 契约：
  * - 进度由**任务宿主**持有（T21/T22–T24 的协调器/executor），面板只显示，不驱动业务；
  * - [progress] 为 `null` = 不确定进度（转圈）；`0f..1f` = 确定进度（进度条）；
+ * - **收起/展开只改变展示**：`onToggleCollapse` 不触碰任务；按任务 ID 重连显示同一任务；
  * - 取消只在**安全阶段**开放：由 [cancelEnabled] 决定，禁用时按钮可见但不可点
- *   （不用「隐藏」冒充「不可取消」）；
+ *   （不用「隐藏」冒充「不可取消」）。提交临界区禁用取消，但仍允许收起。
  * - 文案含当前目标与细粒度阶段，避免只有一个不动的百分比。
  */
 @Composable
@@ -34,6 +45,8 @@ fun TaskProgressPanel(
     modifier: Modifier = Modifier,
     detail: String? = null,
     progress: Float? = null,
+    collapsed: Boolean = false,
+    onToggleCollapse: (() -> Unit)? = null,
     cancelLabel: String = "取消",
     cancelEnabled: Boolean = false,
     onCancel: (() -> Unit)? = null
@@ -54,31 +67,38 @@ fun TaskProgressPanel(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
+                if (onToggleCollapse != null) {
+                    TextButton(onClick = onToggleCollapse) {
+                        Text(if (collapsed) "展开" else "收起")
+                    }
+                }
                 if (onCancel != null) {
                     TextButton(onClick = onCancel, enabled = cancelEnabled) { Text(cancelLabel) }
                 }
             }
-            if (detail != null) {
-                Text(
-                    detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            when {
-                progress == null -> CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .size(20.dp),
-                    strokeWidth = 2.dp
-                )
-                else -> LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                )
+            if (!collapsed) {
+                if (detail != null) {
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                when {
+                    progress == null -> CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                    else -> LinearProgressIndicator(
+                        progress = { progress.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    )
+                }
             }
         }
     }

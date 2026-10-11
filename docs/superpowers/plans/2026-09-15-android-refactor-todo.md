@@ -1920,6 +1920,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.ModActionsTest' -Abi 'x86_64'
 
 - [ ] **T43 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** `TaskProgressPanel` 新增 `collapsed`/`onToggleCollapse`（收起只改展示、不取消任务、可重开）与纯数据 `TaskPanelUiState.toggled()`；提交临界区取消禁用但仍可收起。设备 `TaskPanelLifecycleTest` **4/4 PASS**。**真实 InstallDialogs/PreviewViewModel/AppRoot 未接线**、按任务 ID 重连未做、arm64 未跑、无独立审查，不勾 DONE。见 [T43 证据](../../refactor/evidence/T43.md)。
+
 **优先级：** P0　**前置：** T41、T26
 
 **文件范围（实施工作区）：**
