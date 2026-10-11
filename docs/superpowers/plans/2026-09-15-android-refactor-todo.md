@@ -2034,6 +2034,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.CdkResultPresentationTest' -Abi 'x
 
 - [ ] **T46 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增设备 `AdaptiveAccessibilityTest` **8/8 PASS**：用 `SemanticsNode.touchBoundsInRoot`（按 density 换算）判定预览/更多/确定/关闭/收起/取消的**真实触控边界 >= 48dp**；装饰图标不重复朗读；状态不只靠颜色；字体 2.0/1.3 倍与窄屏 320dp 下关键操作仍可见。全量 JVM **687/0/0/0**。**AppRoot/TopLevelNavigation/ModScreen/GuideScreen/CdkScreen 的 insets 未处理**、横屏与 IME、旋转不重复执行、预测返回、TalkBack 真机走查未做，不勾 DONE。见 [T46 证据](../../refactor/evidence/T46.md)。
+
 **优先级：** P1　**前置：** T41、T42、T43、T44、T45、T15
 
 **文件范围（实施工作区）：**
