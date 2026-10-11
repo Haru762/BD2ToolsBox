@@ -2269,6 +2269,8 @@ Test-Bd2ReleaseSmoke -Case 'native-load-and-decode' -Abi 'x86_64'
 
 - [ ] **T52 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 逐条复核后删掉两条**按包 keep**（`data.model.**`、`core.storage.**`，理由是 Gson 时代遗留，T35 后键名已走 `@SerialName` 常量）与两条重复的 Chaquopy 规则；`com.bd2toolsbox` seeds **2559 → 344**、seeds 总量 3723 → 1508；DEX **−104,004 B**、APK 两 ABI 各 **−98,304 B**。新增一组精确的 release-probe 反射契约面（`ModSnapshotStore`/`PendingWrite`/`SnapshotLoad($*)`/`SnapshotCommit($*)`/`SnapshotEntry`），`SnapshotV1` 由 `-keepclassmembers` 升级为 `-keep`。**实测**发现并修复两个真实动态入口：`ClassNotFoundException: ModSnapshotStore` 与 `SnapshotV1 class is renamed in mapping.txt`。minified release `snapshot-compatibility` **PASS**（跨进程快照契约 + UI 冷启动 + mapping 闸）。mapping 按版本+ABI+APK 哈希归档并登记 `t52R8Mapping`。**`full-r8-contract` smoke 用例不存在、arm64 未跑、无独立审查**，不勾 DONE。见 [T52 证据](../../refactor/evidence/T52.md) 与 [r8-rules.md](../../refactor/evidence/r8-rules.md)。
+
 **优先级：** P0　**前置：** T36、T20、T49
 
 **文件范围（实施工作区）：**

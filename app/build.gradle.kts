@@ -170,6 +170,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // T52：可选的 R8 证据开关。设置环境变量 BD2_R8_EVIDENCE=<file.pro> 时额外
+            // 吃入该规则文件（里面写 -printseeds/-printusage/-whyareyoukeeping），用于
+            // 「这条 keep 到底保住了什么」的实证。默认不参与，不影响正式产物。
+            // 用环境变量而不是 -P：值里的路径分隔符会被 Gradle 包装脚本当成任务名。
+            System.getenv("BD2_R8_EVIDENCE")?.takeIf { it.isNotBlank() }?.let { extra ->
+                proguardFiles(rootProject.file(extra))
+            }
             signingConfig = signingConfigs.getByName("release")
         }
     }

@@ -1,81 +1,79 @@
-# Chaquopy: a minimal ProGuard configuration.
-# See https://chaquo.com/chaquopy/doc/current/android.html#proguard.
+# =============================================================================
+# R8 规则（T52 逐条复核）
+#
+# 原则：**每条自定义 keep 都要能说出「谁在动态调用它」以及「哪个用例覆盖它」**。
+# 不用「保留所有业务类」、不用「忽略所有警告」、不用 -dontoptimize。
+#
+# T35 起序列化全部走 kotlinx.serialization：磁盘/网络键名来自 @SerialName 的**字符串
+# 常量**，由编译器生成的 `$$serializer` 直接引用，**不依赖反射字段名**，所以
+# 「按包 keep 住所有 DTO」这条老防线已经没有必要（它的理由在 Gson 时代才成立）。
+# 原先的 `-keep class com.bd2toolsbox.data.model.** { *; }` 与
+# `-keep class com.bd2toolsbox.core.storage.** { *; }` 已按实测证据删除
+# （证据与前后对照见 docs/refactor/evidence/r8-rules.md）。
+# =============================================================================
 
--keep class com.chaquo.python.** { *; }
--keep class com.chaquo.python.runtime.** { *; }
+# --- 1. Chaquopy 的 Python 桥接 ---------------------------------------------
+# 动态调用者：Python 运行时按类名/方法名反射调用 Kotlin 侧桥接类
+# （com.chaquo.python.PyObject / PyApplication 等）以及 Cython 生成的代码。
+# 覆盖：T18 NativeEngineSmokeTest、T50 AndroidPythonStagingTest。
+# **这里不重复声明**：Chaquopy 16.1.0 自己把
+# `-keep class com.chaquo.python.** { * ; }` 等规则接入 R8
+# （见 mapping/<variant>Release/configuration.txt 的 section 头
+# “The proguard configuration file for the following section is
+#  …\app\build\python\proguard-rules.pro”），以及 chaquopy_java AAR 的 consumer rules。
+# T49 已核对：删掉本文件里重复的两行后，configuration.txt 里该规则仍在。
 
-# Standalone release-probe reflects this production entry through the target app classloader.
-# Preserve only the facade class name and its public static Unit/void entry, not the package.
+# --- 2. release-probe 反射调用的生产入口 -------------------------------------
+# 动态调用者：release-probe/src/main/java/com/bd2toolsbox/integration/ 下的探针
+# 通过 `targetContext.classLoader.loadClass(...)` + `getMethod(...)` 调用
+# PythonRuntime.ensureStarted —— 这是跨包反射，R8 看不到。
+# 覆盖：Test-Bd2ReleaseSmoke -Case 'baseline-startup'。
+# 只保留门面类名与这一个 public static 入口，**不**保留整个包。
 -keep class com.bd2toolsbox.core.python.PythonRuntime {
     public static void ensureStarted(android.content.Context);
 }
 
-# Shizuku
+# --- 3. Shizuku 用户服务 -----------------------------------------------------
+# 动态调用者：Shizuku 按 manifest 声明的组件名绑定该 Service，再通过 AIDL
+# （IShizukuFileService，AGP 的 AIDL 规则负责保名）跨进程调用其成员；
+# 服务类自身还会被 Android 框架按名字实例化。
+# 覆盖：T19（ShizukuFileService 契约）。**注意**：T19 的「真实 Shizuku 授权/断连」
+# 至今未在真机上验证过，因此这条规则按「未知依赖宁可记录而非猜着删」保留原样，
+# 不因为「看起来只用了几个方法」而收窄。
 -keep class com.bd2toolsbox.service.ShizukuFileService { *; }
 
-# T35：App 已不再使用 Gson（序列化改 kotlinx.serialization，序列化器由编译器生成、
-# 直接引用属性，磁盘键名来自 @SerialName 字符串常量）。原先为 Gson 反射加的
-# TypeToken / Signature / RuntimeVisibleAnnotations 规则已移除。
+# --- 4. release-probe 反射的快照契约面 -----------------------------------------
+# 动态调用者：release-probe/src/main/java/com/bd2toolsbox/integration/
+# ReleaseSnapshotProbeTest —— 跨包（targetContext.classLoader）按**名字**取：
+#   Class.forName("…ModSnapshotStore")、getConstructor(File)、getMethod(load/capture/commit)、
+#   Class.forName("…PendingWrite")、以及返回的 sealed 子类与条目上的 Kotlin getter。
+# 覆盖：Test-Bd2ReleaseSmoke -Case 'snapshot-compatibility'。
+#
+# 这条**不是给生产用的**：生产代码直接静态引用这些类，R8 本来就能看到。
+# 但探针是本仓的验证工具，它一旦 ClassNotFoundException，minified release 的快照契约
+# 就没人能验了（T52 实测：删掉原先的包级 keep 后正是这个错）。
+# 因此只钉住**探针真的用到的那几个名字与成员**，不恢复整包 keep。
+-keep class com.bd2toolsbox.core.storage.ModSnapshotStore {
+    public <init>(java.io.File);
+    public *** load(java.util.List);
+    public *** capture(java.util.List, java.util.List);
+    public *** commit(com.bd2toolsbox.core.storage.PendingWrite, java.util.List);
+}
+-keep class com.bd2toolsbox.core.storage.PendingWrite { *; }
+-keep class com.bd2toolsbox.core.storage.SnapshotLoad { *; }
+-keep class com.bd2toolsbox.core.storage.SnapshotLoad$* { *; }
+-keep class com.bd2toolsbox.core.storage.SnapshotCommit { *; }
+-keep class com.bd2toolsbox.core.storage.SnapshotCommit$* { *; }
+-keep class com.bd2toolsbox.core.storage.SnapshotEntry { *; }
 
-# Keep data model classes（磁盘格式守卫；T35 后不再依赖反射字段名，保留为纵深）
--keep class com.bd2toolsbox.data.model.** { *; }
-
-# 装入账本与操作日志（T08）：DTO 的字段名就是磁盘格式的一部分。
-# 与上面 data.model 那条同一个理由 —— Gson 按字段名读写，混淆后字段名一变，
-# 老账本/老日志就读不回来（静默变成「没有记录」）。这里刻意用包级规则而不是逐个类列举：
-# 该包将来新增的持久化 DTO 自动被覆盖，不必记得回来加一行。
-#
-# !! 这条规则**只覆盖 core.storage 包**（T09 二轮整改更正）。
-# 首版 T09 曾在此声称「包级规则自动覆盖新增 DTO」，于是把一个持久化 DTO
-# （BundleBackupRepository$BackupMeta）放在了 **data.repository** 包里，以为它被保护 ——
-# 实际没有：R8 把它的字段名改成了 a/b/c，Gson 写出的 sidecar 与读侧的字面量键对不上，
-# release 包里整条可信链静默失效（debug 下完全看不出来）。
-# 教训不是「再加一条包级规则」，而是**持久化格式不许依赖反射字段名**。
-# T09 的 sidecar 因此改成两侧都用显式 JSON 键（见 BundleBackupRepository 的
-# KEY_SCHEMA_VERSION 那组常量），与 R8 怎么改名无关 —— 不需要在这里为它加任何规则。
-#
-# 注：这条包级规则**确实覆盖嵌套类**（`…ModSnapshotStore$SnapshotV1` 也吃到）。
-# T10 实测确认了这一点（见下面那段），因此 T10 为快照 DTO 另加的显式规则是**纵深**，
-# 而不是「不写就会坏」的那类 —— 理由写在下面。
--keep class com.bd2toolsbox.core.storage.** { *; }
-
-# 冷启动快照（T10）：DTO 的字段名同样是磁盘格式的一部分。
-#
-# ## 实测：没有 keep 规则时，R8 会做与 0.2.16 完全相同的事
-#
-# 本工作区 `./gradlew :app:minifyReleaseWithR8` 现场复现（T10.md §6.2）：
-# 把 core.storage 的全部 keep 规则去掉后，release mapping.txt 里是
-#     com.bd2toolsbox.core.storage.ModSnapshotStore$SnapshotV1 -> n1.t:
-#         int version -> a
-#         long savedAt -> b
-#         java.util.List mods -> c
-#         java.util.List sourceDirs -> d
-# —— 与 0.2.16 historical 包里 MainViewModel$ModListSnapshot 的 a/b/c 是**同一个现象**。
-# 磁盘键名一旦漂成这样，Gson 按新名字读写，老快照静默读不回来。
-#
-# ## 下面两条规则是**纵深**，不是「今天不写就会坏」
-#
-# 实测：上面那条包级规则已覆盖嵌套类，所以下面两条去掉之后字段名照样是规范名
-# （`getVersion`/`getSavedAt`/`getMods`/`getSourceDirs` 未被改名）。
-# 留着的理由是**磁盘格式的守卫不该只依赖一条包级规则**：T13/T14 会调 R8 配置，
-# 而「整包放开」正是最容易被换掉/收窄的一条；届时这两条显式规则替持久化格式兜底，
-# 不随包级规则的存废而变。这是 T09 二轮那条教训的另一面 ——
-# 「持久化格式不许依赖会被改的东西」：今天是反射字段名，明天是包级 keep。
-#
-# 为什么不 `-keep class …ModSnapshotStore { *; }` 整类放开：那会把 Store 的实现方法也钉死，
-# 白占体积，且掩盖了「到底哪几个东西是磁盘契约」这个事实。
-#
-# ## 关于 version 字段（0.2.16 就是被 R8 折叠掉的那个）
-#
-# 0.2.16 的 ModListSnapshot 里 version **整个字段被消掉**（mapping 里无任何条目，
-# 但构造器签名仍是 (int,long,List,List)）：R8 能证明它恒等于 SNAPSHOT_VERSION、
-# 只被用来和同一个常量比较，于是把比较折成 false、分支变死、字段被删 ——
-# 生产包里根本没有版本闸。T10 的 SnapshotV1.version 由 **Gson 反射写入**（值来自磁盘文本），
-# R8 无法证明它是常量，所以「常量传播」这一半天然不成立；剩下唯一能毁掉它的手段是
-# 改名或删字段，由下面这一条挡住。
-#
-# **不依赖 `@SerializedName`**：DTO 的注解值与字段名故意写成同一个字面量，所以即使
-# keepattributes 被去掉、Gson 退回按字段名读写，磁盘格式也不变（见 SnapshotEntry 的类注释）。
-# 这条 -keepattributes 是纵深，不是唯一防线（`Signature` 那条已经在上头，这里补注解属性）。
--keepclassmembers class com.bd2toolsbox.core.storage.ModSnapshotStore$SnapshotV1 { <fields>; }
+# --- 5. 持久化格式的守卫 -------------------------------------------------------
+# T35 之后磁盘键名是 @SerialName 常量，字段名被 R8 改掉也不影响读写；
+# 但**快照这一处有硬闸**：Test-Bd2ReleaseSmoke -Case 'snapshot-compatibility'
+# 直接读 mapping.txt 断言 “SnapshotV1 未被改名、version/savedAt/mods/sourceDirs
+# 四个字段未被改名”（T10 建立的闸）。所以这里的类名是**载重**的，不是纵深：
+# 用 `-keep`（连类名一起钉）而不是 `-keepclassmembers`。
+# LegacyObfuscatedSnapshot 没有被任何闸检查类名，只需钉字段。
+# 覆盖：JsonMigrationTest / ModSnapshotStoreTest（JVM）与
+# release-probe 的 ReleaseSnapshotProbeTest（minified release，跨进程）。
+-keep class com.bd2toolsbox.core.storage.ModSnapshotStore$SnapshotV1 { <fields>; }
 -keepclassmembers class com.bd2toolsbox.core.storage.ModSnapshotStore$LegacyObfuscatedSnapshot { <fields>; }

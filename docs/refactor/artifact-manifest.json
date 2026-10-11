@@ -662,5 +662,48 @@
       "libastcenc.so 仍是 4 KB 链接对齐（minLoadAlign=4096），16 KB 页兼容是独立问题，strip 不修链接对齐；登记见 native-strip.md",
       "Chaquopy wheel 内的 .so 在 .imy 资产里、运行时解压，不走 lib/ 这条加载路径"
     ]
+  },
+  "t52R8Mapping": {
+    "task": "T52",
+    "date": "2026-10-11",
+    "evidence": "docs/refactor/evidence/r8-rules.md",
+    "version": "0.2.16",
+    "note": "R8 mapping / configuration 按 版本 + ABI + 最终 APK 哈希 归档；不打进 APK，也不只放在会被 clean 清掉的 build/。",
+    "entries": [
+      {
+        "abi": "arm64-v8a",
+        "flavor": "arm64",
+        "variant": "arm64Release",
+        "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
+        "apkBytes": 22956574,
+        "apkSha256": "8f240393d577ef2bb205142e87badff34400bcc981e628be51f0142bd426f1b3",
+        "localDir": "local/refactor-artifacts/r8-mapping/0.2.16/arm64-v8a",
+        "mappingBytes": 43960710,
+        "mappingSha256": "7505c2427a8d8c1a6cdac9817426d338bd86beb5db6a764d994d57766d41869a",
+        "configurationBytes": 57631,
+        "configurationSha256": "0f234a0055614a36fa4d16afb37a379895365d0e5bee678eba10c511b48549d9",
+        "seedsLines": 1508,
+        "usageLines": 66196
+      },
+      {
+        "abi": "x86_64",
+        "flavor": "x64",
+        "variant": "x64Release",
+        "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
+        "apkBytes": 23128659,
+        "apkSha256": "269004a71c56db5054e881deac6f3a9b19f4d05ea4595b0b8c95811fab7b4f12",
+        "localDir": "local/refactor-artifacts/r8-mapping/0.2.16/x86_64",
+        "mappingBytes": 43960638,
+        "mappingSha256": "213e35a2127ffac317cb63e98fbdc67bc835d77fb0187f86dd01d071728afe7e",
+        "configurationBytes": 57014,
+        "configurationSha256": "2338de9a130e2501d36523b856135abbd664e0ef9cb146a40a97e216f46081dc",
+        "seedsLines": 1508,
+        "usageLines": 66196
+      }
+    ],
+    "notCovered": [
+      "seeds/usage 只在带 BD2_R8_EVIDENCE 的证据构建中生成，未随归档保存全文",
+      "release-probe 的 full-r8-contract smoke 用例未实现（见 T52 证据）"
+    ]
   }
 }
