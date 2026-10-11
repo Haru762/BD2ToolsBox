@@ -95,6 +95,68 @@ def classify(name: str) -> str:
     return CATEGORY_OTHER
 
 
+def parse_elf_sections(data: bytes) -> dict:
+    """只读解析 ELF 节表：列出可剥离的调试/符号节及其字节数。
+
+    只读头部与节表；不执行、不加载、不写盘。用于 T51 的「剥离前后可剥离节减少」度量。
+    """
+    if len(data) < 0x40 or data[0:4] != b"\x7fELF":
+        return {"valid": False, "reason": "bad magic"}
+    is64 = data[4] == 2
+    if not is64 and data[4] != 1:
+        return {"valid": False, "reason": "unknown EI_CLASS"}
+    if data[5] not in (1, 2):
+        return {"valid": False, "reason": "unknown EI_DATA"}
+    endian = "<" if data[5] == 1 else ">"
+    try:
+        if is64:
+            e_shoff = struct.unpack_from(endian + "Q", data, 0x28)[0]
+            e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(endian + "HHH", data, 0x3A)
+        else:
+            e_shoff = struct.unpack_from(endian + "I", data, 0x20)[0]
+            e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(endian + "HHH", data, 0x2E)
+    except struct.error:
+        return {"valid": False, "reason": "truncated header"}
+    if e_shoff == 0 or e_shnum == 0 or e_shstrndx >= e_shnum:
+        return {"valid": True, "debugSections": {}, "debugBytes": 0,
+                "sectionNames": [], "note": "no section header table"}
+
+    def section(index):
+        off = e_shoff + index * e_shentsize
+        name_off = struct.unpack_from(endian + "I", data, off)[0]
+        if is64:
+            sh_offset = struct.unpack_from(endian + "Q", data, off + 0x18)[0]
+            sh_size = struct.unpack_from(endian + "Q", data, off + 0x20)[0]
+        else:
+            sh_offset = struct.unpack_from(endian + "I", data, off + 0x10)[0]
+            sh_size = struct.unpack_from(endian + "I", data, off + 0x14)[0]
+        return name_off, sh_offset, sh_size
+
+    _, strtab_off, _ = section(e_shstrndx)
+
+    def name_at(offset):
+        start = strtab_off + offset
+        end = data.find(b"\x00", start)
+        if end < 0:
+            return ""
+        return data[start:end].decode("utf-8", "replace")
+
+    debug_sections = {}
+    names = []
+    for i in range(e_shnum):
+        name_off, _, sh_size = section(i)
+        name = name_at(name_off)
+        names.append(name)
+        if name.startswith(".debug") or name in (".symtab", ".strtab"):
+            debug_sections[name] = sh_size
+    return {
+        "valid": True,
+        "debugSections": debug_sections,
+        "debugBytes": sum(debug_sections.values()),
+        "sectionNames": sorted(names),
+    }
+
+
 def parse_elf_header(data: bytes) -> dict:
     """只读解析 ELF 头：class / endianness / machine。不执行、不加载。"""
     if len(data) < 20:
@@ -231,6 +293,7 @@ def audit(apk_path: str) -> dict:
     categories = {name: {"entries": 0, "compressedBytes": 0, "uncompressedBytes": 0}
                   for name in CATEGORY_ORDER}
     nested_imy: list = []
+    native_detail: list = []
     dangerous: list = []
     native_by_abi: dict = {}
     elf_problems: list = []
@@ -264,12 +327,22 @@ def audit(apk_path: str) -> dict:
             categories[category]["uncompressedBytes"] += info.file_size
 
             if category == CATEGORY_NATIVE:
-                head = zf.read(name)[:64] if info.file_size >= 20 else zf.read(name)
-                parsed = parse_elf_header(head)
+                blob = zf.read(name)
+                parsed = parse_elf_header(blob[:64] if len(blob) >= 20 else blob)
+                sections = parse_elf_sections(blob)
                 abi = name.split("/")[1] if name.count("/") >= 2 else "?"
                 native_by_abi.setdefault(abi, {"files": 0, "bytes": 0})
                 native_by_abi[abi]["files"] += 1
                 native_by_abi[abi]["bytes"] += info.file_size
+                native_detail.append({
+                    "name": name,
+                    "bytes": info.file_size,
+                    "compressedBytes": info.compress_size,
+                    "elfClass": parsed.get("elfClass"),
+                    "abi": parsed.get("machineName"),
+                    "debugBytes": sections.get("debugBytes"),
+                    "debugSections": sections.get("debugSections"),
+                })
                 if not parsed.get("valid"):
                     elf_problems.append({"name": name, "reason": parsed.get("reason")})
                     findings.append({"kind": "malformed-elf", "entry": name,
@@ -313,6 +386,8 @@ def audit(apk_path: str) -> dict:
         },
         "categoryBytesPlusOverhead": accounted + overhead,
         "nativeByAbiDir": native_by_abi,
+        "nativeLibraries": sorted(native_detail, key=lambda d: d["name"]),
+        "nativeDebugBytes": sum(d["debugBytes"] or 0 for d in native_detail),
         "nestedImy": nested_imy,
         "dangerousEntries": dangerous,
         "elfProblems": elf_problems,

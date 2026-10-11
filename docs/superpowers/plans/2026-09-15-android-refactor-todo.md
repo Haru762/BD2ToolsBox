@@ -2231,6 +2231,8 @@ Test-Bd2ReleaseSmoke -Case 'engine-and-preview' -Abi 'x86_64'
 
 - [ ] **T51 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 以本轮 `--info` 日志确认根因：AGP 8.11.1 默认 `ndkVersion=27.0.12077973` 本机未安装 → `strip<Flavor>ReleaseDebugSymbols` 整批跳过（`Unable to strip the following libraries, packaging them as they are: <11 个>`），`libastcenc.so` 的 1.19 MB `.debug_*` 与 `libtexture2ddecoder.so` 的 164 KB `.symtab/.strtab` 原样进包。固定 `ndkVersion=26.3.11579264` 后走 AGP 官方 strip：arm64 APK **−1.297 MiB**、x86_64 **−1.219 MiB**，`nativeDebugBytes` 归零；`audit_native_abi.py` 的 `needed`/`exportCount`/`minLoadAlign` **逐项不变**。剥离前原件与符号归档到 `local/refactor-artifacts/native-strip/` 并登记 `t51NativeSymbols`。设备 `PlatformBehaviorTest` **13/13 PASS**（真机 dlopen + 16 KB ZIP 对齐）。累计 arm64 **33.5184 → 21.9868 MiB（−34.4%）**。**arm64 真机未验、`native-load-and-decode` smoke 不存在、ASTC 实际解码与 16 KB 页设备未验**，不勾 DONE。见 [T51 证据](../../refactor/evidence/T51.md) 与 [native-strip.md](../../refactor/evidence/native-strip.md)。
+
 **优先级：** P1　**前置：** T49、T13
 
 **文件范围（实施工作区）：**

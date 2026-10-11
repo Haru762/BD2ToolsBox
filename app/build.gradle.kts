@@ -105,6 +105,9 @@ val stageAndroidPython by tasks.registering(Exec::class) {
 android {
     namespace = "com.bd2toolsbox"
     compileSdk = libs.versions.compileSdk.get().toInt()
+    // T51：不固定的话 AGP 用默认 NDK 27.0.12077973（本机未安装），strip 任务会
+    // 整批跳过并把带 .debug_* / .symtab 的库原样打进 APK。
+    ndkVersion = libs.versions.ndkVersion.get()
 
     signingConfigs {
         create("release") {

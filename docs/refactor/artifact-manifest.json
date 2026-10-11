@@ -479,5 +479,188 @@
       "未验证运行时行为；本工具只读 ZIP/ELF 头，不执行任何 APK 代码",
       "arm64/x86_64 之外的 universal APK 未纳入本轮 A/B 基线"
     ]
+  },
+  "t51NativeSymbols": {
+    "task": "T51",
+    "date": "2026-10-11",
+    "sourceCommit": null,
+    "evidence": "docs/refactor/evidence/native-strip.md",
+    "tool": "tools/audit_apk_size.py（nativeLibraries / nativeDebugBytes）",
+    "ndkVersion": "26.3.11579264",
+    "stripFlow": "AGP :app:strip<Flavor>ReleaseDebugSymbols（NDK llvm-strip），输入 = merged_native_libs，输出 = stripped_native_libs → APK",
+    "categories": [
+      {
+        "abi": "arm64-v8a",
+        "localDir": "local/refactor-artifacts/native-strip/arm64-v8a",
+        "note": "AGP stripDebugSymbols 的**输入**原件（未剥离），作为符号归档；与最终 APK 内的同名二进制通过 strippedSha256 对应。",
+        "items": [
+          {
+            "file": "arm64-v8a/libandroidx.graphics.path.so",
+            "unstrippedBytes": 10096,
+            "unstrippedSha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+            "strippedBytes": 10096,
+            "strippedSha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6"
+          },
+          {
+            "file": "arm64-v8a/libastcenc.so",
+            "unstrippedBytes": 1713680,
+            "unstrippedSha256": "a85cbffeefa457515e400933e2f9da12d0a8602c4ffcdc4ef1af470e93da8628",
+            "strippedBytes": 521776,
+            "strippedSha256": "089506fd9e50094f9340199ec4632b50bd411e55458a987b2c6a0777c467e352"
+          },
+          {
+            "file": "arm64-v8a/libchaquopy_java.so",
+            "unstrippedBytes": 159824,
+            "unstrippedSha256": "67c4aed3e41ce3c94e8bf77ae0951ab0b506cfe90464e25b99a01bf3c5683e24",
+            "strippedBytes": 159824,
+            "strippedSha256": "9819a4053b67fe76340ad3df24c15500a9ba4c73a7d4d0855737f7b076437c46"
+          },
+          {
+            "file": "arm64-v8a/libcrypto_chaquopy.so",
+            "unstrippedBytes": 3784,
+            "unstrippedSha256": "e316322aafee29c518084f478c1f84fb6048dc489dd5aad8d0822fbece416483",
+            "strippedBytes": 3784,
+            "strippedSha256": "e316322aafee29c518084f478c1f84fb6048dc489dd5aad8d0822fbece416483"
+          },
+          {
+            "file": "arm64-v8a/libcrypto_python.so",
+            "unstrippedBytes": 2355168,
+            "unstrippedSha256": "cf0f9e1b740c069f0e9bf54bb3f9f01c651cd26cb74117f934265ab81a9133fa",
+            "strippedBytes": 2355168,
+            "strippedSha256": "cf0f9e1b740c069f0e9bf54bb3f9f01c651cd26cb74117f934265ab81a9133fa"
+          },
+          {
+            "file": "arm64-v8a/libpython3.8.so",
+            "unstrippedBytes": 3255616,
+            "unstrippedSha256": "7efc4a7b42996979755cb007ae62573b24664b7d7c37780c692e251a7b364671",
+            "strippedBytes": 3255616,
+            "strippedSha256": "7efc4a7b42996979755cb007ae62573b24664b7d7c37780c692e251a7b364671"
+          },
+          {
+            "file": "arm64-v8a/libsqlite3_chaquopy.so",
+            "unstrippedBytes": 3784,
+            "unstrippedSha256": "626ef9b3e6eb661df9513f7f79f6a0d197bcfb0b43f813663ed9d5e7fcace172",
+            "strippedBytes": 3784,
+            "strippedSha256": "626ef9b3e6eb661df9513f7f79f6a0d197bcfb0b43f813663ed9d5e7fcace172"
+          },
+          {
+            "file": "arm64-v8a/libsqlite3_python.so",
+            "unstrippedBytes": 1178920,
+            "unstrippedSha256": "fa355dda67c86b62f67026b7b5a8ec17732ee30e9e8280b86362b4e2a886548b",
+            "strippedBytes": 1178920,
+            "strippedSha256": "fa355dda67c86b62f67026b7b5a8ec17732ee30e9e8280b86362b4e2a886548b"
+          },
+          {
+            "file": "arm64-v8a/libssl_chaquopy.so",
+            "unstrippedBytes": 3768,
+            "unstrippedSha256": "70b94a18ae17a1b103cc0f52b3f5fa3f7740c6899eddb6fa3b1f16ba8051025b",
+            "strippedBytes": 3768,
+            "strippedSha256": "70b94a18ae17a1b103cc0f52b3f5fa3f7740c6899eddb6fa3b1f16ba8051025b"
+          },
+          {
+            "file": "arm64-v8a/libssl_python.so",
+            "unstrippedBytes": 549488,
+            "unstrippedSha256": "5809bf914caa387c23b132a2a71e2edab0b2afd2fb92cae454a1a3ae296c6040",
+            "strippedBytes": 549488,
+            "strippedSha256": "5809bf914caa387c23b132a2a71e2edab0b2afd2fb92cae454a1a3ae296c6040"
+          },
+          {
+            "file": "arm64-v8a/libtexture2ddecoder.so",
+            "unstrippedBytes": 603056,
+            "unstrippedSha256": "cd75798a50a6750c1292202c3f3c42341ea751574c5e6a85eaed4ff6f3dd6e91",
+            "strippedBytes": 438840,
+            "strippedSha256": "097ed5ab5a997868ef9ab58aef4cd55b2c42c9d82186a3eb7f7d544d5a40247f"
+          }
+        ]
+      },
+      {
+        "abi": "x86_64",
+        "localDir": "local/refactor-artifacts/native-strip/x86_64",
+        "note": "AGP stripDebugSymbols 的**输入**原件（未剥离），作为符号归档；与最终 APK 内的同名二进制通过 strippedSha256 对应。",
+        "items": [
+          {
+            "file": "x86_64/libandroidx.graphics.path.so",
+            "unstrippedBytes": 10760,
+            "unstrippedSha256": "4e56c996f13670e70082658de7880c4020eabf4f25e43387f88ed78a713fc9f0",
+            "strippedBytes": 10760,
+            "strippedSha256": "4e56c996f13670e70082658de7880c4020eabf4f25e43387f88ed78a713fc9f0"
+          },
+          {
+            "file": "x86_64/libastcenc.so",
+            "unstrippedBytes": 1673240,
+            "unstrippedSha256": "324cb8feda8cb9522dd7f8a75b4068c5b7dc096d5231ba4947548edf8ce3aaca",
+            "strippedBytes": 536920,
+            "strippedSha256": "2668123be2e7e3fea1903ee9511efc37239532ae258116694bee319645a4d2b7"
+          },
+          {
+            "file": "x86_64/libchaquopy_java.so",
+            "unstrippedBytes": 158680,
+            "unstrippedSha256": "1089ccab0bf55282d56dbe30310f832abde3817b2fbcd60d5eca34e431548943",
+            "strippedBytes": 158680,
+            "strippedSha256": "2099838e971c53c3a1c6cbb3634db0b0c0822e08854fe5280ba7a1d3f621f8b6"
+          },
+          {
+            "file": "x86_64/libcrypto_chaquopy.so",
+            "unstrippedBytes": 3520,
+            "unstrippedSha256": "dfd935f455e3f9bc2684d15611c83783dd12b68f3f56e6cacd057923c0a7d919",
+            "strippedBytes": 3520,
+            "strippedSha256": "dfd935f455e3f9bc2684d15611c83783dd12b68f3f56e6cacd057923c0a7d919"
+          },
+          {
+            "file": "x86_64/libcrypto_python.so",
+            "unstrippedBytes": 2403072,
+            "unstrippedSha256": "b2d8ff33056ea5cbad57b8998dd94dc755ca83a6d19622a22b1fbde65ff936a1",
+            "strippedBytes": 2403072,
+            "strippedSha256": "b2d8ff33056ea5cbad57b8998dd94dc755ca83a6d19622a22b1fbde65ff936a1"
+          },
+          {
+            "file": "x86_64/libpython3.8.so",
+            "unstrippedBytes": 3158672,
+            "unstrippedSha256": "ad039a27539ab788e5f8a62ba7879b553d324558d2f81dab28bb2df863f7ffc6",
+            "strippedBytes": 3158672,
+            "strippedSha256": "ad039a27539ab788e5f8a62ba7879b553d324558d2f81dab28bb2df863f7ffc6"
+          },
+          {
+            "file": "x86_64/libsqlite3_chaquopy.so",
+            "unstrippedBytes": 3520,
+            "unstrippedSha256": "1c0156a81f5a3d840a252808d07be9b2bfc38704fca346e6f8bcdfefa02170ad",
+            "strippedBytes": 3520,
+            "strippedSha256": "1c0156a81f5a3d840a252808d07be9b2bfc38704fca346e6f8bcdfefa02170ad"
+          },
+          {
+            "file": "x86_64/libsqlite3_python.so",
+            "unstrippedBytes": 1168912,
+            "unstrippedSha256": "d29b8073bc98c7095b0ed13c9a11edb1ca3dee0832e57686a203adaf84ed1925",
+            "strippedBytes": 1168912,
+            "strippedSha256": "d29b8073bc98c7095b0ed13c9a11edb1ca3dee0832e57686a203adaf84ed1925"
+          },
+          {
+            "file": "x86_64/libssl_chaquopy.so",
+            "unstrippedBytes": 3504,
+            "unstrippedSha256": "9d8d8b7225df399276e6cd35e45d63435c836d01e603c28bd5aded3525b4fbd3",
+            "strippedBytes": 3504,
+            "strippedSha256": "9d8d8b7225df399276e6cd35e45d63435c836d01e603c28bd5aded3525b4fbd3"
+          },
+          {
+            "file": "x86_64/libssl_python.so",
+            "unstrippedBytes": 578112,
+            "unstrippedSha256": "c0414a623ee5ab039b39fe2e065fbceb9f130aa071b0873855b24c84725adba0",
+            "strippedBytes": 578112,
+            "strippedSha256": "c0414a623ee5ab039b39fe2e065fbceb9f130aa071b0873855b24c84725adba0"
+          },
+          {
+            "file": "x86_64/libtexture2ddecoder.so",
+            "unstrippedBytes": 563768,
+            "unstrippedSha256": "50e695b811e5ada33ceef564df0c4a174711cd718454f8309d115835125231c9",
+            "strippedBytes": 440104,
+            "strippedSha256": "389ba1eef69314bcdbb4ad3ac51342d88d9eb52efc89a598308a150781784fbb"
+          }
+        ]
+      }
+    ],
+    "notCovered": [
+      "libastcenc.so 仍是 4 KB 链接对齐（minLoadAlign=4096），16 KB 页兼容是独立问题，strip 不修链接对齐；登记见 native-strip.md",
+      "Chaquopy wheel 内的 .so 在 .imy 资产里、运行时解压，不走 lib/ 这条加载路径"
+    ]
   }
 }
