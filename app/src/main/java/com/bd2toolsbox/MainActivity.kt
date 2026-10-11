@@ -40,6 +40,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -290,6 +293,10 @@ class MainActivity : ComponentActivity() {
                     // T40：根容器透明，壁纸背景层在下面；页头等无底色区域能看到壁纸，
                     // 文字密集的内容区由内层不透明 Surface 负责可读性。
                     containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    // T46：内容区自己避让系统栏与刘海。以前只有 topBar 里的
+                    // statusBarsPadding()，内容区靠 Scaffold 的默认 padding 兜 ——
+                    // 刘海（displayCutout）与横屏时的侧边系统栏没被算进去。
+                    contentWindowInsets = WindowInsets.safeDrawing,
                     topBar = {
                         if (currentTab == 1) {
                             // 攻略页头部：只有标题与设置齿轮。齿轮与 Mods 页是同一个
@@ -614,7 +621,12 @@ class MainActivity : ComponentActivity() {
                         com.bd2toolsbox.ui.components.AppScreenSurface(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(padding),
+                                .padding(padding)
+                                // T46：软键盘弹出时把内容顶上去，否则底部的
+                                // 「添加账号」「提交」这类输入与按钮会被键盘盖住。
+                                // 用 imePadding 而不是 adjustResize：本 Activity 是
+                                // edge-to-edge，窗口不会自己缩，得由 insets 驱动。
+                                .imePadding(),
                             color = MaterialTheme.colorScheme.background
                         ) {
                             // T43：进行中的任务被收起后，这里给出**统一的重开入口**。
