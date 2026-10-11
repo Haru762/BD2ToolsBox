@@ -58,6 +58,7 @@ import com.bd2toolsbox.core.storage.LedgerRecord
 import com.bd2toolsbox.core.storage.LedgerWrite
 import com.bd2toolsbox.core.storage.ModSnapshotStore
 import com.bd2toolsbox.core.storage.OperationJournalStore
+import com.bd2toolsbox.core.storage.SafMediaExclusion
 import com.bd2toolsbox.core.storage.SettingsRepository
 import com.bd2toolsbox.core.storage.SharedPreferencesSettingsStore
 import com.bd2toolsbox.data.repository.RecoveryApplyResult
@@ -700,7 +701,25 @@ class MainViewModel @Inject constructor(
         _modSourceDirs.value = kept + uri
         persistModSourceDirs()
         rescanAllModSources()
+
+        // T62：给这个 MOD 专用目录放一个 `.nomedia`，否则解出来的贴图会进系统相册。
+        // 这是 SAF（content URI）路径 —— 以前只实现了普通目录（java.io.File）那一半，
+        // 用户通过目录选择器加的 MOD 目录**从来没有**被保护过。
+        // 混合用途根默认拒绝（往 BD2mods 这种根上放标记会连带影响别的东西）。
+        val exclusion = SafMediaExclusion.ensureMarker(context, uri)
+        SafMediaExclusion.message(exclusion)?.let { message ->
+            Log.w("MainViewModel", "媒体隔离：$message")
+            _mediaExclusionNotice.value = message
+        }
         return true
+    }
+
+    /** 媒体隔离标记未能建立时的告知；UI 消费后调 [clearMediaExclusionNotice]。 */
+    private val _mediaExclusionNotice = MutableStateFlow<String?>(null)
+    val mediaExclusionNotice: StateFlow<String?> = _mediaExclusionNotice.asStateFlow()
+
+    fun clearMediaExclusionNotice() {
+        _mediaExclusionNotice.value = null
     }
 
     /** 移除一个目录，并把它的持久权限一并放掉（不然会一直占着配额）。 */

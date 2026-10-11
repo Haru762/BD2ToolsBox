@@ -228,6 +228,12 @@ class MainActivity : ComponentActivity() {
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
+                            // T62：媒体隔离标记没建成时如实告知（混合用途根被拒、
+                            // 只读授权、provider 改写文件名等）。成功与「已存在」不出声。
+                            viewModel.mediaExclusionNotice.value?.let { notice ->
+                                Toast.makeText(this, notice, Toast.LENGTH_LONG).show()
+                                viewModel.clearMediaExclusionNotice()
+                            }
                         }
                     }
                 )
