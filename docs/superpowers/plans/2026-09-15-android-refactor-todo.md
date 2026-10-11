@@ -2072,6 +2072,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.AdaptiveAccessibilityTest' -Abi 'x
 
 - [ ] **T47 完成**
 
+**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/guides/render/GuideHtmlRenderer`（加载时注入幂等主题覆盖，旧缓存不删即正确，不改 Wiki 内容；含 `color-scheme`），`GuideScreen` 按主题传入；Spine 预览 `main.css` 加 `html[data-theme=light]` 变量、`preview_renderer.js` 读 `?theme=`、`SpinePreviewActivity` 按 `uiMode` 传参与 `showMessage` 同主题。JVM `GuideHtmlRendererTest` **7/7 PASS**、设备 `WebContentThemeTest` **6/6 PASS**（真实 WebView 读 `getComputedStyle`）；全量 JVM **694/0/0/0**。**主题切换端到端走查、Spine 明暗设备验证、TalkBack/旋转未做**，不勾 DONE。见 [T47 证据](../../refactor/evidence/T47.md)。
+
 **优先级：** P1　**前置：** T39、T29、T30、T46
 
 **文件范围（实施工作区）：**

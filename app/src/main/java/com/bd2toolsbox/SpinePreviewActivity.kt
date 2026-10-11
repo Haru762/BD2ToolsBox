@@ -1,6 +1,7 @@
 package com.bd2toolsbox
 
 import android.annotation.SuppressLint
+import android.content.res.Configuration
 import android.os.Bundle
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -75,19 +76,29 @@ class SpinePreviewActivity : ComponentActivity() {
         val skel = URLEncoder.encode(skelPath, "UTF-8")
         val atlas = URLEncoder.encode(atlasPath, "UTF-8")
         val rt = URLEncoder.encode("file://${runtimeFile.absolutePath}", "UTF-8")
+        // T47：预览控制层与原生容器共享同一明暗模式
         webView?.loadUrl(
-            "file:///android_asset/spine-viewer/preview.html?skel=$skel&atlas=$atlas&runtime=$rt"
+            "file:///android_asset/spine-viewer/preview.html" +
+                "?skel=$skel&atlas=$atlas&runtime=$rt&theme=${if (isDarkTheme()) "dark" else "light"}"
         )
     }
 
-    /** 运行时下载中的提示与失败原因都走这里。深色底与预览页背景一致、不闪白。 */
+    /** 当前是否深色主题（跟随系统/应用配置）。 */
+    private fun isDarkTheme(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+
+    /** 运行时下载中的提示与失败原因都走这里。底色与预览页当前主题一致、不闪白。 */
     private fun showMessage(text: String) {
         val safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        val dark = isDarkTheme()
+        val bg = if (dark) "#1a1a1a" else "#f7f5fa"
+        val fg = if (dark) "#ddd" else "#1d1b20"
         webView?.loadDataWithBaseURL(
             null,
             """
-            <html><body style="margin:0;background:#1a1a1a">
-            <div style="color:#ddd;font:14px/1.7 sans-serif;padding:24px;white-space:pre-wrap">$safe</div>
+            <html><body style="margin:0;background:$bg">
+            <div style="color:$fg;font:14px/1.7 sans-serif;padding:24px;white-space:pre-wrap">$safe</div>
             </body></html>
             """.trimIndent(),
             "text/html",

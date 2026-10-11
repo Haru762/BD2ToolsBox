@@ -290,6 +290,14 @@ function setupEventListeners() {
 // --- Main Loading Logic ---
 document.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
+
+    // T47：主题由 app 通过 ?theme=light|dark 传入；在渲染前先落到 <html data-theme>，
+    // 避免深色页面闪一下浅色底。不传时保持页面默认（深色）。
+    const theme = params.get('theme');
+    if (theme === 'light' || theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', theme);
+    }
+
     // Use decodeURIComponent to handle encoded file paths
     const skelPath = decodeURIComponent(params.get('skel') || '');
     const atlasPath = decodeURIComponent(params.get('atlas') || '');

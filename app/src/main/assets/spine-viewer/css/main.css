@@ -18,6 +18,28 @@
     --transition-speed: 0.2s;
 }
 
+/* T47：预览页跟随 app 的明暗主题。默认（未标注）保持原深色观感，
+   app 传 ?theme=light 时由 preview_renderer.js 把 data-theme 设成 light。
+   只换配色变量，不动动画协议、控件结构或 pixi-spine 的获取/分发策略。 */
+html[data-theme="light"] {
+    color-scheme: light;
+    --bg-color: #f7f5fa;
+    --surface-color: #ffffff;
+    --surface-color-hover: #ece6f0;
+    --primary-color: #4a6ea9;
+    --primary-color-hover: #3c5c90;
+    --text-color: #1d1b20;
+    --text-color-secondary: #605d64;
+    --border-color: #cac4d0;
+    --control-bg: #ece6f0;
+    --control-bg-hover: #e0dae4;
+    --success-color: #2e7d4f;
+}
+
+html[data-theme="dark"] {
+    color-scheme: dark;
+}
+
 * {
     margin: 0;
     padding: 0;

@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -53,6 +54,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.bd2toolsbox.data.model.GuideArticle
 import com.bd2toolsbox.data.model.GuideCategory
 import com.bd2toolsbox.di.rememberUiRepositories
+import com.bd2toolsbox.feature.guides.render.GuideHtmlRenderer
 import com.bd2toolsbox.ui.viewmodel.GuideViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -649,6 +651,9 @@ private fun GuideArticleViewer(
 ) {
     val context = LocalContext.current
     val bgColor = MaterialTheme.colorScheme.background
+    // T47：正文 HTML 缓存里写死浅色配色，深色主题下在**加载时**注入覆盖层，
+    // 旧缓存不用删即可正确展示。
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     var progress by remember { mutableFloatStateOf(1f) }
 
     val html = (state as? GuideViewModel.DetailState.Ready)?.detail?.html
@@ -758,7 +763,8 @@ private fun GuideArticleViewer(
                                     // base 给成 gamekee，正文里的 //cdn... 相对协议图片才能解析
                                     web.loadDataWithBaseURL(
                                         "https://www.gamekee.com/",
-                                        html, "text/html", "utf-8", null
+                                        GuideHtmlRenderer.render(html, dark),
+                                        "text/html", "utf-8", null
                                     )
                                 }
                             }
