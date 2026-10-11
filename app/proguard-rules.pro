@@ -13,12 +13,11 @@
 # Shizuku
 -keep class com.bd2toolsbox.service.ShizukuFileService { *; }
 
-# Gson: preserve generic signatures for TypeToken
--keepattributes Signature
--keep class com.google.gson.reflect.TypeToken { *; }
--keep class * extends com.google.gson.reflect.TypeToken
+# T35：App 已不再使用 Gson（序列化改 kotlinx.serialization，序列化器由编译器生成、
+# 直接引用属性，磁盘键名来自 @SerialName 字符串常量）。原先为 Gson 反射加的
+# TypeToken / Signature / RuntimeVisibleAnnotations 规则已移除。
 
-# Keep data model classes used with Gson serialization
+# Keep data model classes（磁盘格式守卫；T35 后不再依赖反射字段名，保留为纵深）
 -keep class com.bd2toolsbox.data.model.** { *; }
 
 # 装入账本与操作日志（T08）：DTO 的字段名就是磁盘格式的一部分。
@@ -80,4 +79,3 @@
 # 这条 -keepattributes 是纵深，不是唯一防线（`Signature` 那条已经在上头，这里补注解属性）。
 -keepclassmembers class com.bd2toolsbox.core.storage.ModSnapshotStore$SnapshotV1 { <fields>; }
 -keepclassmembers class com.bd2toolsbox.core.storage.ModSnapshotStore$LegacyObfuscatedSnapshot { <fields>; }
--keepattributes RuntimeVisibleAnnotations

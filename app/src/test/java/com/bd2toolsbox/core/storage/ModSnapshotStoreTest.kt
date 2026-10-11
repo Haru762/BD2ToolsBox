@@ -1,7 +1,11 @@
 package com.bd2toolsbox.core.storage
 
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -41,17 +45,16 @@ class ModSnapshotStoreTest {
 
     @Test
     fun jsonKeysArePreserved() {
-        // T10: Verify that SnapshotV1 serialization keeps standard keys (version, savedAt, mods, sourceDirs)
-        // and doesn't get minified into a/b/c pattern. In unit tests we can't test R8 directly,
-        // but we can ensure that the Gson serialization actually uses the correct @SerializedName.
-        val gson = com.google.gson.Gson()
+        // T10/T35: SnapshotV1 序列化必须保留规范键（version/savedAt/mods/sourceDirs），
+        // 不能退回 a/b/c 混淆形态。单测测不到 R8，但能钉住 @SerialName 的键名。
         val payload = ModSnapshotStore.SnapshotV1(
             version = 1,
             savedAt = 12345L,
             mods = emptyList(),
             sourceDirs = listOf("test")
         )
-        val json = gson.toJson(payload)
+        val json = Json { encodeDefaults = true; explicitNulls = false }
+            .encodeToString(ModSnapshotStore.SnapshotV1.serializer(), payload)
         assertTrue("JSON should contain version key: $json", json.contains("\"version\""))
         assertTrue("JSON should contain savedAt key: $json", json.contains("\"savedAt\""))
         assertTrue("JSON should contain mods key: $json", json.contains("\"mods\""))
@@ -217,14 +220,14 @@ class ModSnapshotStoreTest {
         val write = store.capture(loaded.entries, dirs)
         assertTrue(store.commit(write, dirs) is SnapshotCommit.Written)
 
-        val root = JsonParser.parseString(snapshotFile.readText()).asJsonObject
+        val root = Json.parseToJsonElement(snapshotFile.readText()) as JsonObject
         assertEquals(
             "迁移写入后顶层键必须是新格式",
             setOf("version", "savedAt", "mods", "sourceDirs"),
-            root.keySet()
+            root.keys
         )
         for (obfuscated in listOf("a", "b", "c")) {
-            assertFalse("迁移写入后不许有混淆键 '$obfuscated'", root.has(obfuscated))
+            assertFalse("迁移写入后不许有混淆键 '$obfuscated'", root.containsKey(obfuscated))
         }
     }
 
@@ -246,23 +249,23 @@ class ModSnapshotStoreTest {
         )
         assertTrue(store.commit(write, dirs) is SnapshotCommit.Written)
 
-        val root = JsonParser.parseString(snapshotFile.readText()).asJsonObject
+        val root = Json.parseToJsonElement(snapshotFile.readText()) as JsonObject
         assertEquals(
             "新格式的顶层键必须是规范名",
             setOf("version", "savedAt", "mods", "sourceDirs"),
-            root.keySet()
+            root.keys
         )
         // 逐条否定：这三个键在新文件里**一个都不许出现**。
         for (obfuscated in listOf("a", "b", "c")) {
-            assertFalse("新格式顶层不许出现混淆键 '$obfuscated'", root.has(obfuscated))
+            assertFalse("新格式顶层不许出现混淆键 '$obfuscated'", root.containsKey(obfuscated))
         }
 
         // 内层条目的键名也必须是规范名（ModInfo 的字段名），不能是 R8 产物。
-        val firstMod = root.getAsJsonArray("mods")[0].asJsonObject
-        assertTrue("mods[0] 必须带 'name'", firstMod.has("name"))
-        assertTrue("mods[0] 必须带 'uri'", firstMod.has("uri"))
-        assertTrue("mods[0] 必须带 'installState'", firstMod.has("installState"))
-        assertFalse("mods[0] 不许有混淆键 'a'", firstMod.has("a"))
+        val firstMod = (root["mods"] as JsonArray)[0] as JsonObject
+        assertTrue("mods[0] 必须带 'name'", firstMod.containsKey("name"))
+        assertTrue("mods[0] 必须带 'uri'", firstMod.containsKey("uri"))
+        assertTrue("mods[0] 必须带 'installState'", firstMod.containsKey("installState"))
+        assertFalse("mods[0] 不许有混淆键 'a'", firstMod.containsKey("a"))
     }
 
     /**
@@ -280,16 +283,16 @@ class ModSnapshotStoreTest {
         val write = store.capture(entries = emptyList(), sourceDirs = dirs)
         assertTrue(store.commit(write, dirs) is SnapshotCommit.Written)
 
-        val root = JsonParser.parseString(snapshotFile.readText()).asJsonObject
-        assertTrue("新格式必须写出 version", root.has("version"))
-        assertEquals(ModSnapshotStore.SCHEMA_VERSION, root.get("version").asInt)
+        val root = Json.parseToJsonElement(snapshotFile.readText()) as JsonObject
+        assertTrue("新格式必须写出 version", root.containsKey("version"))
+        assertEquals(ModSnapshotStore.SCHEMA_VERSION, (root["version"] as JsonPrimitive).content.toInt())
 
         // 真正被读：改成一个不认识的版本，读侧必须判 StaleVersion 而不是当空表或当旧格式。
-        val bumped = JsonObject().apply {
-            addProperty("version", ModSnapshotStore.SCHEMA_VERSION + 98)
-            add("mods", root.getAsJsonArray("mods"))
-            addProperty("savedAt", 0L)
-            add("sourceDirs", root.getAsJsonArray("sourceDirs"))
+        val bumped = buildJsonObject {
+            put("version", ModSnapshotStore.SCHEMA_VERSION + 98)
+            put("mods", root["mods"] as JsonArray)
+            put("savedAt", 0L)
+            put("sourceDirs", root["sourceDirs"] as JsonArray)
         }
         snapshotFile.writeText(bumped.toString())
         val loaded = newStore().load(dirs)

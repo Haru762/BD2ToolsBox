@@ -46,7 +46,6 @@ coreKtx = "1.17.0"
 lifecycle = "2.8.6"
 activityCompose = "1.9.2"
 documentfile = "1.1.0"
-gson = "2.11.0"
 junit = "4.13.2"
 mockk = "1.13.8"
 coroutinesTest = "1.7.3"
@@ -65,7 +64,6 @@ androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx"
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
-gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 shimmer-compose = { module = "com.valentinilk.shimmer:compose-shimmer", version.ref = "shimmer" }
 shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }

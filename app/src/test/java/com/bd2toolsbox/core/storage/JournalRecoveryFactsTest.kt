@@ -1,8 +1,11 @@
 package com.bd2toolsbox.core.storage
 
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -13,12 +16,32 @@ import java.io.File
 class JournalRecoveryFactsTest {
     @get:Rule val temp = TemporaryFolder()
 
-    private fun target(): JsonObject = JsonParser.parseString("""
+    private fun target(): JsonObject = Json.parseToJsonElement(
+        """
         {"bundleName":"bundle-a","hashDir":"hash-a","dataBytes":4,"modUris":["uri-a"],
          "recoveryFacts":{"formatVersion":1,"expectedContentSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "ledgerUpserts":[{"modUri":"uri-a","modName":"Alice","familyKey":"family-a",
           "snapshotTargetHash":"bundle-a","quality":"HD","usedAstc":true,"installedAt":123456789}]}}
-    """).asJsonObject
+        """.trimIndent()
+    ) as JsonObject
+
+    // kotlinx JsonObject 不可变：编辑 = 复制成 map 改完再包回。
+    private fun JsonObject.edit(block: MutableMap<String, JsonElement>.() -> Unit): JsonObject =
+        JsonObject(LinkedHashMap(this).apply(block))
+
+    private fun JsonObject.factsObj(): JsonObject = this["recoveryFacts"] as JsonObject
+    private fun JsonObject.recordObj(): JsonObject =
+        ((factsObj()["ledgerUpserts"] as JsonArray)[0]) as JsonObject
+
+    private fun JsonObject.editFacts(block: MutableMap<String, JsonElement>.() -> Unit): JsonObject {
+        val self = this
+        return edit { put("recoveryFacts", self.factsObj().edit(block)) }
+    }
+
+    private fun JsonObject.editRecord(block: MutableMap<String, JsonElement>.() -> Unit): JsonObject {
+        val self = this
+        return editFacts { put("ledgerUpserts", JsonArray(listOf(self.recordObj().edit(block)))) }
+    }
 
     private fun envelope(target: JsonObject): String = """
         {"schemaVersion":1,"entries":[{"operationId":"op-a","stage":"target_replacing",
@@ -31,8 +54,6 @@ class JournalRecoveryFactsTest {
         return file to OperationJournalStore(file)
     }
 
-    private fun facts(target: JsonObject): JsonObject = target.getAsJsonObject("recoveryFacts")
-    private fun record(target: JsonObject): JsonObject = facts(target).getAsJsonArray("ledgerUpserts")[0].asJsonObject
     private fun reject(target: JsonObject) {
         val (file, store) = fixture(target)
         val before = file.readBytes()
@@ -47,89 +68,94 @@ class JournalRecoveryFactsTest {
         val (file, store) = fixture(target)
         val loaded = store.read() as JournalRead.Loaded
         assertNull(store.append(loaded.entries.single().copy(stage = "target_replaced")))
-        val root = JsonParser.parseString(file.readText()).asJsonObject
-        val entries = root.getAsJsonArray("entries")
-        assertEquals(2, entries.size())
+        val root = Json.parseToJsonElement(file.readText()) as JsonObject
+        val entries = root["entries"] as JsonArray
+        assertEquals(2, entries.size)
         for (entry in entries) {
             assertEquals("Every captured ledger field and SHA must survive", target,
-                entry.asJsonObject.getAsJsonArray("targets")[0].asJsonObject)
+                ((entry as JsonObject)["targets"] as JsonArray)[0] as JsonObject)
         }
         assertTrue(OperationJournalStore(file).read() is JournalRead.Loaded)
     }
 
     @Test fun legacyWithoutRecoveryFactsRemainsReadableButHasNoContentEvidence() {
-        val t = target().apply { remove("recoveryFacts") }
+        val t = target().edit { remove("recoveryFacts") }
         val (_, store) = fixture(t)
         assertTrue(store.read() is JournalRead.Loaded)
         assertTrue(store.recoveryVerdict(emptyMap()) is OperationJournalStore.RecoveryVerdict.PendingReconciliation)
     }
 
     @Test fun explicitNullFactsAreLegacyAndStillPending() {
-        val t = target().apply { add("recoveryFacts", com.google.gson.JsonNull.INSTANCE) }
+        val t = target().edit { put("recoveryFacts", JsonNull) }
         val (_, store) = fixture(t)
         assertTrue(store.read() is JournalRead.Loaded)
         assertTrue(store.recoveryVerdict(emptyMap()) is OperationJournalStore.RecoveryVerdict.PendingReconciliation)
     }
 
     @Test fun invalidFactsShapeAndVersionAreRejected() {
-        reject(target().apply { addProperty("recoveryFacts", "not-object") })
-        reject(target().apply { facts(this).remove("formatVersion") })
+        reject(target().edit { put("recoveryFacts", JsonPrimitive("not-object")) })
+        reject(target().editFacts { remove("formatVersion") })
         for (version in listOf("0", "2", "1.5", "\"1\"", "true", "null")) {
-            reject(target().apply { facts(this).add("formatVersion", JsonParser.parseString(version)) })
+            reject(target().editFacts { put("formatVersion", Json.parseToJsonElement(version)) })
         }
     }
 
     @Test fun missingOrInvalidContentDigestIsRejected() {
-        reject(target().apply { facts(this).remove("expectedContentSha256") })
+        reject(target().editFacts { remove("expectedContentSha256") })
         for (sha in listOf("", "short", "A".repeat(64), "g".repeat(64))) {
-            reject(target().apply { facts(this).addProperty("expectedContentSha256", sha) })
+            reject(target().editFacts { put("expectedContentSha256", JsonPrimitive(sha)) })
         }
     }
 
-    @Test fun everyLedgerFieldIsRequiredRatherThanDefaultedByGson() {
+    @Test fun everyLedgerFieldIsRequiredRatherThanDefaulted() {
         for (field in listOf("modUri", "modName", "familyKey", "snapshotTargetHash", "quality", "usedAstc", "installedAt")) {
-            reject(target().apply { record(this).remove(field) })
+            reject(target().editRecord { remove(field) })
         }
     }
 
     @Test fun ledgerPrimitiveTypesMustNotBeCoerced() {
-        reject(target().apply { record(this).addProperty("modName", 12) })
-        reject(target().apply { record(this).addProperty("usedAstc", "true") })
-        reject(target().apply { record(this).addProperty("installedAt", "123") })
-        reject(target().apply { record(this).addProperty("installedAt", 1.5) })
-        reject(target().apply { record(this).addProperty("installedAt", -1) })
-        reject(target().apply { record(this).add("installedAt", JsonParser.parseString("9223372036854775808")) })
+        reject(target().editRecord { put("modName", JsonPrimitive(12)) })
+        reject(target().editRecord { put("usedAstc", JsonPrimitive("true")) })
+        reject(target().editRecord { put("installedAt", JsonPrimitive("123")) })
+        reject(target().editRecord { put("installedAt", JsonPrimitive(1.5)) })
+        reject(target().editRecord { put("installedAt", JsonPrimitive(-1)) })
+        reject(target().editRecord { put("installedAt", Json.parseToJsonElement("9223372036854775808")) })
     }
 
     @Test fun upsertsCannotBeAbsentEmptyNullOrDuplicate() {
-        reject(target().apply { facts(this).remove("ledgerUpserts") })
-        reject(target().apply { facts(this).add("ledgerUpserts", JsonArray()) })
-        reject(target().apply { facts(this).getAsJsonArray("ledgerUpserts").add(com.google.gson.JsonNull.INSTANCE) })
-        reject(target().apply { facts(this).getAsJsonArray("ledgerUpserts").add(record(this).deepCopy()) })
+        reject(target().editFacts { remove("ledgerUpserts") })
+        reject(target().editFacts { put("ledgerUpserts", JsonArray(emptyList())) })
+        reject(target().editFacts {
+            put("ledgerUpserts", JsonArray((this["ledgerUpserts"] as JsonArray) + JsonNull))
+        })
+        val base = target()
+        reject(base.editFacts {
+            put("ledgerUpserts", JsonArray((this["ledgerUpserts"] as JsonArray) + (this["ledgerUpserts"] as JsonArray)[0]))
+        })
     }
 
     @Test fun ledgerMustMatchTheExactTargetAndUriSet() {
-        reject(target().apply { record(this).addProperty("snapshotTargetHash", "bundle-other") })
-        reject(target().apply { record(this).addProperty("modUri", "uri-other") })
-        reject(target().apply { getAsJsonArray("modUris").add("uri-other") })
-        reject(target().apply { getAsJsonArray("modUris").add("uri-a") })
-        reject(target().apply { add("modUris", JsonArray()) })
+        reject(target().editRecord { put("snapshotTargetHash", JsonPrimitive("bundle-other")) })
+        reject(target().editRecord { put("modUri", JsonPrimitive("uri-other")) })
+        reject(target().edit { put("modUris", JsonArray((this["modUris"] as JsonArray) + JsonPrimitive("uri-other"))) })
+        reject(target().edit { put("modUris", JsonArray((this["modUris"] as JsonArray) + JsonPrimitive("uri-a"))) })
+        reject(target().edit { put("modUris", JsonArray(emptyList())) })
     }
 
     @Test fun recoverableTargetMustHaveSafeBundleAndHashDirectory() {
         for (field in listOf("bundleName", "hashDir")) {
             for (bad in listOf("", ".", "..", "../escape", "a/b", "a\\b", "C:", "bad\nname")) {
-                reject(target().apply { addProperty(field, bad) })
+                reject(target().edit { put(field, JsonPrimitive(bad)) })
             }
-            reject(target().apply { remove(field) })
+            reject(target().edit { remove(field) })
         }
     }
 
     @Test fun dataBytesMustBeAnExplicitNonnegativeInteger() {
-        reject(target().apply { remove("dataBytes") })
-        reject(target().apply { addProperty("dataBytes", -1) })
-        reject(target().apply { addProperty("dataBytes", "4") })
-        reject(target().apply { addProperty("dataBytes", 4.5) })
+        reject(target().edit { remove("dataBytes") })
+        reject(target().edit { put("dataBytes", JsonPrimitive(-1)) })
+        reject(target().edit { put("dataBytes", JsonPrimitive("4")) })
+        reject(target().edit { put("dataBytes", JsonPrimitive(4.5)) })
     }
 
     @Test fun corruptJournalCannotBeOverwrittenByAppend() {
@@ -171,16 +197,18 @@ class JournalRecoveryFactsTest {
     }
 
     @Test fun validMultipleUpsertsRoundTripEvenWhenUriOrderDiffers() {
-        val t = target().apply {
-            getAsJsonArray("modUris").add("uri-b")
-            val second = record(this).deepCopy().apply {
-                addProperty("modUri", "uri-b")
-                addProperty("modName", "Bob")
-                addProperty("usedAstc", false)
-            }
-            val first = record(this).deepCopy()
-            val list = JsonArray().apply { add(second); add(first) }
-            facts(this).add("ledgerUpserts", list)
+        val base = target()
+        val first = base.recordObj()
+        val second = first.edit {
+            put("modUri", JsonPrimitive("uri-b"))
+            put("modName", JsonPrimitive("Bob"))
+            put("usedAstc", JsonPrimitive(false))
+        }
+        val t = base.edit {
+            put("modUris", JsonArray((this["modUris"] as JsonArray) + JsonPrimitive("uri-b")))
+            put("recoveryFacts", base.factsObj().edit {
+                put("ledgerUpserts", JsonArray(listOf(second, first)))
+            })
         }
         val (file, store) = fixture(t)
         val entry = (store.read() as JournalRead.Loaded).entries.single()
@@ -193,11 +221,12 @@ class JournalRecoveryFactsTest {
 
     @Test fun explicitZeroAndLongMaxValuesAreValidNotMissingDefaults() {
         for (value in listOf(0L, Long.MAX_VALUE)) {
-            val t = target().apply {
-                addProperty("dataBytes", value)
-                record(this).addProperty("installedAt", value)
-                record(this).addProperty("usedAstc", false)
-            }
+            val t = target()
+                .edit { put("dataBytes", JsonPrimitive(value)) }
+                .editRecord {
+                    put("installedAt", JsonPrimitive(value))
+                    put("usedAstc", JsonPrimitive(false))
+                }
             val (_, store) = fixture(t)
             val entry = (store.read() as JournalRead.Loaded).entries.single()
             assertEquals(value, entry.targets.single().dataBytes)
@@ -235,9 +264,9 @@ class JournalRecoveryFactsTest {
 
     @Test fun emptyShaStaysIncompleteAndValidShaFromTempFileIsComplete() {
         // "empty sha" means no facts, simulating MainViewModel mapping to null facts
-        val targetWithoutSha = target().apply { remove("recoveryFacts") }
+        val targetWithoutSha = target().edit { remove("recoveryFacts") }
         val (_, storeIncomplete) = fixture(targetWithoutSha)
-        
+
         val loadedIncomplete = storeIncomplete.read() as JournalRead.Loaded
         val projectedIncomplete = JournalRecoveryProjection.project(loadedIncomplete.entries) as JournalRecoveryProjection.Result.Pending
         assertFalse("Target without recovery facts stays incomplete", projectedIncomplete.operations.single().hasCompleteFacts)
@@ -247,9 +276,7 @@ class JournalRecoveryFactsTest {
         data.writeBytes(byteArrayOf(1, 2, 3, 4, 5))
         val sha = StreamingDigest.sha256().digest(data)
 
-        val targetWithSha = target().apply {
-            facts(this).addProperty("expectedContentSha256", sha)
-        }
+        val targetWithSha = target().editFacts { put("expectedContentSha256", JsonPrimitive(sha)) }
         val (_, storeComplete) = fixture(targetWithSha)
 
         val loadedComplete = storeComplete.read() as JournalRead.Loaded

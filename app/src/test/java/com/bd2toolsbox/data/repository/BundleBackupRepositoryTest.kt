@@ -8,6 +8,12 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -149,8 +155,8 @@ class BundleBackupRepositoryTest {
         repo.saveBackup("b1k", "h1k", src, provenance)
 
         val text = repo.metaFile("b1k", "h1k").readText(Charsets.UTF_8)
-        val obj = com.google.gson.JsonParser.parseString(text).asJsonObject
-        val keys = obj.keySet()
+        val obj = Json.parseToJsonElement(text) as JsonObject
+        val keys = obj.keys
 
         assertEquals(
             "sidecar 的磁盘键集合必须恰好是约定的那组（多/少都说明格式变了，" +
@@ -186,13 +192,14 @@ class BundleBackupRepositoryTest {
             "b1n", "h1n", src,
             BackupProvenance(BaselineSource.GAME_DIR, catalogSize = 64),   // 三个可选项都是 null
         )
-        val obj = com.google.gson.JsonParser
-            .parseString(repo.metaFile("b1n", "h1n").readText(Charsets.UTF_8)).asJsonObject
-        assertEquals(BundleBackupRepository.META_KEYS, obj.keySet())
+        val obj = Json.parseToJsonElement(
+            repo.metaFile("b1n", "h1n").readText(Charsets.UTF_8)
+        ) as JsonObject
+        assertEquals(BundleBackupRepository.META_KEYS, obj.keys)
         // `null` 字面量确实写出来了（不是被省略）
-        assertTrue("anchoredInputSize 必须存在且为 null 字面量", obj.get("anchoredInputSize").isJsonNull)
-        assertTrue("catalogVersion 必须存在且为 null 字面量", obj.get("catalogVersion").isJsonNull)
-        assertTrue("quality 必须存在且为 null 字面量", obj.get("quality").isJsonNull)
+        assertTrue("anchoredInputSize 必须存在且为 null 字面量", obj["anchoredInputSize"] is JsonNull)
+        assertTrue("catalogVersion 必须存在且为 null 字面量", obj["catalogVersion"] is JsonNull)
+        assertTrue("quality 必须存在且为 null 字面量", obj["quality"] is JsonNull)
     }
 
     /**
@@ -211,14 +218,15 @@ class BundleBackupRepositoryTest {
         val src = srcFile(bytes(2048, 0x14))
         repo.saveBackup("b1r", "h1r", src, provenance)
         // 用真 sidecar 的**值**，但换成 R8 改名后的短键名（首版 release 包写出的形状）
-        val good = com.google.gson.JsonParser
-            .parseString(repo.metaFile("b1r", "h1r").readText(Charsets.UTF_8)).asJsonObject
-        val renamed = com.google.gson.JsonObject().apply {
-            addProperty("a", good.get("sha256").asString)
-            addProperty("b", good.get("size").asLong)
-            addProperty("c", good.get("source").asString)
-            addProperty("d", good.get("catalogVerified").asBoolean)
-            addProperty("schemaVersion", 1)      // 首版唯一用字面量读的那个键
+        val good = Json.parseToJsonElement(
+            repo.metaFile("b1r", "h1r").readText(Charsets.UTF_8)
+        ) as JsonObject
+        val renamed = buildJsonObject {
+            put("a", (good["sha256"] as JsonPrimitive).content)
+            put("b", (good["size"] as JsonPrimitive).content.toLong())
+            put("c", (good["source"] as JsonPrimitive).content)
+            put("d", (good["catalogVerified"] as JsonPrimitive).content.toBoolean())
+            put("schemaVersion", 1)      // 首版唯一用字面量读的那个键
         }
         repo.metaFile("b1r", "h1r").writeText(renamed.toString(), Charsets.UTF_8)
 
