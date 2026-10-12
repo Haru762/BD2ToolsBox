@@ -1,709 +1,789 @@
 {
-  "manifestVersion": 1,
-  "createdAt": "2026-09-15",
-  "createdByTask": "T01",
-  "sourceCommit": "b83c1c076e95942b317649273fba559d9d3af5ca",
-  "frozenByTask": "T03",
-  "frozenAt": "2026-09-15",
-  "note": "记录本地保全产物的类别、相对位置、字节、SHA-256、来源与归属。APK/mapping/符号/真实数据本身不提交（/local/ 已忽略）。未核对的字段如实标注，不猜测。T03 在 categories 之外追加 t03Freeze 块，冻结包身份、签名、条目级差异与体积口径；该块只记录实测值。",
-  "categories": [
-    {
-      "id": "historical-0.2.16",
-      "role": "历史 0.2.16 发布原件（T01 保全；T02 核对签名/构建身份；T03 冻结清单）",
-      "localDir": "local/refactor-artifacts/historical-0.2.16",
-      "gitTracked": false,
-      "items": [
-        {
-          "file": "app-arm64-v8a-release.apk",
-          "bytes": 34095289,
-          "sha256": "a52fa13909e7d4b8d79dd3b4d2ba4054693fdd9324c68fc850a0785bd713bee8",
-          "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
-          "version": "0.2.16",
-          "abi": "arm64-v8a",
-          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-          "sourceVerifiedAt": "2026-09-15"
-        },
-        {
-          "file": "app-x86_64-release.apk",
-          "bytes": 33947733,
-          "sha256": "6bfa355b40b5483feec1104d8a017b2bbdceeca6f1f1d2cc43ab30a718bb2321",
-          "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-x86_64-release.apk",
-          "version": "0.2.16",
-          "abi": "x86_64",
-          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-          "sourceVerifiedAt": "2026-09-15"
-        },
-        {
-          "file": "mapping.txt",
-          "bytes": 35649626,
-          "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
-          "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/mapping/release/mapping.txt",
-          "version": "0.2.16",
-          "abi": "通用（R8 mapping）",
-          "certFingerprint": "不适用",
-          "sourceVerifiedAt": "2026-09-15"
-        }
-      ]
-    },
-    {
-      "id": "rebuilt-original",
-      "role": "原工具链重建包（T02 生成后登记；不替代历史原件）",
-      "localDir": "local/refactor-artifacts/rebuilt-original",
-      "gitTracked": false,
-      "sourceCommit": "b83c1c076e95942b317649273fba559d9d3af5ca",
-      "buildEnvironment": {
-        "gradle": "8.9",
-        "agp": "8.4.1",
-        "kotlin": "1.9.0",
-        "chaquopy": "15.0.1",
-        "jdk": "17.0.12",
-        "buildPython": "3.11.9",
-        "targetPython": "3.8"
-      },
-      "items": [
-        {
-          "file": "app-arm64-v8a-release.apk",
-          "bytes": 34095289,
-          "sha256": "a2ce953b7379e72a4707a7b2d649f27f883dd027af9a89c63a6ed4eb0066cd7d",
-          "sourcePath": "app/build/outputs/apk/release/app-arm64-v8a-release.apk",
-          "version": "0.2.16",
-          "versionCode": 17,
-          "applicationId": "com.bd2toolsbox",
-          "abi": "arm64-v8a",
-          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-          "sourceVerifiedAt": "2026-09-15"
-        },
-        {
-          "file": "app-x86_64-release.apk",
-          "bytes": 33947733,
-          "sha256": "6e5e8c3b35bf55fe786ea0d3f4c124d9532d1f7cc5aba9d2cec534e80a5adbfc",
-          "sourcePath": "app/build/outputs/apk/release/app-x86_64-release.apk",
-          "version": "0.2.16",
-          "versionCode": 17,
-          "applicationId": "com.bd2toolsbox",
-          "abi": "x86_64",
-          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-          "sourceVerifiedAt": "2026-09-15"
-        },
-        {
-          "file": "app-universal-release.apk",
-          "bytes": 43565691,
-          "sha256": "c88873b27705780b6170db30ca1e958357e83086dd7a3a5433f398afc4f2c516",
-          "sourcePath": "app/build/outputs/apk/release/app-universal-release.apk",
-          "version": "0.2.16",
-          "versionCode": 17,
-          "applicationId": "com.bd2toolsbox",
-          "abi": "universal-diagnostic-only",
-          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-          "sourceVerifiedAt": "2026-09-15"
-        },
-        {
-          "file": "mapping.txt",
-          "bytes": 35649626,
-          "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
-          "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
-          "version": "0.2.16",
-          "versionCode": 17,
-          "abi": "universal (R8 mapping)",
-          "certFingerprint": "not-applicable",
-          "sourceVerifiedAt": "2026-09-15"
-        },
-        {
-          "file": "output-metadata.json",
-          "bytes": 1508,
-          "sha256": "12c18d660a9095ad7de2d57e21095f9ecb68db54b55837359a82eb8fae8bf157",
-          "sourcePath": "app/build/outputs/apk/release/output-metadata.json",
-          "version": "0.2.16",
-          "versionCode": 17,
-          "abi": "all-output-metadata",
-          "certFingerprint": "not-applicable",
-          "sourceVerifiedAt": "2026-09-15"
-        }
-      ]
-    },
-    {
-      "id": "pre-shrink",
-      "role": "本轮重构完成、尚未进行专项裁剪的 release，作为 T49-T54 的 A/B 优化基线（T48 登记；T38/T47 完成后冻结架构/许可/UI 的优化前输入）",
-      "localDir": "local/refactor-artifacts/pre-shrink",
-      "gitTracked": false,
-      "items": [
-        {
-          "file": "app-arm64-v8a-release.apk",
-          "bytes": 35146618,
-          "sha256": "28f39f7a1b0d73e35db6e792dadd001076f72ecb4184a3c01bec0c24d8fd490b",
-          "sourcePath": "D:/bd2 mod/worktrees/bdroid-android-refactor/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
-          "version": "0.2.16",
-          "versionCode": 17,
-          "abi": "arm64-v8a",
-          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-          "sourceVerifiedAt": "2026-10-11"
-        },
-        {
-          "file": "app-x86_64-release.apk",
-          "bytes": 35048281,
-          "sha256": "0c310c4df46c42893521db0762fdca7b9c8a4bb759dd694afc5d33ee3fdfdf52",
-          "sourcePath": "D:/bd2 mod/worktrees/bdroid-android-refactor/app/build/outputs/apk/release/app-x86_64-release.apk",
-          "version": "0.2.16",
-          "versionCode": 17,
-          "abi": "x86_64",
-          "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-          "sourceVerifiedAt": "2026-10-11"
-        },
-        {
-          "file": "mapping-arm64-v8a.txt",
-          "bytes": 43673152,
-          "sha256": "a9379cbb598d8fd656f198b49d764f750b14d59006d0f8b2fe060de1d72450a6",
-          "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
-          "note": "arm64-v8a 与 x86_64 共用同一份 R8 mapping（同一变体一次 R8）",
-          "sourceVerifiedAt": "2026-10-11"
-        },
-        {
-          "file": "mapping-x86_64.txt",
-          "bytes": 43673152,
-          "sha256": "a9379cbb598d8fd656f198b49d764f750b14d59006d0f8b2fe060de1d72450a6",
-          "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
-          "note": "与 mapping-arm64-v8a.txt 字节相同",
-          "sourceVerifiedAt": "2026-10-11"
-        }
-      ]
-    },
-    {
-      "id": "final",
-      "role": "最终交付与诊断材料（T51/T52/T61 登记）",
-      "localDir": "local/refactor-artifacts/final",
-      "gitTracked": false,
-      "items": []
-    }
-  ],
-  "t03Freeze": {
-    "task": "T03",
-    "date": "2026-09-15",
-    "sourceCommit": "03805d1be561112d3c0bf0914d6be1280dfffeab",
-    "evidence": "docs/refactor/evidence/T03.md",
-    "baselineData": "docs/refactor/evidence/baseline.json",
-    "fixtureManifest": "docs/refactor/fixture-manifest.json",
-    "tool": "tools/apk-baseline/run-t03-analysis.ps1",
-    "toolRun": "18 步全部 exit 0；classify_content.py 的退出码由四项**独立于分组循环**的判据决定（eocdEntryCount / localRegionAccounted / groupEntrySum / regression），已用两次反证证明其可失败（改坏分组谓词、篡改 EOCD 计数 → exit 1）；原「三项之和 = 总量」检查降级为 internalConsistency，只打印、不判定",
-    "rawOutputs": "local/refactor-artifacts/t03-apk-analysis/（忽略；22 个驱动产物记入 SHA256SUMS.txt，另 3 份手工产物 RUN.md / apksigner-verify.txt / device-measure.txt 中 2 份的哈希记在 RUN.md，RUN.md 自身不自哈希）",
-    "packageIdentity": {
-      "versionName": "0.2.16",
-      "versionCode": 17,
-      "applicationId": "com.bd2toolsbox",
-      "minSdk": 29,
-      "targetSdk": 34,
-      "verifiedVia": [
-        "aapt2",
-        "dumpsys"
-      ]
-    },
-    "signature": {
-      "schemes": {
-        "v1": false,
-        "v2": true,
-        "v3": false,
-        "v3.1": false,
-        "v4": false
-      },
-      "signerCount": 1,
-      "certDn": "C=US, O=Android, CN=Android Debug",
-      "certSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
-      "identicalAcross": [
-        "hist-arm64",
-        "hist-x64",
-        "reb-arm64",
-        "reb-x64",
-        "reb-universal"
-      ],
-      "verifiedVia": "apksigner verify --verbose --print-certs，五包各一次，退出码均 0",
-      "isReleaseSigning": false,
-      "note": "受控基线签名（本机标准调试 keystore），不是正式发布签名；正式发布签名仍未核验"
-    },
-    "entryLevel": {
-      "arm64-v8a": {
-        "entries": {
-          "historical": 189,
-          "rebuilt": 189
-        },
-        "identicalPayloads": 186,
-        "differingPayloads": 3,
-        "payloadBytes": {
-          "historical": 33840209,
-          "rebuilt": 33838637,
-          "delta": -1572
-        },
-        "localHeaderBytes": {
-          "historical": 232459,
-          "rebuilt": 234031,
-          "delta": 1572
-        },
-        "centralDirectoryBytes": 14407,
-        "signingBlockBytes": 8192,
-        "eocdBytes": 22,
-        "eocdByteIdentical": true,
-        "centralDirectoryDifferingRuns": 12,
-        "centralDirectoryDifferingBytes": 30,
-        "containerOverheadBytes": {
-          "historical": 255080,
-          "rebuilt": 256652
-        },
-        "structuralAccountingMatchesFileSize": true
-      },
-      "x86_64": {
-        "entries": {
-          "historical": 188,
-          "rebuilt": 188
-        },
-        "identicalPayloads": 185,
-        "differingPayloads": 3,
-        "payloadBytes": {
-          "historical": 33707681,
-          "rebuilt": 33706109,
-          "delta": -1572
-        },
-        "localHeaderBytes": {
-          "historical": 217531,
-          "rebuilt": 219103,
-          "delta": 1572
-        },
-        "centralDirectoryBytes": 14307,
-        "signingBlockBytes": 8192,
-        "eocdBytes": 22,
-        "eocdByteIdentical": true,
-        "centralDirectoryDifferingRuns": 12,
-        "centralDirectoryDifferingBytes": 30,
-        "containerOverheadBytes": {
-          "historical": 240052,
-          "rebuilt": 241624
-        },
-        "structuralAccountingMatchesFileSize": true
-      },
-      "universal": {
-        "entries": 195,
-        "role": "诊断用 universal 包，无历史对应件，仅记录分类与总量",
-        "payloadBytes": 43263205,
-        "containerOverheadBytes": 302486
-      }
-    },
-    "differingEntries": [
-      {
-        "entry": "META-INF/version-control-info.textproto",
-        "kind": "构建机 git 元数据",
-        "historical": {
-          "bytes": 120,
-          "sha256": "4afb6cc42bda673c95415ce06fc60caf3704b0fd9ca4892573cf0d32f91f8ed3"
-        },
-        "rebuilt": {
-          "bytes": 42,
-          "sha256": "577a29846b9d2ab88f013ed5ce0cc75355d4cfbef540ef637c49c95d233c236f"
-        }
-      },
-      {
-        "entry": "assets/chaquopy/app.imy",
-        "kind": "Chaquopy 导入归档",
-        "historical": {
-          "bytes": 6326542,
-          "sha256": "29aa5af92972e3d06b46b88e3a30dca4a3257e0e3372b4eba12b23134df82096",
-          "innerEntries": 164
-        },
-        "rebuilt": {
-          "bytes": 6325044,
-          "sha256": "3495672d06bb7bcef372ffa81a69c0aa7b1932159ed19fd05c0591ca654b8ca6",
-          "innerEntries": 152
-        }
-      },
-      {
-        "entry": "assets/chaquopy/build.json",
-        "kind": "Chaquopy 构建清单",
-        "historical": {
-          "bytes": 2927,
-          "sha256": "e8312940a16dc11bdf9fe66f47a60c00078dc8bd5c0f6dd8ef6371ec04307c1b"
-        },
-        "rebuilt": {
-          "bytes": 2927,
-          "sha256": "35db8fcfb6a321e6a9ff4e4e55f8fff7b62c482b811807bf55f32e9416574f1d"
-        }
-      }
-    ],
-    "appImyInternals": {
-      "tool": "tools/apk-baseline/imy_diff.py",
-      "historicalOnlyEntries": 12,
-      "historicalOnlyEntryKind": "空 __pycache__/ 目录条目",
-      "sharedEntries": 152,
-      "differingCrc": 16,
-      "differingAfterCrlfNormalization": 0,
-      "normalization": "\\r\\n -> \\n",
-      "conclusion": "app.imy 内部差异全部是构建环境差异（LF/CRLF 与 __pycache__ 是否存在），无一处 Python 源码改动"
-    },
-    "signingBlockPairs": {
-      "blockTotalBytes": 8192,
-      "sizeField": 8184,
-      "pairs": [
-        {
-          "id": "0x7109871A",
-          "name": "v2 signature scheme block",
-          "valueLen": 1390,
-          "consumedBytes": 1402,
-          "identicalAcrossPackages": false
-        },
-        {
-          "id": "0x504B4453",
-          "name": "dependency block (PKDS)",
-          "valueLen": 4892,
-          "consumedBytes": 4904,
-          "identicalAcrossPackages": false
-        },
-        {
-          "id": "0x42726577",
-          "name": "verity padding block (Brew)",
-          "valueLen": 1842,
-          "consumedBytes": 1854,
-          "identicalAcrossPackages": true,
-          "sha256": "b78dd55d8821fc1609fd3c28b264bf24cae1bce00a704f42a721fde7b471d224"
-        }
-      ],
-      "blockPaddingBytes": 24
-    },
-    "byteEquivalence": {
-      "classesDex": {
-        "bytes": 2877404,
-        "sha256": "5e6403de77cc3eb9e76af29a6e49aae981f6a9baba2cdc7174e028132a4013b6",
-        "historicalEqualsRebuilt": true
-      },
-      "mappingTxt": {
-        "bytes": 35649626,
-        "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
-        "historicalEqualsRebuilt": true
-      },
-      "note": "R8 产物（classes.dex）与 mapping 在历史包与重建包中逐字节相同"
-    },
-    "attribution": {
-      "conclusion": "整包 SHA-256 不同的原因是构建环境差异，不是源码或 R8 输出差异",
-      "mechanism": "三条条目共使内含载荷缩小 1572 字节（app.imy -1498、version-control-info -73、build.json -1）；zipalign 的全零 local-extra 对齐填充恰好增加 1572 字节，精确补偿，因此 local region / Signing Block / Central Directory / EOCD 的 offset 与 size 全部不变、EOCD 逐字节相同、文件长度相同，仅内部哈希与整包 SHA-256 改变",
-      "constraint": "不得把历史/重建的差异归因于 R8",
-      "stillUnresolved": "同源码同工具链得到不同字节本身是事实；是否需要在 G2 收敛留给工具链任务评估"
-    },
-    "classification": {
-      "tool": "tools/apk-baseline/classify_content.py",
-      "method": "独立于 dump_entries.py 手工解析器，改用标准库 zipfile；压缩字节口径为「中央目录记录的压缩后载荷字节」",
-      "selfCheck": "五个包的分组自检（条目数、压缩字节、原始字节三项之和 = 实测总量）全部通过，退出码 0",
-      "groups": [
-        "DEX",
-        "Android resources",
-        "Chaquopy",
-        "native",
-        "WebView assets",
-        "Other assets",
-        "Manifest/metadata/other"
-      ]
-    },
-    "deviceMeasurement": {
-      "device": "127.0.0.1:16384（MuMu，x86_64 / API 32 / Android 12）",
-      "mode": "只读",
-      "installedAppBytesKiB": 33292,
-      "appDataBytesKiB": 173784,
-      "appDataBreakdownKiB": {
-        "files/": 154228,
-        "cache/": 15156,
-        "app_webview/": 4356,
-        "shared_prefs/": 24,
-        "app_dxmaker_cache/": 4,
-        "app_textures/": 4,
-        "code_cache/": 4
-      },
-      "runtimeMemory": "NOT_MEASURED",
-      "runtimeMemoryReason": "测量当时 App 进程未运行（pidof 无输出），且本项不做安装/启动/清理等设备状态改动",
-      "comparability": "全部为 x86_64 模拟器口径，与真实 arm64 真机不可比"
-    },
-    "notCovered": [
-      "arm64-v8a 真机验收（MuMu 的 abilist 含 arm64-v8a 但为转译）",
-      "正式发布签名",
-      "历史包 → 重建包的覆盖安装与数据保留",
-      "真实设备的安装占用与运行内存",
-      "同源重建的字节可复现性"
-    ]
-  },
-  "localTestInputs": [
-    {
-      "file": "local/refactor-inputs/catalog-alpha.json",
-      "bytes": 63045832,
-      "sha256": "98fc0a1e47552116c6398bd7656b87b451adfcd97f5b3de7ebe5428314f10f3f",
-      "sourcePath": "D:/bd2 mod/测试用/com.neowizgames.game.browndust2/files/com.unity.addressables/catalog_alpha.json",
-      "purpose": "test_resolution_catalog_fallback.py 的外部真实 catalog 输入（T04 改为经 BD2_TEST_CATALOG 提供路径）",
-      "gitTracked": false,
-      "sourceVerifiedAt": "2026-09-15"
-    },
-    {
-      "file": "local/refactor-inputs/wiki-v2-detail-2238.source.json",
-      "bytes": 76902,
-      "sha256": "d8de5897bb5a4bfbb78d0bef111dba4c94fa8c1cf1d645869110a60fe4f4a9e6",
-      "sourcePath": "D:/bd2 mod/_大杂烩工作区/wiki-v2-detail-2238.json",
-      "purpose": "GamekeeBattleV2Renderer 测试的真实接口样本源件；T04 从它派生脱敏 classpath 夹具（派生夹具记录自己的哈希）",
-      "gitTracked": false,
-      "sourceVerifiedAt": "2026-09-15"
-    }
-  ],
-  "t48Freeze": {
-    "task": "T48",
-    "date": "2026-10-11",
-    "sourceCommit": "affeee3",
-    "evidence": "docs/refactor/evidence/T48.md",
-    "tool": "tools/audit_apk_size.py",
-    "toolRun": [
-      {
-        "apk": "local/refactor-artifacts/pre-shrink/app-arm64-v8a-release.apk",
-        "output": "docs/refactor/evidence/apk-before-arm64.json",
-        "sha256": "9df20d4791d3eb038237c927572ef9659a1e07f53fdb8625f809f3f56f9f4e1b",
-        "exitCode": 0
-      },
-      {
-        "apk": "local/refactor-artifacts/pre-shrink/app-x86_64-release.apk",
-        "output": "docs/refactor/evidence/apk-before-x64.json",
-        "sha256": "dcdd13898d335950b1788632c45f4c8ad59b6f8aaff5da156c80a50a0dd93d21",
-        "exitCode": 0
-      }
-    ],
-    "packageIdentity": {
-      "applicationId": "com.bd2toolsbox",
-      "versionName": "0.2.16",
-      "versionCode": 17,
-      "buildType": "release",
-      "minified": true,
-      "signedWith": "debug keystore (本地受控签名)"
-    },
-    "signature": {
-      "certSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1"
-    },
-    "sizeBasis": "ZIP compress_size（每类在 APK 内真实占字节）；MiB = 1024*1024；分类字节 + containerOverhead == APK 文件大小（脚本自校验）",
-    "notCovered": [
-      "未与 0.2.16 历史基线做逐项对照（本轮只冻结优化前输入）",
-      "未验证运行时行为；本工具只读 ZIP/ELF 头，不执行任何 APK 代码",
-      "arm64/x86_64 之外的 universal APK 未纳入本轮 A/B 基线"
-    ]
-  },
-  "t51NativeSymbols": {
-    "task": "T51",
-    "date": "2026-10-11",
-    "sourceCommit": null,
-    "evidence": "docs/refactor/evidence/native-strip.md",
-    "tool": "tools/audit_apk_size.py（nativeLibraries / nativeDebugBytes）",
-    "ndkVersion": "26.3.11579264",
-    "stripFlow": "AGP :app:strip<Flavor>ReleaseDebugSymbols（NDK llvm-strip），输入 = merged_native_libs，输出 = stripped_native_libs → APK",
+    "manifestVersion": 1,
+    "createdAt": "2026-09-15",
+    "createdByTask": "T01",
+    "sourceCommit": "b83c1c076e95942b317649273fba559d9d3af5ca",
+    "frozenByTask": "T03",
+    "frozenAt": "2026-09-15",
+    "note": "记录本地保全产物的类别、相对位置、字节、SHA-256、来源与归属。APK/mapping/符号/真实数据本身不提交（/local/ 已忽略）。未核对的字段如实标注，不猜测。T03 在 categories 之外追加 t03Freeze 块，冻结包身份、签名、条目级差异与体积口径；该块只记录实测值。",
     "categories": [
-      {
-        "abi": "arm64-v8a",
-        "localDir": "local/refactor-artifacts/native-strip/arm64-v8a",
-        "note": "AGP stripDebugSymbols 的**输入**原件（未剥离），作为符号归档；与最终 APK 内的同名二进制通过 strippedSha256 对应。",
-        "items": [
-          {
-            "file": "arm64-v8a/libandroidx.graphics.path.so",
-            "unstrippedBytes": 10096,
-            "unstrippedSha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
-            "strippedBytes": 10096,
-            "strippedSha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6"
-          },
-          {
-            "file": "arm64-v8a/libastcenc.so",
-            "unstrippedBytes": 1713680,
-            "unstrippedSha256": "a85cbffeefa457515e400933e2f9da12d0a8602c4ffcdc4ef1af470e93da8628",
-            "strippedBytes": 521776,
-            "strippedSha256": "089506fd9e50094f9340199ec4632b50bd411e55458a987b2c6a0777c467e352"
-          },
-          {
-            "file": "arm64-v8a/libchaquopy_java.so",
-            "unstrippedBytes": 159824,
-            "unstrippedSha256": "67c4aed3e41ce3c94e8bf77ae0951ab0b506cfe90464e25b99a01bf3c5683e24",
-            "strippedBytes": 159824,
-            "strippedSha256": "9819a4053b67fe76340ad3df24c15500a9ba4c73a7d4d0855737f7b076437c46"
-          },
-          {
-            "file": "arm64-v8a/libcrypto_chaquopy.so",
-            "unstrippedBytes": 3784,
-            "unstrippedSha256": "e316322aafee29c518084f478c1f84fb6048dc489dd5aad8d0822fbece416483",
-            "strippedBytes": 3784,
-            "strippedSha256": "e316322aafee29c518084f478c1f84fb6048dc489dd5aad8d0822fbece416483"
-          },
-          {
-            "file": "arm64-v8a/libcrypto_python.so",
-            "unstrippedBytes": 2355168,
-            "unstrippedSha256": "cf0f9e1b740c069f0e9bf54bb3f9f01c651cd26cb74117f934265ab81a9133fa",
-            "strippedBytes": 2355168,
-            "strippedSha256": "cf0f9e1b740c069f0e9bf54bb3f9f01c651cd26cb74117f934265ab81a9133fa"
-          },
-          {
-            "file": "arm64-v8a/libpython3.8.so",
-            "unstrippedBytes": 3255616,
-            "unstrippedSha256": "7efc4a7b42996979755cb007ae62573b24664b7d7c37780c692e251a7b364671",
-            "strippedBytes": 3255616,
-            "strippedSha256": "7efc4a7b42996979755cb007ae62573b24664b7d7c37780c692e251a7b364671"
-          },
-          {
-            "file": "arm64-v8a/libsqlite3_chaquopy.so",
-            "unstrippedBytes": 3784,
-            "unstrippedSha256": "626ef9b3e6eb661df9513f7f79f6a0d197bcfb0b43f813663ed9d5e7fcace172",
-            "strippedBytes": 3784,
-            "strippedSha256": "626ef9b3e6eb661df9513f7f79f6a0d197bcfb0b43f813663ed9d5e7fcace172"
-          },
-          {
-            "file": "arm64-v8a/libsqlite3_python.so",
-            "unstrippedBytes": 1178920,
-            "unstrippedSha256": "fa355dda67c86b62f67026b7b5a8ec17732ee30e9e8280b86362b4e2a886548b",
-            "strippedBytes": 1178920,
-            "strippedSha256": "fa355dda67c86b62f67026b7b5a8ec17732ee30e9e8280b86362b4e2a886548b"
-          },
-          {
-            "file": "arm64-v8a/libssl_chaquopy.so",
-            "unstrippedBytes": 3768,
-            "unstrippedSha256": "70b94a18ae17a1b103cc0f52b3f5fa3f7740c6899eddb6fa3b1f16ba8051025b",
-            "strippedBytes": 3768,
-            "strippedSha256": "70b94a18ae17a1b103cc0f52b3f5fa3f7740c6899eddb6fa3b1f16ba8051025b"
-          },
-          {
-            "file": "arm64-v8a/libssl_python.so",
-            "unstrippedBytes": 549488,
-            "unstrippedSha256": "5809bf914caa387c23b132a2a71e2edab0b2afd2fb92cae454a1a3ae296c6040",
-            "strippedBytes": 549488,
-            "strippedSha256": "5809bf914caa387c23b132a2a71e2edab0b2afd2fb92cae454a1a3ae296c6040"
-          },
-          {
-            "file": "arm64-v8a/libtexture2ddecoder.so",
-            "unstrippedBytes": 603056,
-            "unstrippedSha256": "cd75798a50a6750c1292202c3f3c42341ea751574c5e6a85eaed4ff6f3dd6e91",
-            "strippedBytes": 438840,
-            "strippedSha256": "097ed5ab5a997868ef9ab58aef4cd55b2c42c9d82186a3eb7f7d544d5a40247f"
-          }
-        ]
-      },
-      {
-        "abi": "x86_64",
-        "localDir": "local/refactor-artifacts/native-strip/x86_64",
-        "note": "AGP stripDebugSymbols 的**输入**原件（未剥离），作为符号归档；与最终 APK 内的同名二进制通过 strippedSha256 对应。",
-        "items": [
-          {
-            "file": "x86_64/libandroidx.graphics.path.so",
-            "unstrippedBytes": 10760,
-            "unstrippedSha256": "4e56c996f13670e70082658de7880c4020eabf4f25e43387f88ed78a713fc9f0",
-            "strippedBytes": 10760,
-            "strippedSha256": "4e56c996f13670e70082658de7880c4020eabf4f25e43387f88ed78a713fc9f0"
-          },
-          {
-            "file": "x86_64/libastcenc.so",
-            "unstrippedBytes": 1673240,
-            "unstrippedSha256": "324cb8feda8cb9522dd7f8a75b4068c5b7dc096d5231ba4947548edf8ce3aaca",
-            "strippedBytes": 536920,
-            "strippedSha256": "2668123be2e7e3fea1903ee9511efc37239532ae258116694bee319645a4d2b7"
-          },
-          {
-            "file": "x86_64/libchaquopy_java.so",
-            "unstrippedBytes": 158680,
-            "unstrippedSha256": "1089ccab0bf55282d56dbe30310f832abde3817b2fbcd60d5eca34e431548943",
-            "strippedBytes": 158680,
-            "strippedSha256": "2099838e971c53c3a1c6cbb3634db0b0c0822e08854fe5280ba7a1d3f621f8b6"
-          },
-          {
-            "file": "x86_64/libcrypto_chaquopy.so",
-            "unstrippedBytes": 3520,
-            "unstrippedSha256": "dfd935f455e3f9bc2684d15611c83783dd12b68f3f56e6cacd057923c0a7d919",
-            "strippedBytes": 3520,
-            "strippedSha256": "dfd935f455e3f9bc2684d15611c83783dd12b68f3f56e6cacd057923c0a7d919"
-          },
-          {
-            "file": "x86_64/libcrypto_python.so",
-            "unstrippedBytes": 2403072,
-            "unstrippedSha256": "b2d8ff33056ea5cbad57b8998dd94dc755ca83a6d19622a22b1fbde65ff936a1",
-            "strippedBytes": 2403072,
-            "strippedSha256": "b2d8ff33056ea5cbad57b8998dd94dc755ca83a6d19622a22b1fbde65ff936a1"
-          },
-          {
-            "file": "x86_64/libpython3.8.so",
-            "unstrippedBytes": 3158672,
-            "unstrippedSha256": "ad039a27539ab788e5f8a62ba7879b553d324558d2f81dab28bb2df863f7ffc6",
-            "strippedBytes": 3158672,
-            "strippedSha256": "ad039a27539ab788e5f8a62ba7879b553d324558d2f81dab28bb2df863f7ffc6"
-          },
-          {
-            "file": "x86_64/libsqlite3_chaquopy.so",
-            "unstrippedBytes": 3520,
-            "unstrippedSha256": "1c0156a81f5a3d840a252808d07be9b2bfc38704fca346e6f8bcdfefa02170ad",
-            "strippedBytes": 3520,
-            "strippedSha256": "1c0156a81f5a3d840a252808d07be9b2bfc38704fca346e6f8bcdfefa02170ad"
-          },
-          {
-            "file": "x86_64/libsqlite3_python.so",
-            "unstrippedBytes": 1168912,
-            "unstrippedSha256": "d29b8073bc98c7095b0ed13c9a11edb1ca3dee0832e57686a203adaf84ed1925",
-            "strippedBytes": 1168912,
-            "strippedSha256": "d29b8073bc98c7095b0ed13c9a11edb1ca3dee0832e57686a203adaf84ed1925"
-          },
-          {
-            "file": "x86_64/libssl_chaquopy.so",
-            "unstrippedBytes": 3504,
-            "unstrippedSha256": "9d8d8b7225df399276e6cd35e45d63435c836d01e603c28bd5aded3525b4fbd3",
-            "strippedBytes": 3504,
-            "strippedSha256": "9d8d8b7225df399276e6cd35e45d63435c836d01e603c28bd5aded3525b4fbd3"
-          },
-          {
-            "file": "x86_64/libssl_python.so",
-            "unstrippedBytes": 578112,
-            "unstrippedSha256": "c0414a623ee5ab039b39fe2e065fbceb9f130aa071b0873855b24c84725adba0",
-            "strippedBytes": 578112,
-            "strippedSha256": "c0414a623ee5ab039b39fe2e065fbceb9f130aa071b0873855b24c84725adba0"
-          },
-          {
-            "file": "x86_64/libtexture2ddecoder.so",
-            "unstrippedBytes": 563768,
-            "unstrippedSha256": "50e695b811e5ada33ceef564df0c4a174711cd718454f8309d115835125231c9",
-            "strippedBytes": 440104,
-            "strippedSha256": "389ba1eef69314bcdbb4ad3ac51342d88d9eb52efc89a598308a150781784fbb"
-          }
-        ]
-      }
+        {
+            "id": "historical-0.2.16",
+            "role": "历史 0.2.16 发布原件（T01 保全；T02 核对签名/构建身份；T03 冻结清单）",
+            "localDir": "local/refactor-artifacts/historical-0.2.16",
+            "gitTracked": false,
+            "items": [
+                {
+                    "file": "app-arm64-v8a-release.apk",
+                    "bytes": 34095289,
+                    "sha256": "a52fa13909e7d4b8d79dd3b4d2ba4054693fdd9324c68fc850a0785bd713bee8",
+                    "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+                    "version": "0.2.16",
+                    "abi": "arm64-v8a",
+                    "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                    "sourceVerifiedAt": "2026-09-15"
+                },
+                {
+                    "file": "app-x86_64-release.apk",
+                    "bytes": 33947733,
+                    "sha256": "6bfa355b40b5483feec1104d8a017b2bbdceeca6f1f1d2cc43ab30a718bb2321",
+                    "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/apk/release/app-x86_64-release.apk",
+                    "version": "0.2.16",
+                    "abi": "x86_64",
+                    "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                    "sourceVerifiedAt": "2026-09-15"
+                },
+                {
+                    "file": "mapping.txt",
+                    "bytes": 35649626,
+                    "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+                    "sourcePath": "D:/bd2 mod/bdroid_src/app/build/outputs/mapping/release/mapping.txt",
+                    "version": "0.2.16",
+                    "abi": "通用（R8 mapping）",
+                    "certFingerprint": "不适用",
+                    "sourceVerifiedAt": "2026-09-15"
+                }
+            ]
+        },
+        {
+            "id": "rebuilt-original",
+            "role": "原工具链重建包（T02 生成后登记；不替代历史原件）",
+            "localDir": "local/refactor-artifacts/rebuilt-original",
+            "gitTracked": false,
+            "sourceCommit": "b83c1c076e95942b317649273fba559d9d3af5ca",
+            "buildEnvironment": {
+                "gradle": "8.9",
+                "agp": "8.4.1",
+                "kotlin": "1.9.0",
+                "chaquopy": "15.0.1",
+                "jdk": "17.0.12",
+                "buildPython": "3.11.9",
+                "targetPython": "3.8"
+            },
+            "items": [
+                {
+                    "file": "app-arm64-v8a-release.apk",
+                    "bytes": 34095289,
+                    "sha256": "a2ce953b7379e72a4707a7b2d649f27f883dd027af9a89c63a6ed4eb0066cd7d",
+                    "sourcePath": "app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+                    "version": "0.2.16",
+                    "versionCode": 17,
+                    "applicationId": "com.bd2toolsbox",
+                    "abi": "arm64-v8a",
+                    "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                    "sourceVerifiedAt": "2026-09-15"
+                },
+                {
+                    "file": "app-x86_64-release.apk",
+                    "bytes": 33947733,
+                    "sha256": "6e5e8c3b35bf55fe786ea0d3f4c124d9532d1f7cc5aba9d2cec534e80a5adbfc",
+                    "sourcePath": "app/build/outputs/apk/release/app-x86_64-release.apk",
+                    "version": "0.2.16",
+                    "versionCode": 17,
+                    "applicationId": "com.bd2toolsbox",
+                    "abi": "x86_64",
+                    "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                    "sourceVerifiedAt": "2026-09-15"
+                },
+                {
+                    "file": "app-universal-release.apk",
+                    "bytes": 43565691,
+                    "sha256": "c88873b27705780b6170db30ca1e958357e83086dd7a3a5433f398afc4f2c516",
+                    "sourcePath": "app/build/outputs/apk/release/app-universal-release.apk",
+                    "version": "0.2.16",
+                    "versionCode": 17,
+                    "applicationId": "com.bd2toolsbox",
+                    "abi": "universal-diagnostic-only",
+                    "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                    "sourceVerifiedAt": "2026-09-15"
+                },
+                {
+                    "file": "mapping.txt",
+                    "bytes": 35649626,
+                    "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+                    "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
+                    "version": "0.2.16",
+                    "versionCode": 17,
+                    "abi": "universal (R8 mapping)",
+                    "certFingerprint": "not-applicable",
+                    "sourceVerifiedAt": "2026-09-15"
+                },
+                {
+                    "file": "output-metadata.json",
+                    "bytes": 1508,
+                    "sha256": "12c18d660a9095ad7de2d57e21095f9ecb68db54b55837359a82eb8fae8bf157",
+                    "sourcePath": "app/build/outputs/apk/release/output-metadata.json",
+                    "version": "0.2.16",
+                    "versionCode": 17,
+                    "abi": "all-output-metadata",
+                    "certFingerprint": "not-applicable",
+                    "sourceVerifiedAt": "2026-09-15"
+                }
+            ]
+        },
+        {
+            "id": "pre-shrink",
+            "role": "本轮重构完成、尚未进行专项裁剪的 release，作为 T49-T54 的 A/B 优化基线（T48 登记；T38/T47 完成后冻结架构/许可/UI 的优化前输入）",
+            "localDir": "local/refactor-artifacts/pre-shrink",
+            "gitTracked": false,
+            "items": [
+                {
+                    "file": "app-arm64-v8a-release.apk",
+                    "bytes": 35146618,
+                    "sha256": "28f39f7a1b0d73e35db6e792dadd001076f72ecb4184a3c01bec0c24d8fd490b",
+                    "sourcePath": "D:/bd2 mod/worktrees/bdroid-android-refactor/app/build/outputs/apk/release/app-arm64-v8a-release.apk",
+                    "version": "0.2.16",
+                    "versionCode": 17,
+                    "abi": "arm64-v8a",
+                    "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                    "sourceVerifiedAt": "2026-10-11"
+                },
+                {
+                    "file": "app-x86_64-release.apk",
+                    "bytes": 35048281,
+                    "sha256": "0c310c4df46c42893521db0762fdca7b9c8a4bb759dd694afc5d33ee3fdfdf52",
+                    "sourcePath": "D:/bd2 mod/worktrees/bdroid-android-refactor/app/build/outputs/apk/release/app-x86_64-release.apk",
+                    "version": "0.2.16",
+                    "versionCode": 17,
+                    "abi": "x86_64",
+                    "certFingerprint": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                    "sourceVerifiedAt": "2026-10-11"
+                },
+                {
+                    "file": "mapping-arm64-v8a.txt",
+                    "bytes": 43673152,
+                    "sha256": "a9379cbb598d8fd656f198b49d764f750b14d59006d0f8b2fe060de1d72450a6",
+                    "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
+                    "note": "arm64-v8a 与 x86_64 共用同一份 R8 mapping（同一变体一次 R8）",
+                    "sourceVerifiedAt": "2026-10-11"
+                },
+                {
+                    "file": "mapping-x86_64.txt",
+                    "bytes": 43673152,
+                    "sha256": "a9379cbb598d8fd656f198b49d764f750b14d59006d0f8b2fe060de1d72450a6",
+                    "sourcePath": "app/build/outputs/mapping/release/mapping.txt",
+                    "note": "与 mapping-arm64-v8a.txt 字节相同",
+                    "sourceVerifiedAt": "2026-10-11"
+                }
+            ]
+        },
+        {
+            "id": "final",
+            "role": "最终交付与诊断材料（T51/T52/T61 登记）",
+            "localDir": "local/refactor-artifacts/final",
+            "gitTracked": false,
+            "items": []
+        }
     ],
-    "notCovered": [
-      "libastcenc.so 仍是 4 KB 链接对齐（minLoadAlign=4096），16 KB 页兼容是独立问题，strip 不修链接对齐；登记见 native-strip.md",
-      "Chaquopy wheel 内的 .so 在 .imy 资产里、运行时解压，不走 lib/ 这条加载路径"
-    ]
-  },
-  "t52R8Mapping": {
-    "task": "T52",
-    "date": "2026-10-11",
-    "evidence": "docs/refactor/evidence/r8-rules.md",
-    "version": "0.2.16",
-    "note": "R8 mapping / configuration 按 版本 + ABI + 最终 APK 哈希 归档；不打进 APK，也不只放在会被 clean 清掉的 build/。",
-    "entries": [
-      {
-        "abi": "arm64-v8a",
-        "flavor": "arm64",
-        "variant": "arm64Release",
-        "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
-        "apkBytes": 22956574,
-        "apkSha256": "8f240393d577ef2bb205142e87badff34400bcc981e628be51f0142bd426f1b3",
-        "localDir": "local/refactor-artifacts/r8-mapping/0.2.16/arm64-v8a",
-        "mappingBytes": 43960710,
-        "mappingSha256": "7505c2427a8d8c1a6cdac9817426d338bd86beb5db6a764d994d57766d41869a",
-        "configurationBytes": 57631,
-        "configurationSha256": "0f234a0055614a36fa4d16afb37a379895365d0e5bee678eba10c511b48549d9",
-        "seedsLines": 1508,
-        "usageLines": 66196
-      },
-      {
-        "abi": "x86_64",
-        "flavor": "x64",
-        "variant": "x64Release",
-        "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-        "apkBytes": 23128659,
-        "apkSha256": "269004a71c56db5054e881deac6f3a9b19f4d05ea4595b0b8c95811fab7b4f12",
-        "localDir": "local/refactor-artifacts/r8-mapping/0.2.16/x86_64",
-        "mappingBytes": 43960638,
-        "mappingSha256": "213e35a2127ffac317cb63e98fbdc67bc835d77fb0187f86dd01d071728afe7e",
-        "configurationBytes": 57014,
-        "configurationSha256": "2338de9a130e2501d36523b856135abbd664e0ef9cb146a40a97e216f46081dc",
-        "seedsLines": 1508,
-        "usageLines": 66196
-      }
+    "t03Freeze": {
+        "task": "T03",
+        "date": "2026-09-15",
+        "sourceCommit": "03805d1be561112d3c0bf0914d6be1280dfffeab",
+        "evidence": "docs/refactor/evidence/T03.md",
+        "baselineData": "docs/refactor/evidence/baseline.json",
+        "fixtureManifest": "docs/refactor/fixture-manifest.json",
+        "tool": "tools/apk-baseline/run-t03-analysis.ps1",
+        "toolRun": "18 步全部 exit 0；classify_content.py 的退出码由四项**独立于分组循环**的判据决定（eocdEntryCount / localRegionAccounted / groupEntrySum / regression），已用两次反证证明其可失败（改坏分组谓词、篡改 EOCD 计数 → exit 1）；原「三项之和 = 总量」检查降级为 internalConsistency，只打印、不判定",
+        "rawOutputs": "local/refactor-artifacts/t03-apk-analysis/（忽略；22 个驱动产物记入 SHA256SUMS.txt，另 3 份手工产物 RUN.md / apksigner-verify.txt / device-measure.txt 中 2 份的哈希记在 RUN.md，RUN.md 自身不自哈希）",
+        "packageIdentity": {
+            "versionName": "0.2.16",
+            "versionCode": 17,
+            "applicationId": "com.bd2toolsbox",
+            "minSdk": 29,
+            "targetSdk": 34,
+            "verifiedVia": [
+                "aapt2",
+                "dumpsys"
+            ]
+        },
+        "signature": {
+            "schemes": {
+                "v1": false,
+                "v2": true,
+                "v3": false,
+                "v3.1": false,
+                "v4": false
+            },
+            "signerCount": 1,
+            "certDn": "C=US, O=Android, CN=Android Debug",
+            "certSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+            "identicalAcross": [
+                "hist-arm64",
+                "hist-x64",
+                "reb-arm64",
+                "reb-x64",
+                "reb-universal"
+            ],
+            "verifiedVia": "apksigner verify --verbose --print-certs，五包各一次，退出码均 0",
+            "isReleaseSigning": false,
+            "note": "受控基线签名（本机标准调试 keystore），不是正式发布签名；正式发布签名仍未核验"
+        },
+        "entryLevel": {
+            "arm64-v8a": {
+                "entries": {
+                    "historical": 189,
+                    "rebuilt": 189
+                },
+                "identicalPayloads": 186,
+                "differingPayloads": 3,
+                "payloadBytes": {
+                    "historical": 33840209,
+                    "rebuilt": 33838637,
+                    "delta": -1572
+                },
+                "localHeaderBytes": {
+                    "historical": 232459,
+                    "rebuilt": 234031,
+                    "delta": 1572
+                },
+                "centralDirectoryBytes": 14407,
+                "signingBlockBytes": 8192,
+                "eocdBytes": 22,
+                "eocdByteIdentical": true,
+                "centralDirectoryDifferingRuns": 12,
+                "centralDirectoryDifferingBytes": 30,
+                "containerOverheadBytes": {
+                    "historical": 255080,
+                    "rebuilt": 256652
+                },
+                "structuralAccountingMatchesFileSize": true
+            },
+            "x86_64": {
+                "entries": {
+                    "historical": 188,
+                    "rebuilt": 188
+                },
+                "identicalPayloads": 185,
+                "differingPayloads": 3,
+                "payloadBytes": {
+                    "historical": 33707681,
+                    "rebuilt": 33706109,
+                    "delta": -1572
+                },
+                "localHeaderBytes": {
+                    "historical": 217531,
+                    "rebuilt": 219103,
+                    "delta": 1572
+                },
+                "centralDirectoryBytes": 14307,
+                "signingBlockBytes": 8192,
+                "eocdBytes": 22,
+                "eocdByteIdentical": true,
+                "centralDirectoryDifferingRuns": 12,
+                "centralDirectoryDifferingBytes": 30,
+                "containerOverheadBytes": {
+                    "historical": 240052,
+                    "rebuilt": 241624
+                },
+                "structuralAccountingMatchesFileSize": true
+            },
+            "universal": {
+                "entries": 195,
+                "role": "诊断用 universal 包，无历史对应件，仅记录分类与总量",
+                "payloadBytes": 43263205,
+                "containerOverheadBytes": 302486
+            }
+        },
+        "differingEntries": [
+            {
+                "entry": "META-INF/version-control-info.textproto",
+                "kind": "构建机 git 元数据",
+                "historical": {
+                    "bytes": 120,
+                    "sha256": "4afb6cc42bda673c95415ce06fc60caf3704b0fd9ca4892573cf0d32f91f8ed3"
+                },
+                "rebuilt": {
+                    "bytes": 42,
+                    "sha256": "577a29846b9d2ab88f013ed5ce0cc75355d4cfbef540ef637c49c95d233c236f"
+                }
+            },
+            {
+                "entry": "assets/chaquopy/app.imy",
+                "kind": "Chaquopy 导入归档",
+                "historical": {
+                    "bytes": 6326542,
+                    "sha256": "29aa5af92972e3d06b46b88e3a30dca4a3257e0e3372b4eba12b23134df82096",
+                    "innerEntries": 164
+                },
+                "rebuilt": {
+                    "bytes": 6325044,
+                    "sha256": "3495672d06bb7bcef372ffa81a69c0aa7b1932159ed19fd05c0591ca654b8ca6",
+                    "innerEntries": 152
+                }
+            },
+            {
+                "entry": "assets/chaquopy/build.json",
+                "kind": "Chaquopy 构建清单",
+                "historical": {
+                    "bytes": 2927,
+                    "sha256": "e8312940a16dc11bdf9fe66f47a60c00078dc8bd5c0f6dd8ef6371ec04307c1b"
+                },
+                "rebuilt": {
+                    "bytes": 2927,
+                    "sha256": "35db8fcfb6a321e6a9ff4e4e55f8fff7b62c482b811807bf55f32e9416574f1d"
+                }
+            }
+        ],
+        "appImyInternals": {
+            "tool": "tools/apk-baseline/imy_diff.py",
+            "historicalOnlyEntries": 12,
+            "historicalOnlyEntryKind": "空 __pycache__/ 目录条目",
+            "sharedEntries": 152,
+            "differingCrc": 16,
+            "differingAfterCrlfNormalization": 0,
+            "normalization": "\\r\\n -> \\n",
+            "conclusion": "app.imy 内部差异全部是构建环境差异（LF/CRLF 与 __pycache__ 是否存在），无一处 Python 源码改动"
+        },
+        "signingBlockPairs": {
+            "blockTotalBytes": 8192,
+            "sizeField": 8184,
+            "pairs": [
+                {
+                    "id": "0x7109871A",
+                    "name": "v2 signature scheme block",
+                    "valueLen": 1390,
+                    "consumedBytes": 1402,
+                    "identicalAcrossPackages": false
+                },
+                {
+                    "id": "0x504B4453",
+                    "name": "dependency block (PKDS)",
+                    "valueLen": 4892,
+                    "consumedBytes": 4904,
+                    "identicalAcrossPackages": false
+                },
+                {
+                    "id": "0x42726577",
+                    "name": "verity padding block (Brew)",
+                    "valueLen": 1842,
+                    "consumedBytes": 1854,
+                    "identicalAcrossPackages": true,
+                    "sha256": "b78dd55d8821fc1609fd3c28b264bf24cae1bce00a704f42a721fde7b471d224"
+                }
+            ],
+            "blockPaddingBytes": 24
+        },
+        "byteEquivalence": {
+            "classesDex": {
+                "bytes": 2877404,
+                "sha256": "5e6403de77cc3eb9e76af29a6e49aae981f6a9baba2cdc7174e028132a4013b6",
+                "historicalEqualsRebuilt": true
+            },
+            "mappingTxt": {
+                "bytes": 35649626,
+                "sha256": "c0dda8e731ef8c70d407a3330414356de605326c91714632fb7fe0d91ec1d2fd",
+                "historicalEqualsRebuilt": true
+            },
+            "note": "R8 产物（classes.dex）与 mapping 在历史包与重建包中逐字节相同"
+        },
+        "attribution": {
+            "conclusion": "整包 SHA-256 不同的原因是构建环境差异，不是源码或 R8 输出差异",
+            "mechanism": "三条条目共使内含载荷缩小 1572 字节（app.imy -1498、version-control-info -73、build.json -1）；zipalign 的全零 local-extra 对齐填充恰好增加 1572 字节，精确补偿，因此 local region / Signing Block / Central Directory / EOCD 的 offset 与 size 全部不变、EOCD 逐字节相同、文件长度相同，仅内部哈希与整包 SHA-256 改变",
+            "constraint": "不得把历史/重建的差异归因于 R8",
+            "stillUnresolved": "同源码同工具链得到不同字节本身是事实；是否需要在 G2 收敛留给工具链任务评估"
+        },
+        "classification": {
+            "tool": "tools/apk-baseline/classify_content.py",
+            "method": "独立于 dump_entries.py 手工解析器，改用标准库 zipfile；压缩字节口径为「中央目录记录的压缩后载荷字节」",
+            "selfCheck": "五个包的分组自检（条目数、压缩字节、原始字节三项之和 = 实测总量）全部通过，退出码 0",
+            "groups": [
+                "DEX",
+                "Android resources",
+                "Chaquopy",
+                "native",
+                "WebView assets",
+                "Other assets",
+                "Manifest/metadata/other"
+            ]
+        },
+        "deviceMeasurement": {
+            "device": "127.0.0.1:16384（MuMu，x86_64 / API 32 / Android 12）",
+            "mode": "只读",
+            "installedAppBytesKiB": 33292,
+            "appDataBytesKiB": 173784,
+            "appDataBreakdownKiB": {
+                "files/": 154228,
+                "cache/": 15156,
+                "app_webview/": 4356,
+                "shared_prefs/": 24,
+                "app_dxmaker_cache/": 4,
+                "app_textures/": 4,
+                "code_cache/": 4
+            },
+            "runtimeMemory": "NOT_MEASURED",
+            "runtimeMemoryReason": "测量当时 App 进程未运行（pidof 无输出），且本项不做安装/启动/清理等设备状态改动",
+            "comparability": "全部为 x86_64 模拟器口径，与真实 arm64 真机不可比"
+        },
+        "notCovered": [
+            "arm64-v8a 真机验收（MuMu 的 abilist 含 arm64-v8a 但为转译）",
+            "正式发布签名",
+            "历史包 → 重建包的覆盖安装与数据保留",
+            "真实设备的安装占用与运行内存",
+            "同源重建的字节可复现性"
+        ]
+    },
+    "localTestInputs": [
+        {
+            "file": "local/refactor-inputs/catalog-alpha.json",
+            "bytes": 63045832,
+            "sha256": "98fc0a1e47552116c6398bd7656b87b451adfcd97f5b3de7ebe5428314f10f3f",
+            "sourcePath": "D:/bd2 mod/测试用/com.neowizgames.game.browndust2/files/com.unity.addressables/catalog_alpha.json",
+            "purpose": "test_resolution_catalog_fallback.py 的外部真实 catalog 输入（T04 改为经 BD2_TEST_CATALOG 提供路径）",
+            "gitTracked": false,
+            "sourceVerifiedAt": "2026-09-15"
+        },
+        {
+            "file": "local/refactor-inputs/wiki-v2-detail-2238.source.json",
+            "bytes": 76902,
+            "sha256": "d8de5897bb5a4bfbb78d0bef111dba4c94fa8c1cf1d645869110a60fe4f4a9e6",
+            "sourcePath": "D:/bd2 mod/_大杂烩工作区/wiki-v2-detail-2238.json",
+            "purpose": "GamekeeBattleV2Renderer 测试的真实接口样本源件；T04 从它派生脱敏 classpath 夹具（派生夹具记录自己的哈希）",
+            "gitTracked": false,
+            "sourceVerifiedAt": "2026-09-15"
+        }
     ],
-    "notCovered": [
-      "seeds/usage 只在带 BD2_R8_EVIDENCE 的证据构建中生成，未随归档保存全文",
-      "release-probe 的 full-r8-contract smoke 用例未实现（见 T52 证据）"
-    ]
-  }
+    "t48Freeze": {
+        "task": "T48",
+        "date": "2026-10-11",
+        "sourceCommit": "affeee3",
+        "evidence": "docs/refactor/evidence/T48.md",
+        "tool": "tools/audit_apk_size.py",
+        "toolRun": [
+            {
+                "apk": "local/refactor-artifacts/pre-shrink/app-arm64-v8a-release.apk",
+                "output": "docs/refactor/evidence/apk-before-arm64.json",
+                "sha256": "9df20d4791d3eb038237c927572ef9659a1e07f53fdb8625f809f3f56f9f4e1b",
+                "exitCode": 0
+            },
+            {
+                "apk": "local/refactor-artifacts/pre-shrink/app-x86_64-release.apk",
+                "output": "docs/refactor/evidence/apk-before-x64.json",
+                "sha256": "dcdd13898d335950b1788632c45f4c8ad59b6f8aaff5da156c80a50a0dd93d21",
+                "exitCode": 0
+            }
+        ],
+        "packageIdentity": {
+            "applicationId": "com.bd2toolsbox",
+            "versionName": "0.2.16",
+            "versionCode": 17,
+            "buildType": "release",
+            "minified": true,
+            "signedWith": "debug keystore (本地受控签名)"
+        },
+        "signature": {
+            "certSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1"
+        },
+        "sizeBasis": "ZIP compress_size（每类在 APK 内真实占字节）；MiB = 1024*1024；分类字节 + containerOverhead == APK 文件大小（脚本自校验）",
+        "notCovered": [
+            "未与 0.2.16 历史基线做逐项对照（本轮只冻结优化前输入）",
+            "未验证运行时行为；本工具只读 ZIP/ELF 头，不执行任何 APK 代码",
+            "arm64/x86_64 之外的 universal APK 未纳入本轮 A/B 基线"
+        ]
+    },
+    "t51NativeSymbols": {
+        "task": "T51",
+        "date": "2026-10-11",
+        "sourceCommit": null,
+        "evidence": "docs/refactor/evidence/native-strip.md",
+        "tool": "tools/audit_apk_size.py（nativeLibraries / nativeDebugBytes）",
+        "ndkVersion": "26.3.11579264",
+        "stripFlow": "AGP :app:strip<Flavor>ReleaseDebugSymbols（NDK llvm-strip），输入 = merged_native_libs，输出 = stripped_native_libs → APK",
+        "categories": [
+            {
+                "abi": "arm64-v8a",
+                "localDir": "local/refactor-artifacts/native-strip/arm64-v8a",
+                "note": "AGP stripDebugSymbols 的**输入**原件（未剥离），作为符号归档；与最终 APK 内的同名二进制通过 strippedSha256 对应。",
+                "items": [
+                    {
+                        "file": "arm64-v8a/libandroidx.graphics.path.so",
+                        "unstrippedBytes": 10096,
+                        "unstrippedSha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6",
+                        "strippedBytes": 10096,
+                        "strippedSha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6"
+                    },
+                    {
+                        "file": "arm64-v8a/libastcenc.so",
+                        "unstrippedBytes": 1713680,
+                        "unstrippedSha256": "a85cbffeefa457515e400933e2f9da12d0a8602c4ffcdc4ef1af470e93da8628",
+                        "strippedBytes": 521776,
+                        "strippedSha256": "089506fd9e50094f9340199ec4632b50bd411e55458a987b2c6a0777c467e352"
+                    },
+                    {
+                        "file": "arm64-v8a/libchaquopy_java.so",
+                        "unstrippedBytes": 159824,
+                        "unstrippedSha256": "67c4aed3e41ce3c94e8bf77ae0951ab0b506cfe90464e25b99a01bf3c5683e24",
+                        "strippedBytes": 159824,
+                        "strippedSha256": "9819a4053b67fe76340ad3df24c15500a9ba4c73a7d4d0855737f7b076437c46"
+                    },
+                    {
+                        "file": "arm64-v8a/libcrypto_chaquopy.so",
+                        "unstrippedBytes": 3784,
+                        "unstrippedSha256": "e316322aafee29c518084f478c1f84fb6048dc489dd5aad8d0822fbece416483",
+                        "strippedBytes": 3784,
+                        "strippedSha256": "e316322aafee29c518084f478c1f84fb6048dc489dd5aad8d0822fbece416483"
+                    },
+                    {
+                        "file": "arm64-v8a/libcrypto_python.so",
+                        "unstrippedBytes": 2355168,
+                        "unstrippedSha256": "cf0f9e1b740c069f0e9bf54bb3f9f01c651cd26cb74117f934265ab81a9133fa",
+                        "strippedBytes": 2355168,
+                        "strippedSha256": "cf0f9e1b740c069f0e9bf54bb3f9f01c651cd26cb74117f934265ab81a9133fa"
+                    },
+                    {
+                        "file": "arm64-v8a/libpython3.8.so",
+                        "unstrippedBytes": 3255616,
+                        "unstrippedSha256": "7efc4a7b42996979755cb007ae62573b24664b7d7c37780c692e251a7b364671",
+                        "strippedBytes": 3255616,
+                        "strippedSha256": "7efc4a7b42996979755cb007ae62573b24664b7d7c37780c692e251a7b364671"
+                    },
+                    {
+                        "file": "arm64-v8a/libsqlite3_chaquopy.so",
+                        "unstrippedBytes": 3784,
+                        "unstrippedSha256": "626ef9b3e6eb661df9513f7f79f6a0d197bcfb0b43f813663ed9d5e7fcace172",
+                        "strippedBytes": 3784,
+                        "strippedSha256": "626ef9b3e6eb661df9513f7f79f6a0d197bcfb0b43f813663ed9d5e7fcace172"
+                    },
+                    {
+                        "file": "arm64-v8a/libsqlite3_python.so",
+                        "unstrippedBytes": 1178920,
+                        "unstrippedSha256": "fa355dda67c86b62f67026b7b5a8ec17732ee30e9e8280b86362b4e2a886548b",
+                        "strippedBytes": 1178920,
+                        "strippedSha256": "fa355dda67c86b62f67026b7b5a8ec17732ee30e9e8280b86362b4e2a886548b"
+                    },
+                    {
+                        "file": "arm64-v8a/libssl_chaquopy.so",
+                        "unstrippedBytes": 3768,
+                        "unstrippedSha256": "70b94a18ae17a1b103cc0f52b3f5fa3f7740c6899eddb6fa3b1f16ba8051025b",
+                        "strippedBytes": 3768,
+                        "strippedSha256": "70b94a18ae17a1b103cc0f52b3f5fa3f7740c6899eddb6fa3b1f16ba8051025b"
+                    },
+                    {
+                        "file": "arm64-v8a/libssl_python.so",
+                        "unstrippedBytes": 549488,
+                        "unstrippedSha256": "5809bf914caa387c23b132a2a71e2edab0b2afd2fb92cae454a1a3ae296c6040",
+                        "strippedBytes": 549488,
+                        "strippedSha256": "5809bf914caa387c23b132a2a71e2edab0b2afd2fb92cae454a1a3ae296c6040"
+                    },
+                    {
+                        "file": "arm64-v8a/libtexture2ddecoder.so",
+                        "unstrippedBytes": 603056,
+                        "unstrippedSha256": "cd75798a50a6750c1292202c3f3c42341ea751574c5e6a85eaed4ff6f3dd6e91",
+                        "strippedBytes": 438840,
+                        "strippedSha256": "097ed5ab5a997868ef9ab58aef4cd55b2c42c9d82186a3eb7f7d544d5a40247f"
+                    }
+                ]
+            },
+            {
+                "abi": "x86_64",
+                "localDir": "local/refactor-artifacts/native-strip/x86_64",
+                "note": "AGP stripDebugSymbols 的**输入**原件（未剥离），作为符号归档；与最终 APK 内的同名二进制通过 strippedSha256 对应。",
+                "items": [
+                    {
+                        "file": "x86_64/libandroidx.graphics.path.so",
+                        "unstrippedBytes": 10760,
+                        "unstrippedSha256": "4e56c996f13670e70082658de7880c4020eabf4f25e43387f88ed78a713fc9f0",
+                        "strippedBytes": 10760,
+                        "strippedSha256": "4e56c996f13670e70082658de7880c4020eabf4f25e43387f88ed78a713fc9f0"
+                    },
+                    {
+                        "file": "x86_64/libastcenc.so",
+                        "unstrippedBytes": 1673240,
+                        "unstrippedSha256": "324cb8feda8cb9522dd7f8a75b4068c5b7dc096d5231ba4947548edf8ce3aaca",
+                        "strippedBytes": 536920,
+                        "strippedSha256": "2668123be2e7e3fea1903ee9511efc37239532ae258116694bee319645a4d2b7"
+                    },
+                    {
+                        "file": "x86_64/libchaquopy_java.so",
+                        "unstrippedBytes": 158680,
+                        "unstrippedSha256": "1089ccab0bf55282d56dbe30310f832abde3817b2fbcd60d5eca34e431548943",
+                        "strippedBytes": 158680,
+                        "strippedSha256": "2099838e971c53c3a1c6cbb3634db0b0c0822e08854fe5280ba7a1d3f621f8b6"
+                    },
+                    {
+                        "file": "x86_64/libcrypto_chaquopy.so",
+                        "unstrippedBytes": 3520,
+                        "unstrippedSha256": "dfd935f455e3f9bc2684d15611c83783dd12b68f3f56e6cacd057923c0a7d919",
+                        "strippedBytes": 3520,
+                        "strippedSha256": "dfd935f455e3f9bc2684d15611c83783dd12b68f3f56e6cacd057923c0a7d919"
+                    },
+                    {
+                        "file": "x86_64/libcrypto_python.so",
+                        "unstrippedBytes": 2403072,
+                        "unstrippedSha256": "b2d8ff33056ea5cbad57b8998dd94dc755ca83a6d19622a22b1fbde65ff936a1",
+                        "strippedBytes": 2403072,
+                        "strippedSha256": "b2d8ff33056ea5cbad57b8998dd94dc755ca83a6d19622a22b1fbde65ff936a1"
+                    },
+                    {
+                        "file": "x86_64/libpython3.8.so",
+                        "unstrippedBytes": 3158672,
+                        "unstrippedSha256": "ad039a27539ab788e5f8a62ba7879b553d324558d2f81dab28bb2df863f7ffc6",
+                        "strippedBytes": 3158672,
+                        "strippedSha256": "ad039a27539ab788e5f8a62ba7879b553d324558d2f81dab28bb2df863f7ffc6"
+                    },
+                    {
+                        "file": "x86_64/libsqlite3_chaquopy.so",
+                        "unstrippedBytes": 3520,
+                        "unstrippedSha256": "1c0156a81f5a3d840a252808d07be9b2bfc38704fca346e6f8bcdfefa02170ad",
+                        "strippedBytes": 3520,
+                        "strippedSha256": "1c0156a81f5a3d840a252808d07be9b2bfc38704fca346e6f8bcdfefa02170ad"
+                    },
+                    {
+                        "file": "x86_64/libsqlite3_python.so",
+                        "unstrippedBytes": 1168912,
+                        "unstrippedSha256": "d29b8073bc98c7095b0ed13c9a11edb1ca3dee0832e57686a203adaf84ed1925",
+                        "strippedBytes": 1168912,
+                        "strippedSha256": "d29b8073bc98c7095b0ed13c9a11edb1ca3dee0832e57686a203adaf84ed1925"
+                    },
+                    {
+                        "file": "x86_64/libssl_chaquopy.so",
+                        "unstrippedBytes": 3504,
+                        "unstrippedSha256": "9d8d8b7225df399276e6cd35e45d63435c836d01e603c28bd5aded3525b4fbd3",
+                        "strippedBytes": 3504,
+                        "strippedSha256": "9d8d8b7225df399276e6cd35e45d63435c836d01e603c28bd5aded3525b4fbd3"
+                    },
+                    {
+                        "file": "x86_64/libssl_python.so",
+                        "unstrippedBytes": 578112,
+                        "unstrippedSha256": "c0414a623ee5ab039b39fe2e065fbceb9f130aa071b0873855b24c84725adba0",
+                        "strippedBytes": 578112,
+                        "strippedSha256": "c0414a623ee5ab039b39fe2e065fbceb9f130aa071b0873855b24c84725adba0"
+                    },
+                    {
+                        "file": "x86_64/libtexture2ddecoder.so",
+                        "unstrippedBytes": 563768,
+                        "unstrippedSha256": "50e695b811e5ada33ceef564df0c4a174711cd718454f8309d115835125231c9",
+                        "strippedBytes": 440104,
+                        "strippedSha256": "389ba1eef69314bcdbb4ad3ac51342d88d9eb52efc89a598308a150781784fbb"
+                    }
+                ]
+            }
+        ],
+        "notCovered": [
+            "libastcenc.so 仍是 4 KB 链接对齐（minLoadAlign=4096），16 KB 页兼容是独立问题，strip 不修链接对齐；登记见 native-strip.md",
+            "Chaquopy wheel 内的 .so 在 .imy 资产里、运行时解压，不走 lib/ 这条加载路径"
+        ]
+    },
+    "t52R8Mapping": {
+        "task": "T52",
+        "date": "2026-10-11",
+        "evidence": "docs/refactor/evidence/r8-rules.md",
+        "version": "0.2.16",
+        "note": "R8 mapping / configuration 按 版本 + ABI + 最终 APK 哈希 归档；不打进 APK，也不只放在会被 clean 清掉的 build/。",
+        "entries": [
+            {
+                "abi": "arm64-v8a",
+                "flavor": "arm64",
+                "variant": "arm64Release",
+                "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
+                "apkBytes": 22956574,
+                "apkSha256": "8f240393d577ef2bb205142e87badff34400bcc981e628be51f0142bd426f1b3",
+                "localDir": "local/refactor-artifacts/r8-mapping/0.2.16/arm64-v8a",
+                "mappingBytes": 43960710,
+                "mappingSha256": "7505c2427a8d8c1a6cdac9817426d338bd86beb5db6a764d994d57766d41869a",
+                "configurationBytes": 57631,
+                "configurationSha256": "0f234a0055614a36fa4d16afb37a379895365d0e5bee678eba10c511b48549d9",
+                "seedsLines": 1508,
+                "usageLines": 66196
+            },
+            {
+                "abi": "x86_64",
+                "flavor": "x64",
+                "variant": "x64Release",
+                "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
+                "apkBytes": 23128659,
+                "apkSha256": "269004a71c56db5054e881deac6f3a9b19f4d05ea4595b0b8c95811fab7b4f12",
+                "localDir": "local/refactor-artifacts/r8-mapping/0.2.16/x86_64",
+                "mappingBytes": 43960638,
+                "mappingSha256": "213e35a2127ffac317cb63e98fbdc67bc835d77fb0187f86dd01d071728afe7e",
+                "configurationBytes": 57014,
+                "configurationSha256": "2338de9a130e2501d36523b856135abbd664e0ef9cb146a40a97e216f46081dc",
+                "seedsLines": 1508,
+                "usageLines": 66196
+            }
+        ],
+        "notCovered": [
+            "seeds/usage 只在带 BD2_R8_EVIDENCE 的证据构建中生成，未随归档保存全文",
+            "release-probe 的 full-r8-contract smoke 用例未实现（见 T52 证据）"
+        ]
+    },
+    "t61Delivery": {
+        "recordedAt": "2026-10-13",
+        "recordedByTask": "T61",
+        "status": "PREPARED_NOT_RELEASED",
+        "statusNote": "产物已构建并记录；**未**发布、未合并、未推送。对外版本号刻意保持 0.2.16 / 17 —— 发版号必须按渠道当前最大值决定，不能用本次开发用的 17 盲推。",
+        "versionName": "0.2.16",
+        "versionCode": 17,
+        "packageName": "com.bd2toolsbox",
+        "minSdk": 29,
+        "targetSdk": 34,
+        "compileSdk": 36,
+        "ndkVersion": "26.3.11579264",
+        "artifacts": {
+            "arm64-v8a": {
+                "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
+                "bytes": 22693914,
+                "sha256": "0d9c89f83554b94e6a1284a642f62a95c94ea40b038b129b64d0bc52b34e9dc6",
+                "signedBy": "debug.keystore",
+                "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                "universal": false,
+                "note": "single-ABI flavor (T49); no universal APK is produced",
+                "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
+                "mappingBytes": 44592671,
+                "mappingSha256": "b884f8c399f9794f41af7529ac6df122029026414fb6404e49cf4ba23e59b604"
+            },
+            "x86_64": {
+                "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
+                "bytes": 22865999,
+                "sha256": "d70ab6a15c13d6c26807921c34c549f9449586e83bdaed8c5c3e2384758a12ff",
+                "signedBy": "debug.keystore",
+                "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
+                "universal": false,
+                "note": "single-ABI flavor (T49); no universal APK is produced",
+                "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
+                "mappingBytes": 44592588,
+                "mappingSha256": "74fd6d2c7b53c43d18c65864897d90f0215e2f2c20c1a01da00bae5945602500"
+            }
+        },
+        "baselineForSizeComparison": "t48Freeze",
+        "sizeDelta": {
+            "arm64-v8a": {
+                "before": 35146618,
+                "after": 22693914,
+                "percent": -35.42
+            }
+        },
+        "verification": {
+            "architectureViolations": 0,
+            "jvmTests": {
+                "tests": 1462,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "flavors": [
+                    "arm64Debug",
+                    "x64Debug"
+                ]
+            },
+            "pythonTests": {
+                "discovered": 219,
+                "executed": 219,
+                "passed": 219,
+                "failed": 0,
+                "skipped": 0
+            },
+            "manifestHashesVerified": "16/16",
+            "releaseSmoke": {
+                "x86_64": "10/10 PASS",
+                "arm64-v8a": "NOT_RUN"
+            },
+            "deviceMatrix": {
+                "x86_64@API32": "PASS",
+                "x86_64@API29": "PASS",
+                "x86_64@API36-16KB": "PASS",
+                "arm64-v8a@API36-real-device": "NOT_RUN"
+            }
+        },
+        "summaryEvidence": "docs/refactor/evidence/final-summary.md",
+        "releaseChecklist": "docs/refactor/release-checklist.md"
+    }
 }

@@ -2663,6 +2663,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Full local verification failed' }
 
 - [ ] **T61 完成**
 
+**2026-10-13 交付材料已备、未发布。** 新增 `docs/refactor/release-checklist.md`（发版逐项核对表，含权限边界与「必须用户批准才做」的动作清单）与 `docs/refactor/evidence/final-summary.md`（如实列出通过/失败/跳过/未运行，逐项对应矩阵）；`artifact-manifest.json` 追加 `t61Delivery`（两 ABI 产物的路径/字节数/SHA-256/签名指纹/mapping、版本身份、设备矩阵、门禁计数），**`t03Freeze`/`t48Freeze` 原样保留**，`verify_manifests.py` 仍 16/16。实测：架构 0 违规、JVM **1462/0/0/0**、Python **219/0/0/0**、x86_64 release smoke **10/10**；arm64 APK 22,693,914 B（相对冻结基线 −35.42%）、x64 22,865,999 B，签名指纹 `892d95f0…` 与既有 0.2.16 **一致 → 可覆盖升级**。**`gradle/version.properties` 刻意不改**（保持 0.2.16/17）：计划明确「发版号属于实际发版时的操作核对，不提前发包」，不能拿 17 盲推未来发布号。**未勾 DONE**：arm64 真机未跑、arm64 release smoke 未跑、T58 截图未做、无独立审查。见 [final-summary.md](../../refactor/evidence/final-summary.md)。
+
 **优先级：** P0　**前置：** T60、T56、T57、T58
 
 **文件范围（实施工作区）：**
