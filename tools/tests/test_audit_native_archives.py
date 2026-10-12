@@ -63,6 +63,7 @@ class NativeArchiveAuditTest(unittest.TestCase):
             "assets/chaquopy/bootstrap-native/arm64-v8a/zlib.cpython-38.so": elf(),
             "assets/chaquopy/stdlib-arm64-v8a.imy": archive({"_asyncio.so": elf()}),
             "assets/chaquopy/requirements-arm64-v8a.imy": archive({"_brotli.so": elf()}),
+            "assets/chaquopy/requirements-common.imy": archive({"package/__init__.py": b"pass\n"}),
             "assets/chaquopy/bootstrap.imy": archive({"bootstrap.py": b"pass\n"}),
             "assets/chaquopy/build.json": b"{}",
         }
@@ -79,6 +80,37 @@ class NativeArchiveAuditTest(unittest.TestCase):
     def test_valid_archives_pass(self):
         result = self.inspect()
         self.assertEqual("PASS", result["result"], result["failures"])
+
+    def test_single_abi_requirements_can_use_the_common_archive(self):
+        specific = "assets/chaquopy/requirements-arm64-v8a.imy"
+        common = "assets/chaquopy/requirements-common.imy"
+        self.entries[specific] = archive({})
+        self.entries[common] = archive({"_brotli.so": elf()})
+        result = self.inspect()
+        self.assertEqual("PASS", result["result"], result["failures"])
+        self.assertEqual(0, result["chaquopy"]["archives"][specific]["files"])
+        self.assertEqual(1, result["chaquopy"]["archives"][common]["nativeFiles"])
+
+    def test_wrong_arch_inside_common_requirements_is_rejected(self):
+        name = "assets/chaquopy/requirements-common.imy"
+        self.entries[name] = archive({"_brotli.so": elf(machine=62)})
+        self.assert_rejected(name)
+
+    def test_missing_common_requirements_is_rejected(self):
+        name = "assets/chaquopy/requirements-common.imy"
+        del self.entries[name]
+        self.assert_rejected(name)
+
+    def test_corrupt_common_requirements_is_rejected(self):
+        name = "assets/chaquopy/requirements-common.imy"
+        self.entries[name] = b"not a zip archive"
+        self.assert_rejected(name)
+
+    def test_empty_requirements_pair_is_rejected(self):
+        name = "assets/chaquopy/requirements-common.imy"
+        self.entries[name] = archive({})
+        self.entries["assets/chaquopy/requirements-arm64-v8a.imy"] = archive({})
+        self.assert_rejected(name)
 
     def test_corrupt_requirements_is_rejected(self):
         name = "assets/chaquopy/requirements-arm64-v8a.imy"

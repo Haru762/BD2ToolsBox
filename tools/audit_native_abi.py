@@ -8,8 +8,9 @@
   4. lib/ 下 .so 在 ZIP 中是否 STORED 且数据偏移页对齐（可直接 mmap，不需要解压）；
   5. 必需的 JNI/C 导出符号（例如 texture2ddecoder 的 20 个 decode_*），读自 .dynsym；
   6. DT_NEEDED 依赖都能在 APK 的同 ABI lib/ 或 Android 系统 NDK 公开库中找到；
-  7. Chaquopy 资产：bootstrap-native/<abi>/ 与 stdlib-<abi>.imy、requirements-<abi>.imy 存在，
+  7. Chaquopy 资产：bootstrap-native/<abi>/、stdlib-<abi>.imy 与 requirements 的 ABI/common
      归档逐项读取并校验完整性，内部 .so 与 bootstrap-native/<abi>/*.so 必须也是对应架构。
+     单 ABI flavor 可将依赖全部放入非空的 requirements-common.imy，ABI 归档只作空占位。
 
 它不能证明运行时行为（JNI 注册、dlopen 链接期错误、指令集特性），只能拦住
 「打错包 / 漏文件 / 错架构 / 缺符号 / 对齐不满足」这一类问题。
@@ -140,13 +141,14 @@ def zip_data_offset(zf: zipfile.ZipFile, raw: bytes, info: zipfile.ZipInfo) -> i
     return h + 30 + name_len + extra_len
 
 
-def audit_python_archive(zf: zipfile.ZipFile, name: str, abi: str, failures: list) -> dict:
+def audit_python_archive(zf: zipfile.ZipFile, name: str, abi: str, failures: list,
+                         *, allow_empty: bool = False) -> dict:
     """Read every entry (including CRC) and inspect native payloads without extracting them."""
     result = {"files": 0, "nativeFiles": 0}
     try:
         with zipfile.ZipFile(io.BytesIO(zf.read(name))) as archive:
             entries = [entry for entry in archive.infolist() if not entry.is_dir()]
-            if not entries:
+            if not entries and not allow_empty:
                 raise ValueError("empty Python archive")
             result["files"] = len(entries)
             for entry in entries:
@@ -221,14 +223,20 @@ def audit(apk_path: str, abi: str, require_16k: bool) -> dict:
         report["libs"][lib] = entry
 
     cq = report["chaquopy"]
-    for req in (f"assets/chaquopy/stdlib-{abi}.imy", f"assets/chaquopy/requirements-{abi}.imy",
+    requirements_abi = f"assets/chaquopy/requirements-{abi}.imy"
+    for req in (f"assets/chaquopy/stdlib-{abi}.imy", requirements_abi,
+                "assets/chaquopy/requirements-common.imy",
                 f"assets/chaquopy/bootstrap-native/{abi}/zlib.cpython-38.so", "assets/chaquopy/bootstrap.imy",
                 "assets/chaquopy/build.json"):
         cq[req] = req in names
         if req not in names:
             failures.append(f"{req} missing")
         elif req.endswith(".imy"):
-            cq.setdefault("archives", {})[req] = audit_python_archive(zf, req, abi, failures)
+            # Single-ABI flavors put even native dependencies in common. Only
+            # the ABI requirements archive may be empty; common remains required
+            # and nonempty, and its native payloads must pass the same checks.
+            cq.setdefault("archives", {})[req] = audit_python_archive(
+                zf, req, abi, failures, allow_empty=req == requirements_abi)
     boot = [n for n in names if n.startswith(f"assets/chaquopy/bootstrap-native/{abi}/") and n.endswith(".so")]
     bad = []
     for n in boot:

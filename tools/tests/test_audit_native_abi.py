@@ -1,11 +1,12 @@
 """tools/audit_native_abi.py 的证伪测试：用真实 APK 构造错误变体，确认每类检查都会失败。
 
-依赖已构建的 release APK（app/build/outputs/apk/release/app-<abi>-release.apk）；不存在时 skip，
-并把 skip 如实计入报告（skip 不是 PASS）。
+依赖已构建的单 ABI flavor release APK；不存在时 skip，
+并把 skip 如实计入报告（skip 不是 PASS）。变异产物只写各用例自己的临时目录。
 """
 import io
 import os
 import sys
+import tempfile
 import unittest
 import zipfile
 
@@ -13,8 +14,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import audit_native_abi as audit  # noqa: E402
 
-APK = {abi: os.path.join(ROOT, "app", "build", "outputs", "apk", "release", f"app-{abi}-release.apk")
-       for abi in ("arm64-v8a", "x86_64")}
+APK = {abi: os.path.join(ROOT, "app", "build", "outputs", "apk", flavor, "release",
+                         f"app-{flavor}-release.apk")
+       for abi, flavor in (("arm64-v8a", "arm64"), ("x86_64", "x64"))}
 
 
 def rewrite(src, dst, drop=(), replace=None):
@@ -30,8 +32,9 @@ def rewrite(src, dst, drop=(), replace=None):
 @unittest.skipUnless(all(os.path.isfile(p) for p in APK.values()), "release APKs not built")
 class AuditNativeAbiTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = os.path.join(ROOT, "local", "abi-audit", "falsify")
-        os.makedirs(self.tmp, exist_ok=True)
+        temp = tempfile.TemporaryDirectory(prefix="bd2-native-abi-")
+        self.addCleanup(temp.cleanup)
+        self.tmp = temp.name
 
     def run_audit(self, apk, abi):
         return audit.audit(apk, abi, require_16k=False)

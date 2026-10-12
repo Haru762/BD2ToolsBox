@@ -61,7 +61,7 @@ TODO 里原本写着 `-Abi 'arm64-v8a'` 的设备或 release smoke 命令，对�
 - `DT_NEEDED` 能否在 APK 同 ABI 目录或 NDK 系统库中解析；
 - texture2ddecoder 的 20 个导出与 `JNI_OnLoad`；
 - 以 STORED 方式存放的 `.so` 在 ZIP 中是否 4 KB 对齐；PT_LOAD 是否 16 KB 对齐（默认只警告，`--require-16k` 时判失败）；
-- Chaquopy `stdlib-<abi>.imy`、`requirements-<abi>.imy`、`bootstrap.imy` 必须存在、非空且可逐项读取（包括 CRC 校验），ABI 归档内每个 `.so` 的 ELF 架构必须匹配；`bootstrap-native/<abi>/` 的 `.so` 同样检查架构。
+- Chaquopy `stdlib-<abi>.imy`、`requirements-common.imy`、`bootstrap.imy` 必须存在、非空且可逐项读取（包括 CRC 校验）；`requirements-<abi>.imy` 也必须存在且为完整 ZIP，但单 ABI flavor 可把依赖全部放进 common，留下合法的空 ABI 占位包。common 与 ABI 归档内每个 `.so` 都必须检查 ELF 架构，不能只检查文件名带 ABI 的归档；`bootstrap-native/<abi>/` 的 `.so` 同样检查架构。
 
 **它不能证明：** JNI 注册成功、dlopen 期链接错误不存在、指令集特性可用、Python import 成功、运行时行为正确。上述内容只能由 A 类任务的原生运行覆盖。
 
