@@ -1288,7 +1288,7 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.core.storage.SettingsMigrationTest'
 
 - [ ] **T28 完成**
 
-**2026-10-11 部分接线。** 搜索词与状态筛选已落 `SavedStateHandle`（此前该参数注入了但**从未使用**），未知枚举名回退「全部」。`ModFilterRestorationTest` **10/10 PASS**。**`ModLibraryViewModel`/`ModRoute` 页面拆分未做**（跨安装/列表两类关注点的大重构）、arm64 未重跑、无独立审查，不勾 DONE。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
+**2026-10-11 接线完成。** 搜索词与状态筛选已落 `SavedStateHandle`（此前该参数注入了但**从未使用**）；`ModScreen` 改为只读 `ModScreenState` + 只发 `ModScreenEvents`（全文 0 处 `viewModel`），采集与装配移入 `ui/screens/ModRoute`（生命周期感知）。**没有新建 `ModLibraryViewModel`** —— 列表状态的所有者是 `MainViewModel`，再造一个持副本的 VM 就是 T55 明令禁止的「两套事实来源」；Route 形态才是这一层该有的。`ModFilterRestorationTest` 10/10、`ModScreenContractTest` 8/8。仍不勾 DONE：arm64 未重跑、旋转/滚动恢复的设备验证未做、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md) §3.2。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 四区划分/搜索/筛选/角色分组/可勾选集合抽成 `feature/mods/ModUiState.kt` 的纯 `ModListProjection`，`ModScreen` 改为消费它；定向 JVM 13/0/0/0、全量 JVM 619/0/0/0。**`ModLibraryViewModel`/`ModRoute`/`ModScreen` 页面拆分与 SavedStateHandle 未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T28 证据](../../refactor/evidence/T28.md)。
 
@@ -1365,7 +1365,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.feature.preview.PreviewWorkflowTest' 
 
 - [ ] **T30 完成**
 
-**2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 请求代次控制落地：新增 `feature/guides/RequestGeneration`，`GuideViewModel` 的正文与搜索/列表均接入（只有仍对应当前意图的结果可提交，关闭/退出即作废）；定向 JVM 7/0/0/0 + 渲染 golden 9/0/0/0、全量 JVM 626/0/0/0，并有红绿证伪（移除判定后 3 条竞态用例变红）。**GamekeeApi/GuideCacheStore/GuideHtmlRenderer 拆分与 GuideScreen 接入未完成**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T30 证据](../../refactor/evidence/T30.md)。
+**2026-10-11 拆分完成。** `GamekeeRepository` 1415 → 1311 行：HTTP 层拆到 `data/remote/GamekeeApi.kt`、磁盘缓存拆到 `data/cache/GuideCacheStore.kt`，调用点逐行不变（保留同名转发）。**落位偏离计划**：计划写的 `feature/guides/data/*.kt` 会撞分层规则 R2（`data → feature`），按规则落在 `data/remote` 与 `data/cache`。`GamekeeApiTest` 6/6、`GuideCacheStoreTest` 12/12。仍不勾 DONE：arm64 未重跑、真实网络/缓存的设备回归未做、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md) §3.1。
 
 **优先级：** P1　**前置：** T20、T05
 
