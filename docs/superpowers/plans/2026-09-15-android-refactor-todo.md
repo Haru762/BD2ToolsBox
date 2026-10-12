@@ -1625,6 +1625,7 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.storage.MediaExclusionTest' -Abi 'x86
 - [x] **T35 完成**
 
 **2026-10-11 更正为 DONE。** 迁移中途的证据里那份「未完成」清单已逐条做掉：
+**2026-10-12 补：`json-migration` smoke 已实现并在 x86_64 PASS**（DEX 键名常量 + 真实 minified Store 跨进程读写 0.2.16 混淆夹具）。
 全仓 `import com.google.gson` **零命中**，Gson 依赖与过渡 keep 规则已在 T36 删除
 （`rg gson gradle/libs.versions.toml app/build.gradle.kts` 零命中）。计划提到的
 `feature/guides/data/GamekeeApi.kt` **不存在**（计划写于重构前，实际在原地迁移）。
@@ -1673,6 +1674,7 @@ Test-Bd2ReleaseSmoke -Case 'json-migration' -Abi 'x86_64'
 - [ ] **T36 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED。** 删除 gson 依赖与版本目录条目；最后 3 个测试文件改 kotlinx；proguard 去掉 Gson 的 TypeToken/Signature/RuntimeVisibleAnnotations 规则。全量 JVM 659/0/0/0；`:app:assembleRelease`（受控 debug 签名）成功、`minifyReleaseWithR8` 通过、release dex 中序列化键名仍在；`app/src` 下 0 处 `com.google.gson`。**release `json-migration` smoke 未跑、无独立审查**，不勾 DONE。见 [T36 证据](../../refactor/evidence/T36.md)。
+**2026-10-12 补：`json-migration` smoke 已实现并在 x86_64 PASS。**
 
 **优先级：** P1　**前置：** T35、T34
 
@@ -1712,6 +1714,7 @@ Test-Bd2ReleaseSmoke -Case 'json-migration' -Abi 'arm64-v8a'
 - [ ] **T37 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 接入 AboutLibraries 13.1.0（插件 + Compose M3），生成绑定到 variant（`prepareLibraryDefinitions*`）；非 Maven 组件（Python 12 / 原生 5 / JS 2）自定义定义在 `config/aboutlibraries/libraries/`，离线可复现；`assembleRelease` 成功且 APK 内离线清单含自定义组件；新增 `docs/refactor/license-inventory.md` 并更新 `THIRD-PARTY-NOTICES.md`。**T49 最终 flavor 复验未做、FMOD 授权仍 UNKNOWN、无独立审查**，不勾 DONE。见 [T37 证据](../../refactor/evidence/T37.md)。
+**2026-10-12 补：`resources-and-licenses` smoke 已实现并在 x86_64 PASS**（资源名仍在 + 许可全文可解析 + 冷启动）。
 
 **优先级：** P1　**前置：** T12、T14
 
@@ -1750,6 +1753,7 @@ Invoke-Bd2Gradle :app:assembleRelease --console=plain
 - [ ] **T38 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `feature/settings/LicensesScreen`（AboutLibraries M3 `LibrariesContainer`，离线可读、跟随主题），`WorkbenchSheet` 新增「开源许可」全屏入口；x86_64 设备 `LicensesScreenTest` **1/1 PASS**（语义树实测渲染出库名与 `Apache License 2.0`）。**旧 `licenses/` 目录未退役**（AboutLibraries 生成数据不内嵌全文，需交互验证运行时解析后再删）、引用未全清、arm64 未跑、无独立审查，不勾 DONE。见 [T38 证据](../../refactor/evidence/T38.md)。
+**2026-10-12 补：`resources-and-licenses` smoke 已实现并在 x86_64 PASS。**
 
 **优先级：** P1　**前置：** T37、T33
 
@@ -2192,6 +2196,7 @@ Invoke-Bd2Python (Join-Path $Root 'tools/audit_apk_size.py') --apk $BeforeX64Apk
 - [ ] **T49 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** ABI 发布改为 `arm64`/`x64` 两个单 ABI flavor，删除 `splits`（不再产 universal）与 release 的写死 `abiFilters`；两个 flavor 共用 applicationId/版本/签名。`audit_apk_size.py` 新增 `--expected-abi`（不只查 `lib/`，还查嵌套 IMY 文件名与内部 `.so` 架构），两包 **exit 0、findings=0**；改前 splits 的 arm64 包里**确实同时带 `stdlib-x86_64.imy`**。体积 33.5184 → 28.8306 MiB（−13.99%）。verification.ps1 任务映射已更新（`Test-Bd2Unit` 现跑 `arm64Debug+x64Debug`）。**arm64 真机未验、`resources-and-licenses` smoke 用例不存在**，不勾 DONE。见 [T49 证据](../../refactor/evidence/T49.md) 与 [abi-packaging.md](../../refactor/evidence/abi-packaging.md)。
+**2026-10-12 补：`resources-and-licenses` smoke 已实现并在 x86_64 PASS。**
 
 **优先级：** P0　**前置：** T48、T32、T12、T37、T38
 
@@ -2233,6 +2238,7 @@ Test-Bd2ReleaseSmoke -Case 'resources-and-licenses' -Abi 'x86_64'
 - [ ] **T50 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `config/android-python-excludes.json`（三条已核对路径：UnityPy 的 Darwin/Windows/桌面 Linux FMOD 二进制，18 个文件）与 `tools/stage_android_python.py`（只读源、确定性、归一 mtime、清单零命中即失败），Gradle 用 `stageAndroidPython` 把 `sourceSets.main.python` **替换**为暂存目录。Python `test_android_python_staging.py` **13/13 PASS**；设备 `AndroidPythonStagingTest` **4/4 PASS**（设备上无任何桌面 FMOD 文件；保留模块可 import；`pyfmodex` 仍不可用、Ogg 基线不变；走生产入口 `main_script` 可导入 repacker）与 `NativeEngineSmokeTest` **9/9 PASS**。体积 28.8306 → **23.2837 MiB**（相对 T48 基线 −30.5%）。**音频全格式回归与 `engine-and-preview` smoke 未做**；arm64 已于 2026-10-11 补跑 `AndroidPythonStagingTest` 4/4 与 `NativeEngineSmokeTest` 9/9（见 [arm64 真机验收](../../refactor/evidence/device-arm64.md)），不勾 DONE。见 [T50 证据](../../refactor/evidence/T50.md)。
+**2026-10-12 补：`engine-and-preview` smoke 已实现并在 x86_64 PASS**（裁剪后的 Python 引擎可用 + 桌面 FMOD 确实不在包里）。
 
 **优先级：** P1　**前置：** T49、T37
 
@@ -2271,6 +2277,7 @@ Test-Bd2ReleaseSmoke -Case 'engine-and-preview' -Abi 'x86_64'
 - [ ] **T51 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 以本轮 `--info` 日志确认根因：AGP 8.11.1 默认 `ndkVersion=27.0.12077973` 本机未安装 → `strip<Flavor>ReleaseDebugSymbols` 整批跳过（`Unable to strip the following libraries, packaging them as they are: <11 个>`），`libastcenc.so` 的 1.19 MB `.debug_*` 与 `libtexture2ddecoder.so` 的 164 KB `.symtab/.strtab` 原样进包。固定 `ndkVersion=26.3.11579264` 后走 AGP 官方 strip：arm64 APK **−1.297 MiB**、x86_64 **−1.219 MiB**，`nativeDebugBytes` 归零；`audit_native_abi.py` 的 `needed`/`exportCount`/`minLoadAlign` **逐项不变**。剥离前原件与符号归档到 `local/refactor-artifacts/native-strip/` 并登记 `t51NativeSymbols`。设备 `PlatformBehaviorTest` **13/13 PASS**（真机 dlopen + 16 KB ZIP 对齐）。累计 arm64 **33.5184 → 21.9868 MiB（−34.4%）**。**arm64 真机已于 2026-10-11 补跑 `PlatformBehaviorTest#packagedJniLibrariesAre16KbAligned` 与 `#jniLibrariesLoadOnThisPageSize`（均 PASS）**；`native-load-and-decode` smoke 仍不存在、ASTC 实际解码与 16 KB 页设备未验，不勾 DONE。见 [T51 证据](../../refactor/evidence/T51.md) 与 [arm64 真机验收](../../refactor/evidence/device-arm64.md) 与 [native-strip.md](../../refactor/evidence/native-strip.md)。
+**2026-10-12 补：`native-load-and-decode` smoke 已实现并在 x86_64 PASS**（真实 BC1 解码 + 调试信息确实剥离 + native ABI 审计）。
 
 **优先级：** P1　**前置：** T49、T13
 
@@ -2309,6 +2316,7 @@ Test-Bd2ReleaseSmoke -Case 'native-load-and-decode' -Abi 'x86_64'
 - [ ] **T52 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 逐条复核后删掉两条**按包 keep**（`data.model.**`、`core.storage.**`，理由是 Gson 时代遗留，T35 后键名已走 `@SerialName` 常量）与两条重复的 Chaquopy 规则；`com.bd2toolsbox` seeds **2559 → 344**、seeds 总量 3723 → 1508；DEX **−104,004 B**、APK 两 ABI 各 **−98,304 B**。新增一组精确的 release-probe 反射契约面（`ModSnapshotStore`/`PendingWrite`/`SnapshotLoad($*)`/`SnapshotCommit($*)`/`SnapshotEntry`），`SnapshotV1` 由 `-keepclassmembers` 升级为 `-keep`。**实测**发现并修复两个真实动态入口：`ClassNotFoundException: ModSnapshotStore` 与 `SnapshotV1 class is renamed in mapping.txt`。minified release `snapshot-compatibility` **PASS**（跨进程快照契约 + UI 冷启动 + mapping 闸）。mapping 按版本+ABI+APK 哈希归档并登记 `t52R8Mapping`。**`full-r8-contract` smoke 用例不存在、arm64 未跑、无独立审查**，不勾 DONE。见 [T52 证据](../../refactor/evidence/T52.md) 与 [r8-rules.md](../../refactor/evidence/r8-rules.md)。
+**2026-10-12 补：`full-r8-contract` smoke 已实现并在 x86_64 PASS**（冷启动 + Python 回调 + 快照契约 + mapping 守卫）。
 
 **优先级：** P0　**前置：** T36、T20、T49
 
@@ -2348,6 +2356,7 @@ Test-Bd2ReleaseSmoke -Case 'full-r8-contract' -Abi 'x86_64'
 - [ ] **T53 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** release 开启 `isShrinkResources = true`（AGP 8.11.1 无 8.12+ 新资源优化管线，不盲加开关）：`androidResources` 52 项/460,080 B → **38 项/166,002 B**，APK 两 ABI 各 **−295,428 B**。用 `dexdump`+`mapping.txt` 追踪到**真实的动态资源访问**：AboutLibraries 按名字查 `getIdentifier("aboutlibraries","raw",…)`（应用自身代码零处 `getIdentifier`；另一处是 framework 的 `navigation_bar_height`），因此新增 `res/raw/keep.xml` 精确保留（非通配符、不开 strict）。`audit_apk_size.py` 加 `--require-resource-name`，两个包 exit 0。**并纠正了 T37/T38 的错误结论**：许可证全文**确实内嵌**在 `licenses[<spdxId>].content`（Apache-2.0 10,279 字符）。**`resources-and-licenses` smoke 用例不存在、release 页面未人工验**；arm64 上 Compose 用例被 MIUI 拒绝启动 Activity（见 [arm64 真机验收](../../refactor/evidence/device-arm64.md) §3.1），不勾 DONE。见 [T53 证据](../../refactor/evidence/T53.md) 与 [resource-shrink.md](../../refactor/evidence/resource-shrink.md)。
+**2026-10-12 补：`resources-and-licenses` smoke 已实现并在 x86_64 PASS**（APK 级资源与许可 JSON 可解析 + 冷启动；**不是**人工打开许可页面）。
 
 **优先级：** P1　**前置：** T52、T38、T47
 
@@ -2385,6 +2394,7 @@ Test-Bd2ReleaseSmoke -Case 'resources-and-licenses' -Abi 'arm64-v8a'
 - [ ] **T54 完成**
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `docs/refactor/apk-comparison.md` 与 `audit_apk_size.py --compare`（逐项差额、`sum check` 逐字节自洽）：arm64 **35,146,618 → 22,661,146 B（−35.52%）**、x86_64 **−34.85%**；逐项 A/B 分开报告（T49 −4.91 MB、T50 −5.70 MB、T51 −1.36 MB、T52 −104 KB、T53 −294 KB + 容器开销），新依赖成本与冗余清理分开，历史 11.809 MiB 候选池**不当净节省**。设备实测安装 35,048,281 → **22,833,231 B**、冷启动 367 → 346/347/349 ms、PSS 205,151 → 201,918 KB、无 crash。**`all-core-features` smoke 用例不存在、差异只做到类别级**；arm64 已于 2026-10-11 补测安装/冷启动/内存（无退化，见 [arm64 真机验收](../../refactor/evidence/device-arm64.md)），不勾 DONE。见 [T54 证据](../../refactor/evidence/T54.md) 与 [apk-comparison.md](../../refactor/apk-comparison.md)。
+**2026-10-12 补：`all-core-features` smoke 已实现并在 x86_64 PASS**（arm64 待补）。
 
 **优先级：** P0　**前置：** T50、T51、T52、T53
 
@@ -2497,6 +2507,8 @@ Test-Bd2Python -Pattern 'test_*.py'
 
 - [ ] **T57 完成**
 
+**2026-10-12 补：`platform-matrix` smoke 已实现并在 x86_64 PASS**（本设备 ABI/API 与声明一致；多 API 级别仍需多台设备）。
+
 **优先级：** P0　**前置：** T56、T15
 
 **文件范围（实施工作区）：**
@@ -2562,6 +2574,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.UiAcceptanceTest' -Abi 'x86_64'
 ### T59 — 核对启动、列表、图片、扫描和转换性能
 
 - [ ] **T59 完成**
+
+**2026-10-12 补：`performance-scenarios` smoke 已实现并在 x86_64 PASS**（冷启动 ×3 `[814, 877, 713] ms`、PSS `194,028 KB`）。
 
 **优先级：** P1　**前置：** T54、T58
 
