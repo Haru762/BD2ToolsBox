@@ -721,34 +721,38 @@
         "artifacts": {
             "arm64-v8a": {
                 "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
-                "bytes": 22693914,
-                "sha256": "7b3714d104a3f971a28cf58a57e8d7441ef47b2b652555864552a48db3ab78bc",
+                "bytes": 22693546,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
-                "mappingBytes": 44592671,
-                "mappingSha256": "bb08c9244089bdaeab18ba0d050dc5d00903e54167764004e7fe16685a28e7bd"
+                "mappingBytes": 44592809,
+                "contentSha256": "585932111768bb12edb6d7932ed3db65283a08cb767ddf95311c20c45563be7d",
+                "fileSha256": "260cd79de1f1f679f7ab00cd7456c01c54b3b24a9cb71bc7faa21668dd58e916",
+                "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
+                "mappingFileSha256": "115560b79a0e2d7b395b7e1e2909b1d3a2ad3c7f028842674a1185569a5a675e"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-                "bytes": 22865999,
-                "sha256": "21c875aa0081185f67faef6451768b1562b9eda61c61ea80c5d08513482db22d",
+                "bytes": 22865631,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
-                "mappingBytes": 44592588,
-                "mappingSha256": "1d053448d28b7c37cf5d33e2c8ff0b7a47f74319478686d184f89293ed0526ea"
+                "mappingBytes": 44592737,
+                "contentSha256": "8c4f06f866c8dbefb444c8647cececdc20e5d428e173bfd73cb071c4192e9178",
+                "fileSha256": "5bc33264725f7b3ba06ff0e3ed697c2fa94e4fe0f1d30459e41921325bebd66f",
+                "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
+                "mappingFileSha256": "6a96c40a3e87a325c33242458bed34205caa6380bbe33ad649d2f38b66c4ff0c"
             }
         },
         "baselineForSizeComparison": "t48Freeze",
         "sizeDelta": {
             "arm64-v8a": {
                 "before": 35146618,
-                "after": 22693914,
+                "after": 22693546,
                 "percent": -35.43
             }
         },

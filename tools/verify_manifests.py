@@ -27,6 +27,9 @@ import os
 import sys
 from typing import Dict, List, Optional
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import apk_identity  # noqa: E402
+
 MANIFESTS = (
     'docs/refactor/fixture-manifest.json',
     'docs/refactor/artifact-manifest.json',
@@ -52,10 +55,10 @@ def sha256(path: str) -> str:
 
 
 def iter_entries(node, trail, local_dir=None):
-    """深度遍历清单，收集所有带 sha256 的条目，并带上最近的 localDir。"""
+    """深度遍历清单，收集所有带 sha256（或 contentSha256）的条目，并带上最近的 localDir。"""
     if isinstance(node, dict):
         here = node.get('localDir') if isinstance(node.get('localDir'), str) else local_dir
-        if 'sha256' in node and isinstance(node.get('sha256'), str):
+        if isinstance(node.get('sha256'), str) or isinstance(node.get('contentSha256'), str):
             yield trail, node, here
         for key, value in node.items():
             yield from iter_entries(value, trail + [str(key)], here)
@@ -111,22 +114,30 @@ def verify(root: str, check_delivery: bool = False) -> Dict:
                 'manifest': manifest,
                 'trail': '/'.join(trail),
                 'path': os.path.relpath(path, root).replace(os.sep, '/'),
-                'expected': entry['sha256'],
+                'expected': entry.get('sha256') or entry['contentSha256'],
                 'bytes': entry.get('bytes'),
             }
             if not os.path.isfile(path):
                 record['reason'] = 'not present locally'
                 missing.append(record)
                 continue
-            actual = sha256(path)
+            # 有 contentSha256 的条目核**内容哈希**：APK 文件哈希随构建实例变化
+            # （签名块），拿它当身份会让每次重建都报一次假失败。见
+            # tools/apk_identity.py 与 docs/refactor/evidence/T60.md。
+            if isinstance(entry.get('contentSha256'), str):
+                record['hashKind'] = 'apkContent'
+                actual = apk_identity.content_sha256(path)
+            else:
+                record['hashKind'] = 'file'
+                actual = sha256(path)
             record['actual'] = actual
             size = os.path.getsize(path)
-            if record['bytes'] is not None and int(record['bytes']) != size:
+            if record['hashKind'] == 'file' and record['bytes'] is not None and int(record['bytes']) != size:
                 record['reason'] = 'byte size mismatch (expected %s, actual %s)' % (
                     record['bytes'], size)
                 mismatched.append(record)
                 continue
-            if actual != entry['sha256']:
+            if actual != record['expected']:
                 record['reason'] = 'sha256 mismatch'
                 mismatched.append(record)
                 continue

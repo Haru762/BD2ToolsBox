@@ -122,3 +122,26 @@ EXITCODE=0
 - **缺真实 catalog 时**：相关兼容测试只能标「未运行」，**不能**拿 LocalAll 通过代替。
 - **字节级可复现**：不宣称（见 §4）。
 - **多 API 级别矩阵**：`platform-matrix` 只覆盖当前这一台设备。
+
+## 干净构建与「可复现的身份」
+
+```powershell
+python tools/verify_clean_build.py --json local/t60-clean-build.json
+```
+
+`gradle clean` → 确认产物真的不在了 → 从零重建两个 ABI 的 release → 逐项比对。
+**实测结论：内容级可复现，字节级不可复现。**
+
+| 判据 | 说明 |
+|---|---|
+| `contentSha256` | ZIP 条目（按名字排序）的名字 + 解压字节的 SHA-256。**可复现**，是「这份内容」的身份 |
+| `fileSha256` | APK 文件哈希。**随构建实例变化**（差异全在 APK Signing Block），只用于校验「用户手上那份包没被改过」 |
+
+单独算内容哈希：
+
+```powershell
+python tools/apk_identity.py app/build/outputs/apk/arm64/release/app-arm64-release.apk
+```
+
+`verify_manifests.py` 对带 `contentSha256` 的条目核内容哈希（报告里的 `hashKind = apkContent`）。
+细节与实测数据见 [evidence/T60.md](evidence/T60.md)。

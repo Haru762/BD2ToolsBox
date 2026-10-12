@@ -45,7 +45,10 @@
 - [ ] 两个 ABI 的 minified release 都已构建：`app/build/outputs/apk/{arm64,x64}/release/*.apk`。
 - [ ] **不存在** universal APK（单 ABI flavor，见 T49）。
 - [ ] **不存在** debug 包混入交付目录。
-- [ ] 每个产物记录：字节数、SHA-256、`versionCode`、`versionName`、签名指纹。
+- [ ] 每个产物记录：字节数、**`contentSha256`**（可复现，用作身份）、`fileSha256`（构建实例相关）、
+      `versionCode`、`versionName`、签名指纹。
+- [ ] 干净构建核对：`python tools/verify_clean_build.py` → `contentReproducible=true`
+      （`byteReproducible` 为 false 是**已知且已定性**的，见 [evidence/T60.md](evidence/T60.md)）。
 - [ ] `tools/audit_apk_size.py` 对每个产物跑过，ABI / 资源名 / DEX 字符串守卫全过。
 - [ ] `tools/audit_native_abi.py` 对每个产物跑过：ELF 架构、`DT_NEEDED`、16 KB 对齐。
 - [ ] `mapping.txt` 与 native 符号表随产物一起归档（R8 与 strip 之后）。
