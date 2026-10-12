@@ -603,12 +603,31 @@ function Get-Bd2Device {
     Assert-Bd2AndroidTools
     # 只认白名单里 abi 字段**精确等于**目标 ABI 的设备。abilist 里出现的同名项是转译
     # 提供的（MuMu 的 arm64-v8a 即属此类），不是真实设备，绝不能据此把 arm64 验收判成通过。
-    $hits = @($Bd2Devices | Where-Object { $_ -and ([string]$_.abi) -eq $Abi })
-    if ($hits.Count -eq 0) {
+    $declared = @($Bd2Devices | Where-Object { $_ -and ([string]$_.abi) -eq $Abi })
+    if ($declared.Count -eq 0) {
         throw "没有已授权设备声明 abi=$Abi。abilist 里的同名项经转译提供，不等于真实设备；该 ABI 验收保持未完成，不放宽为猜测或默认设备。"
     }
+    # 只在**在线**的候选里判歧义。此前把白名单条目直接当候选：两台同 ABI 的设备
+    # 只要有一台掉线就报「必须显式指定 serial」，而实际并没有可挑的余地 ——
+    # 想跑那台在线的设备反而被挡住。歧义判定的本意是「不能默认挑一台**在线**设备」。
+    # adb 对不在线的 serial 会往 stderr 写一行，而 $ErrorActionPreference='Stop' 会把
+    # 原生命令的 stderr 当终止错误 —— 这里显式降到 'Continue' 并吞掉输出（同 pm grant）。
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $hits = @($declared | Where-Object {
+            $st = ((& $Bd2Adb -s ([string]$_.serial) get-state 2>&1) -join '').Trim()
+            $st -eq 'device'
+        })
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+    if ($hits.Count -eq 0) {
+        $serials = ($declared | ForEach-Object { [string]$_.serial }) -join ', '
+        throw "abi=$Abi 的已授权设备都不在线：$serials"
+    }
     if ($hits.Count -gt 1) {
-        throw "abi=$Abi 命中 $($hits.Count) 台已授权设备，必须显式指定 serial，不能默认挑一台"
+        throw "abi=$Abi 在线命中 $($hits.Count) 台已授权设备，必须显式指定 serial，不能默认挑一台"
     }
     return $hits[0]
 }

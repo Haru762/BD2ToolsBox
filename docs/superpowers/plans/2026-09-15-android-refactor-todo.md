@@ -2276,6 +2276,8 @@ Test-Bd2ReleaseSmoke -Case 'engine-and-preview' -Abi 'x86_64'
 
 - [ ] **T51 完成**
 
+**2026-10-12 补：16 KB 页运行时已验证**（见 T15 那条）；同设备上 release `native-load-and-decode` 也 **PASS**。见 [16 KB 设备验收](../../refactor/evidence/device-16k.md)。**ASTC 实际解码仍未做**（走的是 BC1）。
+
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 以本轮 `--info` 日志确认根因：AGP 8.11.1 默认 `ndkVersion=27.0.12077973` 本机未安装 → `strip<Flavor>ReleaseDebugSymbols` 整批跳过（`Unable to strip the following libraries, packaging them as they are: <11 个>`），`libastcenc.so` 的 1.19 MB `.debug_*` 与 `libtexture2ddecoder.so` 的 164 KB `.symtab/.strtab` 原样进包。固定 `ndkVersion=26.3.11579264` 后走 AGP 官方 strip：arm64 APK **−1.297 MiB**、x86_64 **−1.219 MiB**，`nativeDebugBytes` 归零；`audit_native_abi.py` 的 `needed`/`exportCount`/`minLoadAlign` **逐项不变**。剥离前原件与符号归档到 `local/refactor-artifacts/native-strip/` 并登记 `t51NativeSymbols`。设备 `PlatformBehaviorTest` **13/13 PASS**（真机 dlopen + 16 KB ZIP 对齐）。累计 arm64 **33.5184 → 21.9868 MiB（−34.4%）**。**arm64 真机已于 2026-10-11 补跑 `PlatformBehaviorTest#packagedJniLibrariesAre16KbAligned` 与 `#jniLibrariesLoadOnThisPageSize`（均 PASS）**；`native-load-and-decode` smoke 仍不存在、ASTC 实际解码与 16 KB 页设备未验，不勾 DONE。见 [T51 证据](../../refactor/evidence/T51.md) 与 [arm64 真机验收](../../refactor/evidence/device-arm64.md) 与 [native-strip.md](../../refactor/evidence/native-strip.md)。
 **2026-10-12 补：`native-load-and-decode` smoke 已实现并在 x86_64 PASS**（真实 BC1 解码 + 调试信息确实剥离 + native ABI 审计）。
 
@@ -2506,6 +2508,8 @@ Test-Bd2Python -Pattern 'test_*.py'
 ### T57 — 完成平台、ABI 与真实 release 验收矩阵
 
 - [ ] **T57 完成**
+
+**2026-10-12 补：`platform-matrix` 现覆盖 API 32（MuMu）与 API 36（16 KB AVD）两个级别。** 见 [16 KB 设备验收](../../refactor/evidence/device-16k.md)。
 
 **2026-10-12 补：`platform-matrix` smoke 已实现并在 x86_64 PASS**（本设备 ABI/API 与声明一致；多 API 级别仍需多台设备）。
 
