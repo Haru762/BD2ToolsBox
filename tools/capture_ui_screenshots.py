@@ -1,0 +1,285 @@
+# -*- coding: utf-8 -*-
+"""T58：从**本轮构建的 release APK** 采集真实原生界面截图。
+
+覆盖：浅色 / 深色 / 字体放大（1.3 与 2.0）/ 无壁纸与有壁纸。
+不使用旧截图、不用网页原型冒充原生验证。
+
+用法：
+    python tools/capture_ui_screenshots.py --abi x86_64 --out docs/refactor/evidence/screenshots
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PKG = 'com.bd2toolsbox'
+ACTIVITY = f'{PKG}/.MainActivity'
+
+
+def adb(serial: str, *args: str, binary: bool = False):
+    cmd = ['adb', '-s', serial, *args]
+    res = subprocess.run(cmd, capture_output=True, check=False)
+    if res.returncode != 0 and not binary:
+        raise RuntimeError(f'adb 失败（{res.returncode}）：{" ".join(cmd)}\n{res.stderr.decode("utf-8", "replace")}')
+    return res.stdout if binary else res.stdout.decode('utf-8', 'replace')
+
+
+def shell(serial: str, *args: str) -> str:
+    return adb(serial, 'shell', *args)
+
+
+def wait_boot(serial: str, timeout: float = 60.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if '1' in shell(serial, 'getprop', 'sys.boot_completed'):
+                return
+        except Exception:
+            pass
+        time.sleep(2)
+    raise RuntimeError('设备未在超时内就绪')
+
+
+def launch(serial: str) -> str:
+    shell(serial, 'am', 'force-stop', PKG)
+    time.sleep(1)
+    out = shell(serial, 'am', 'start', '-W', '-n', ACTIVITY)
+    if 'Status: ok' not in out:
+        raise RuntimeError(f'启动失败：{out}')
+    return out
+
+
+def capture(serial: str, out_path: str) -> str:
+    """screencap 到设备再 pull 回来 —— 直接重定向 stdout 会被 CRLF 破坏 PNG。"""
+    remote = f'/data/local/tmp/t58-{int(time.time()*1000)}.png'
+    shell(serial, 'screencap', '-p', remote)
+    adb(serial, 'pull', remote, out_path)
+    shell(serial, 'rm', '-f', remote)
+    if not os.path.isfile(out_path) or os.path.getsize(out_path) < 4096:
+        raise RuntimeError(f'截图过小或缺失：{out_path}')
+    with open(out_path, 'rb') as fh:
+        head = fh.read(8)
+    if head != b'\x89PNG\r\n\x1a\n':
+        raise RuntimeError(f'不是合法 PNG：{out_path}（头 {head!r}）')
+    return hashlib.sha256(open(out_path, 'rb').read()).hexdigest()
+
+
+def png_size(path: str) -> tuple[int, int]:
+    """从 PNG 的 IHDR 里读宽高（不依赖 Pillow）。"""
+    import struct
+    with open(path, 'rb') as fh:
+        head = fh.read(24)
+    if head[:8] != b'\x89PNG\r\n\x1a\n' or head[12:16] != b'IHDR':
+        raise RuntimeError(f'不是合法 PNG：{path}')
+    return struct.unpack('>II', head[16:24])
+
+
+def set_night(serial: str, mode: str) -> None:
+    shell(serial, 'cmd', 'uimode', 'night', mode)
+    time.sleep(2)
+
+
+def set_font_scale(serial: str, scale: str) -> None:
+    shell(serial, 'settings', 'put', 'system', 'font_scale', scale)
+    # 字体缩放需要重启 Activity 才会被 Compose 重新读取
+    shell(serial, 'am', 'force-stop', PKG)
+    time.sleep(1)
+
+
+def set_rotation(serial: str, rotation: int) -> None:
+    """锁定屏幕方向：0 = 竖屏，1 = 横屏。
+
+    MuMu 默认是横屏（第一次采集出来的是 1920x1080），而手机常态是竖屏。
+    关掉自动旋转再显式指定，否则截图方向不可预期。
+    """
+    shell(serial, 'settings', 'put', 'system', 'accelerometer_rotation', '0')
+    shell(serial, 'settings', 'put', 'system', 'user_rotation', str(rotation))
+    shell(serial, 'am', 'force-stop', PKG)
+    time.sleep(2)
+
+
+PREFS = f'/data/data/{PKG}/shared_prefs/app_settings.xml'
+
+
+def read_prefs(serial: str) -> str:
+    """读应用偏好。
+
+    **用 `su` 而不是 `run-as`**：采集用的是 **release** 包，`run-as` 会直接报
+    「package not debuggable」。用 debug 包代替会让截图与交付产物脱钩。
+    MuMu 上 `su -c id` 返回 uid=0，所以走 root。
+    """
+    out = adb(serial, 'shell', f"su -c 'cat {PREFS}'")
+    if '<map>' not in out:
+        raise RuntimeError('读不到应用偏好（没有 root？）：' + out[:200])
+    return out
+
+
+def write_prefs(serial: str, xml_text: str) -> None:
+    """改写应用自己的外观偏好。
+
+    **为什么要动 prefs**：App 的明暗默认是 `LIGHT`（`SettingsRepository` 有注释：
+    旧用户没有这个键时保持当前外观不变），所以 `cmd uimode night yes` 不会改变界面 ——
+    第一次采集时浅/深两张图的 sha256 完全相同就是这个原因。要拍真正的深色，
+    必须改 App 自己的 `theme_mode`。
+    """
+    shell(serial, 'am', 'force-stop', PKG)
+    time.sleep(1)
+    remote = '/data/local/tmp/t58-prefs.xml'
+    local = os.path.join(ROOT, 'local', 't58-prefs.xml')
+    os.makedirs(os.path.dirname(local), exist_ok=True)
+    with io.open(local, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(xml_text)
+    adb(serial, 'push', local, remote)
+    shell(serial, 'chmod', '644', remote)
+    shell(serial, 'su', '-c', f"'cp {remote} {PREFS} && chown $(stat -c %u:%g {PREFS}) {PREFS}'")
+    shell(serial, 'rm', '-f', remote)
+
+
+def set_pref(serial: str, key: str, value_xml: str) -> None:
+    """在应用偏好里替换/插入一个条目（只处理简单标量）。"""
+    xml_text = read_prefs(serial)
+    pattern = re.compile(r'\s*<(string|boolean|int|long|float) name="%s"[^>]*>[^<]*</\1>' % re.escape(key))
+    xml_text = pattern.sub('', xml_text)
+    insertion = f'    {value_xml}\n</map>'
+    if '</map>' not in xml_text:
+        raise RuntimeError('prefs XML 形状意外，拒绝改写：' + xml_text[:200])
+    xml_text = xml_text.replace('</map>', insertion, 1)
+    write_prefs(serial, xml_text)
+    # 回读确认真的写进去了 —— 不靠「命令返回 0」当作成功。
+    # 校验放在 set_pref 而不是 write_prefs：恢复「原始偏好」时那个键本来就不存在，
+    # 放在 write_prefs 会把正常的恢复当成失败（实测踩过）。
+    if f'name="{key}"' not in read_prefs(serial):
+        raise RuntimeError(f'偏好写入未生效（回读里没有 {key}）')
+
+
+def set_theme_mode(serial: str, mode: str) -> None:
+    set_pref(serial, 'theme_mode', f'<string name="theme_mode">{mode}</string>')
+
+
+def set_color_preset(serial: str, preset: str) -> None:
+    set_pref(serial, 'app_theme', f'<string name="app_theme">{preset}</string>')
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--serial', default='127.0.0.1:16384')
+    ap.add_argument('--abi', default='x86_64', choices=['x86_64', 'arm64-v8a'])
+    ap.add_argument('--out', default=os.path.join(ROOT, 'docs', 'refactor', 'evidence', 'screenshots'))
+    ap.add_argument('--apk', default=None)
+    args = ap.parse_args()
+
+    flavor = 'x64' if args.abi == 'x86_64' else 'arm64'
+    apk = args.apk or os.path.join(ROOT, 'app', 'build', 'outputs', 'apk', flavor, 'release',
+                                   f'app-{flavor}-release.apk')
+    if not os.path.isfile(apk):
+        raise SystemExit(f'缺少 release APK：{apk}')
+    apk_sha = hashlib.sha256(open(apk, 'rb').read()).hexdigest()
+
+    os.makedirs(args.out, exist_ok=True)
+    serial = args.serial
+    wait_boot(serial)
+
+    install = adb(serial, 'install', '-r', apk)
+    if 'Success' not in install:
+        raise SystemExit(f'安装失败：{install}')
+
+    original_font = shell(serial, 'settings', 'get', 'system', 'font_scale').strip() or '1.0'
+    original_night = shell(serial, 'settings', 'get', 'system', 'ui_night_mode').strip() or '0'
+    original_prefs = read_prefs(serial)
+
+    shots = []
+    # (名字, 应用内明暗, 配色预设, 字体缩放, 说明)
+    # **不含方向**：本机（MuMu）固定 1920x1080 横屏，改不了 —— 把它列进计划只会
+    # 产出一批文件名声称竖屏、实际是横屏的图（踩过）。方向限制写在 index.limitations。
+    plan = [
+        ('light-default', 'LIGHT', 'PURPLE', '1.0', '浅色 默认字号（紫）'),
+        ('dark-default', 'DARK', 'PURPLE', '1.0', '深色 默认字号（紫）'),
+        ('light-teal', 'LIGHT', 'TEAL', '1.0', '浅色 青色预设'),
+        ('dark-graphite', 'DARK', 'GRAPHITE', '1.0', '深色 石墨预设'),
+        ('light-font1.3', 'LIGHT', 'PURPLE', '1.3', '浅色 字体 1.3'),
+        ('light-font2.0', 'LIGHT', 'PURPLE', '2.0', '浅色 字体 2.0（最大）'),
+        ('dark-font2.0', 'DARK', 'PURPLE', '2.0', '深色 字体 2.0（最大）'),
+    ]
+    try:
+        for name, mode, preset, font, label in plan:
+            set_theme_mode(serial, mode)
+            set_color_preset(serial, preset)
+            set_font_scale(serial, font)
+            launch(serial)
+            time.sleep(3)
+            path = os.path.join(args.out, f'{name}.png')
+            sha = capture(serial, path)
+            width, height = png_size(path)
+            # 方向只**如实记录实测值**，不做请求-实际比对 —— 因为本机改不了方向，
+            # 比对只会产出一堆恒定的「未生效」噪音。
+            got = 'portrait' if height > width else 'landscape'
+            shots.append({
+                'file': os.path.basename(path),
+                'label': label,
+                'appThemeMode': mode,
+                'colorPreset': preset,
+                'fontScale': font,
+                'actualOrientation': got,
+                'size': [width, height],
+                'bytes': os.path.getsize(path),
+                'sha256': sha,
+            })
+            print(f'  {name}: {width}x{height} {got} {os.path.getsize(path)} B sha256={sha[:16]}...')
+    finally:
+        set_night(serial, 'no' if original_night == '0' else 'yes')
+        set_font_scale(serial, original_font)
+        write_prefs(serial, original_prefs)
+        shell(serial, 'am', 'force-stop', PKG)
+
+    # 同一次采集里的截图必须互不相同 —— 相同就说明某个维度根本没生效
+    # （第一次采集时浅/深两张图 sha256 相同，就是这么发现的）。
+    by_sha: dict[str, list[str]] = {}
+    for s in shots:
+        by_sha.setdefault(s['sha256'], []).append(s['file'])
+    duplicates = {sha: files for sha, files in by_sha.items() if len(files) > 1}
+    if duplicates:
+        raise RuntimeError(
+            '有截图完全相同，说明对应的外观维度没生效：' + json.dumps(duplicates, ensure_ascii=False)
+        )
+
+    index = {
+        'capturedFrom': {
+            'apk': os.path.relpath(apk, ROOT).replace('\\', '/'),
+            'apkSha256': apk_sha,
+            'abi': args.abi,
+            'serial': serial,
+            'package': PKG,
+            'versionName': '0.2.16',
+            'versionCode': 17,
+        },
+        'tool': 'tools/capture_ui_screenshots.py (adb screencap -p + pull)',
+        'note': '截图全部来自本轮构建的 release APK 在设备上的真实渲染；未使用旧截图或网页原型。',
+        'limitations': [],
+        'shots': shots,
+    }
+    # 方向这一维**本机无法验证**：MuMu 是固定 1920x1080 横屏，`settings put system
+    # user_rotation` 不生效。所以计划里干脆不再请求方向，改成如实登记这条限制 ——
+    # 曾经把它标成「竖屏」并写进文件名，那是把「没拍到」记成「拍到了」。
+    orientations = sorted({s['actualOrientation'] for s in shots})
+    index['limitations'].append(
+        '本机（MuMu）是固定 1920x1080 横屏，`settings put system user_rotation` 不生效，'
+        f'实际只采到 {orientations} 一种方向。**竖屏布局与旋转恢复的观感未验证**，'
+        '需要真机或可竖屏的模拟器补拍。'
+    )
+    idx_path = os.path.join(args.out, 'index.json')
+    with io.open(idx_path, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(json.dumps(index, ensure_ascii=False, indent=2) + '\n')
+    print(f'index -> {os.path.relpath(idx_path, ROOT)}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

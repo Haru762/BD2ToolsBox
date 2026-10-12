@@ -2552,6 +2552,8 @@ Test-Bd2ReleaseSmoke -Case 'platform-matrix' -Abi 'x86_64'
 
 - [ ] **T58 完成**
 
+**2026-10-13 部分完成。** 新增 `ThemeContrastTest`（**WCAG 2.1 规范公式**：先把 sRGB 通道线性化再加权；7 预设 × 明暗 × 11 对 = **154 对全部达标，0 对不足**，最紧的是「橙浅色 `outline/surface` 4.44:1」，要求 3.0）。顺带发现既有 `ThemeContractTest` 用的是**朴素亮度**（非 WCAG 相对亮度，中间调能差 20%+），新测试加了反向守卫防止被改回。新增 `tools/capture_ui_screenshots.py` + `tools/verify_ui_screenshots.py` + `tests/test_verify_ui_screenshots.py`（6/6），采集并程序化核对 **7 张真实 release 截图**（浅/深 × 2 预设 × 字号 1.0/1.3/2.0），核对 PASS。采集过程修掉 5 个问题：浅/深截图完全相同（查明 `theme_mode` 默认 LIGHT 是正确行为，加「同次采集不得重复」守卫）、release 不可 `run-as`（改用 `su`，不用 debug 包代替）、方向维度本机测不了（曾把请求竖屏的图写成 portrait 文件名 = 把「没拍到」记成「拍到了」，已改）、核对器缺字段就崩、朴素亮度判定。**仍缺**：竖屏与旋转恢复、壁纸状态、许可证/阅读器截图、任务面板/确认框截图、真实键盘与刘海、TalkBack 真人走查、arm64 真机；计划点名的 `ui/UiAcceptanceTest.kt` 未新建（登记偏离）。见 [ui-acceptance.md](../../refactor/evidence/ui-acceptance.md) 与 [T58 证据](../../refactor/evidence/T58.md)。
+
 **优先级：** P1　**前置：** T46、T47、T57、T38
 
 **文件范围（实施工作区）：**

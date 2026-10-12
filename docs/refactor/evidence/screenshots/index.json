@@ -1,0 +1,116 @@
+{
+  "capturedFrom": {
+    "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
+    "apkSha256": "d70ab6a15c13d6c26807921c34c549f9449586e83bdaed8c5c3e2384758a12ff",
+    "abi": "x86_64",
+    "serial": "127.0.0.1:16384",
+    "package": "com.bd2toolsbox",
+    "versionName": "0.2.16",
+    "versionCode": 17
+  },
+  "tool": "tools/capture_ui_screenshots.py (adb screencap -p + pull)",
+  "note": "截图全部来自本轮构建的 release APK 在设备上的真实渲染；未使用旧截图或网页原型。",
+  "limitations": [
+    "本机（MuMu）是固定 1920x1080 横屏，`settings put system user_rotation` 不生效，实际只采到 ['landscape'] 一种方向。**竖屏布局与旋转恢复的观感未验证**，需要真机或可竖屏的模拟器补拍。"
+  ],
+  "shots": [
+    {
+      "file": "light-default.png",
+      "label": "浅色 默认字号（紫）",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "size": [
+        1920,
+        1080
+      ],
+      "bytes": 175450,
+      "sha256": "96c86d944276d773b04b2d5d96cb318531d44b9e64f4a7455403252ad6a7a24b"
+    },
+    {
+      "file": "dark-default.png",
+      "label": "深色 默认字号（紫）",
+      "appThemeMode": "DARK",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "size": [
+        1920,
+        1080
+      ],
+      "bytes": 174278,
+      "sha256": "d1ef7a2bfdb47675cc4d0aa387ccbbd37ce15b7970b1459764d183f30d59287a"
+    },
+    {
+      "file": "light-teal.png",
+      "label": "浅色 青色预设",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "TEAL",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "size": [
+        1920,
+        1080
+      ],
+      "bytes": 175717,
+      "sha256": "63971c4603155003935651f60387cc10b123dd92d27aa53bfe059d069ee040ee"
+    },
+    {
+      "file": "dark-graphite.png",
+      "label": "深色 石墨预设",
+      "appThemeMode": "DARK",
+      "colorPreset": "GRAPHITE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "size": [
+        1920,
+        1080
+      ],
+      "bytes": 174006,
+      "sha256": "dc0d2601b3f2b4b3280f7539757e7549d90216671e0ac51c676b534fa1ac6f20"
+    },
+    {
+      "file": "light-font1.3.png",
+      "label": "浅色 字体 1.3",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.3",
+      "actualOrientation": "landscape",
+      "size": [
+        1920,
+        1080
+      ],
+      "bytes": 198834,
+      "sha256": "4f7a544d2aa4ad22ec5049a8163edf0f0a895847331bce662833cd90d1721595"
+    },
+    {
+      "file": "light-font2.0.png",
+      "label": "浅色 字体 2.0（最大）",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "2.0",
+      "actualOrientation": "landscape",
+      "size": [
+        1920,
+        1080
+      ],
+      "bytes": 240373,
+      "sha256": "9e6e180a0efa67c01d63b0f9bc6a4639dfdb3fa79ef35680b4cbe224af71bc43"
+    },
+    {
+      "file": "dark-font2.0.png",
+      "label": "深色 字体 2.0（最大）",
+      "appThemeMode": "DARK",
+      "colorPreset": "PURPLE",
+      "fontScale": "2.0",
+      "actualOrientation": "landscape",
+      "size": [
+        1920,
+        1080
+      ],
+      "bytes": 239059,
+      "sha256": "9969a986407215ff176819ab836766aa9065b62343858c0213c6bea585b17e94"
+    }
+  ]
+}
