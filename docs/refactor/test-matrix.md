@@ -211,7 +211,7 @@ T56 要求覆盖 14 类场景，并「在复制/校验/备份/账本/Binder/网�
 
 ### 4.3 端到端（T56）
 
-`integration/ModWorkflowAcceptanceTest`（设备，6 条）走**生产调用链**而不是替身：
+`integration/ModWorkflowAcceptanceTest`（设备，**10 条**）走**生产调用链**而不是替身：
 `InstallExecutor.move` → `MoveInstallStaging`（冻结 + 身份校验）→ `MoveInstallSubmitter`
 （journal + 原子替换 + 记账）→ `InstalledModRepository`（真实账本文件），
 文件操作走真实 `ShizukuFileService`。隔离在 `context.cacheDir/t56/`，
@@ -225,5 +225,9 @@ T56 要求覆盖 14 类场景，并「在复制/校验/备份/账本/Binder/网�
 | `contentChangedAfterFreezeIsRejectedBeforeReplace` | 内容校验边界故障注入 |
 | `uninstallRemovesOnlyTheLedgerRecordAndKeepsSource` | 卸载只动账本、不误删来源 |
 | `successfulInstallLeavesNothingForRecoveryToWorryAbout` | 与 T25 恢复分类衔接 |
+| `unwritableLedgerMakesTheInstallRefuseToTouchTheGameFile` | 账本不可写 → 根本不碰游戏文件 |
+| `ledgerWriteFailureAfterTheReplaceLeavesTheWindowRecoveryMustReconcile` | **T25 窗口的真实失败注入**：文件已换、账本无记录、判待核对 |
+| `cancellingBeforeCommitLeavesTheTargetUntouchedAndAllowsRetry` | 取消可核对 + 可重试同一目标 |
+| `cancellationRequestedInsideTheCommitWindowCannotEraseTheCommittedFact` | 阶段（怎么结束的）与事实（有没有落地）必须分开读 |
 
-实测：MuMu x86_64/API32 **6/6 PASS**、AVD x86_64/API29 **6/6 PASS**。
+实测：MuMu x86_64/API32 **10/10 PASS**；AVD API29 / API34 / API36(16 KB) 各 **6/6 PASS**（早期版本）。

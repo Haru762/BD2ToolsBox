@@ -5,8 +5,15 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bd2toolsbox.core.fileaccess.DirectoryListingResult
 import com.bd2toolsbox.core.fileaccess.GameFileAccess
+import com.bd2toolsbox.core.model.OperationAdmission
 import com.bd2toolsbox.core.model.OperationId
+import com.bd2toolsbox.core.model.OperationKind
+import com.bd2toolsbox.core.model.OperationRequest
+import com.bd2toolsbox.core.model.OperationStage
+import com.bd2toolsbox.core.operations.OperationCoordinator
 import com.bd2toolsbox.core.operations.OperationRecovery
+import com.bd2toolsbox.core.operations.RecoveryDisposition
+import com.bd2toolsbox.core.operations.OperationStateStore
 import com.bd2toolsbox.core.storage.JournalRecoveryFacts
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.core.storage.LedgerRecord
@@ -20,6 +27,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -81,7 +89,15 @@ class ModWorkflowAcceptanceTest {
     // ------------------------------------------------------------------ 隔离夹具
 
     /** 一次用例的隔离世界：源目录、游戏目录、暂存目录、隔离的 GameFileAccess。 */
-    private inner class World(val failingBundles: Set<String> = emptySet()) {
+    private inner class World(
+        val failingBundles: Set<String> = emptySet(),
+        /**
+         * 在**真实复制之前**执行。用来把注入点放在「意图已落盘、文件即将/已经换掉」
+         * 那个位置 —— 例如把账本路径变成目录，从而让后面的 `commitLedger` 失败，
+         * 精确复现 T25 的「文件已换、账本未记」窗口。
+         */
+        val onBeforeCopy: (() -> Unit)? = null
+    ) {
         val root: File = File(context.cacheDir, "t56/run${runCounter++}").apply {
             deleteRecursively()
             mkdirs()
@@ -89,7 +105,7 @@ class ModWorkflowAcceptanceTest {
         val shared: File = File(root, "shared").apply { mkdirs() }
         val gameRoot: File = File(root, "game").apply { mkdirs() }
         val staging: File = File(root, "staging").apply { mkdirs() }
-        val access: GameFileAccess = IsolatedGameFileAccess(gameRoot, failingBundles)
+        val access: GameFileAccess = IsolatedGameFileAccess(gameRoot, failingBundles, onBeforeCopy)
 
         fun gameData(bundle: String, hash: String): File = File(gameRoot, "Shared/$bundle/$hash/__data")
 
@@ -302,6 +318,186 @@ class ModWorkflowAcceptanceTest {
             w.cleanup()
         }
     }
+    // ------------------------------------------------------------------ 7. 账本写失败注入
+
+    /**
+     * 账本从一开始就不可写：系统必须**根本不碰游戏文件**。
+     *
+     * 提交顺序是「先记意图、再动文件」——`beginSubmit` / `markStaged` /
+     * `markTargetReplacing` 都是写前意图记录。意图写不下去就不能往下走。
+     */
+    @Test
+    fun unwritableLedgerMakesTheInstallRefuseToTouchTheGameFile() {
+        val ledgerFile = repository.file()
+        val w = World()
+        try {
+            val target = w.seedConverted("bundleA", "hash1", "content://mod/ledgerfail", payload(20))
+            if (ledgerFile.exists()) assertTrue(ledgerFile.delete())
+            assertTrue("必须能把账本路径变成目录以注入写失败", ledgerFile.mkdirs())
+
+            val attempt = runCatching { w.install(listOf(target)) }
+
+            assertTrue("清理注入目录", ledgerFile.delete())
+            assertTrue("恢复一份空账本文件", ledgerFile.createNewFile())
+
+            val submission = attempt.getOrNull()?.submission
+            assertFalse(
+                "账本不可写时绝不能报成功（thrown=${attempt.exceptionOrNull()?.message}，" +
+                    "message=${submission?.message}）",
+                submission?.completedSuccessfully == true
+            )
+            assertFalse("意图记录写不下去就不能碰游戏文件", w.gameData("bundleA", "hash1").exists())
+            assertTrue("账本里不该有记录", repository.load().isEmpty())
+            assertTrue("没碰过文件就不该有待处理恢复项", OperationRecovery(repository).classify().isEmpty())
+            assertNoPartialFiles(w.root)
+        } finally {
+            if (ledgerFile.isDirectory) ledgerFile.delete()
+            w.cleanup()
+        }
+    }
+
+    /**
+     * 账本在**替换之后**才不可写：这就是 T25 的「文件已换、账本未记」窗口。
+     *
+     * 注入点放在 `installConvertedBundle` 真正复制**之前**（`onBeforeCopy`），
+     * 所以前面几条意图记录都已经落盘、文件也已经换掉，失败只发生在最后的
+     * `commitLedger` —— 这是只靠「让账本不可写」做不到的精确位置。
+     */
+    @Test
+    fun ledgerWriteFailureAfterTheReplaceLeavesTheWindowRecoveryMustReconcile() {
+        val ledgerFile = repository.file()
+        val w = World(
+            onBeforeCopy = {
+                if (ledgerFile.exists()) ledgerFile.delete()
+                ledgerFile.mkdirs()
+            }
+        )
+        try {
+            val bytes = payload(21)
+            val target = w.seedConverted("bundleA", "hash1", "content://mod/window", bytes)
+
+            val attempt = runCatching { w.install(listOf(target)) }
+
+            assertTrue("清理注入目录", ledgerFile.delete())
+            assertTrue("恢复一份空账本文件", ledgerFile.createNewFile())
+
+            val submission = attempt.getOrNull()?.submission
+            assertFalse(
+                "账本写失败时绝不能报成功（message=${submission?.message}）",
+                submission?.completedSuccessfully == true
+            )
+            // 关键：**文件已经换成了新的**，但账本里没有记录 —— T25 要核对的窗口
+            assertEquals("文件替换本身应当已经发生", sha256(bytes), sha256(w.gameData("bundleA", "hash1")))
+            assertTrue("账本里不该有记录", repository.load().isEmpty())
+
+            val dispositions = OperationRecovery(repository).classify()
+            assertTrue(
+                "必须被恢复分类识别为待核对，实际：$dispositions",
+                dispositions.any { it is RecoveryDisposition.NeedsReconciliation }
+            )
+            assertNoPartialFiles(w.root)
+        } finally {
+            if (ledgerFile.isDirectory) ledgerFile.delete()
+            w.cleanup()
+        }
+    }
+
+    // ------------------------------------------------------------------ 8. 取消与重试
+
+    @Test
+    fun cancellingBeforeCommitLeavesTheTargetUntouchedAndAllowsRetry() {
+        val w = World()
+        try {
+            w.seedConverted("bundleA", "hash1", "content://mod/cancel", payload(21))
+            val store = OperationStateStore()
+            val coordinator = OperationCoordinator(store)
+
+            val id = OperationId("t56-cancel-${System.nanoTime()}")
+            val admission = coordinator.submit(
+                OperationRequest(id, OperationKind.INSTALL, listOf("bundleA"))
+            )
+            assertTrue("提交应当被接纳：$admission", admission is OperationAdmission.Accepted)
+            assertTrue("排队中的任务必须可取消", coordinator.requestCancellation(id))
+            assertEquals(
+                "取消后应当是终态 CANCELLED",
+                OperationStage.CANCELLED,
+                store.states.value.getValue(id).stage
+            )
+
+            // 参数已释放：execute 拿不到可领取的参数，**不能**凭空补一个成功结果
+            var bodyRan = false
+            val executed = runBlocking {
+                coordinator.execute(id) { bodyRan = true }
+            }
+            assertNull("已取消的任务不该还能被领取执行", executed)
+            assertFalse("执行体绝不该被调用", bodyRan)
+
+            // 目标一点没动，账本也没有记录
+            assertFalse("取消后目标不该出现", w.gameData("bundleA", "hash1").exists())
+            assertTrue("取消后账本不该有记录", repository.load().isEmpty())
+            assertTrue("取消后不该有待处理恢复项", OperationRecovery(repository).classify().isEmpty())
+
+            // **可重试**：换一个 id 再提交同一目标必须能过（取消不能把目标永久锁住）
+            val retryId = OperationId("t56-retry-${System.nanoTime()}")
+            val retry = coordinator.submit(
+                OperationRequest(retryId, OperationKind.INSTALL, listOf("bundleA"))
+            )
+            assertTrue("取消后必须能用新任务重试同一目标：$retry", retry is OperationAdmission.Accepted)
+            assertNoPartialFiles(w.root)
+        } finally {
+            w.cleanup()
+        }
+    }
+
+    @Test
+    fun cancellationRequestedInsideTheCommitWindowCannotEraseTheCommittedFact() {
+        // 协调器的语义（由 `OperationCoordinatorTest` 的
+        // `cancellationChecksCannotAbortAnEnteredCommit` 固定）：
+        // 取消请求**不能**中断已进入的提交临界区，任务仍会走完；终态记的是
+        // 「任务怎么结束的」（用户取消了），而 `committedTargets` 记的是
+        // 「事实落没落地」。两者必须分开读 —— 这是 T25 恢复能工作的前提。
+        //
+        // 本用例从**端到端**那一侧确认这个区分真的成立：
+        // 取消请求发生在提交临界区里，但文件与账本**都**落了盘。
+        val w = World()
+        try {
+            val bytes = payload(22)
+            val target = w.seedConverted("bundleA", "hash1", "content://mod/commitwin", bytes)
+            val store = OperationStateStore()
+            val coordinator = OperationCoordinator(store)
+            val id = OperationId("t56-commitwin-${System.nanoTime()}")
+            assertTrue(
+                coordinator.submit(OperationRequest(id, OperationKind.INSTALL, listOf("bundleA")))
+                    is OperationAdmission.Accepted
+            )
+            var cancelAcceptedInsideCommit = true
+            var committedInside = false
+            runBlocking {
+                coordinator.execute(id) {
+                    commit("bundleA") {
+                        cancelAcceptedInsideCommit = coordinator.requestCancellation(id)
+                        committedInside = true
+                    }
+                }
+            }
+            assertTrue("提交动作本身必须执行", committedInside)
+            assertTrue("取消请求应当被登记", cancelAcceptedInsideCommit)
+            val state = store.states.value.getValue(id)
+            assertEquals(
+                "终态记录的是「用户取消了」",
+                OperationStage.CANCELLED,
+                state.stage
+            )
+            assertEquals(
+                "committedTargets 记录的是「事实落地了」——两者必须分开读",
+                listOf("bundleA"),
+                state.committedTargets
+            )
+            assertNotNull(target)
+        } finally {
+            w.cleanup()
+        }
+    }
 }
 
 /**
@@ -317,11 +513,13 @@ class ModWorkflowAcceptanceTest {
  */
 private class IsolatedGameFileAccess(
     private val gameRoot: File,
-    private val failingBundles: Set<String>
+    private val failingBundles: Set<String>,
+    private val onBeforeCopy: (() -> Unit)? = null
 ) : GameFileAccess {
 
     private val service = ShizukuFileService()
     private val tokens = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Any, Boolean>())
+    private var hookRan = false
 
     override fun acquire(): Any = Any().also { tokens.add(it) }
     override fun release(token: Any) {
@@ -336,6 +534,13 @@ private class IsolatedGameFileAccess(
     override suspend fun installConvertedBundle(sourceDir: String, bundleName: String): Pair<Boolean, String> {
         if (bundleName in failingBundles) {
             return false to "注入的复制失败：$bundleName"
+        }
+        // 注入点：在真实复制之前。只跑一次（多目标时不该反复改外部状态）。
+        onBeforeCopy?.let { hook ->
+            if (!hookRan) {
+                hookRan = true
+                hook()
+            }
         }
         val source = File(sourceDir)
         if (!source.isDirectory) return false to "源目录不存在：$sourceDir"
