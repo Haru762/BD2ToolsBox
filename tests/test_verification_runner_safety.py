@@ -161,6 +161,58 @@ class VerificationRunnerSafetyTest(unittest.TestCase):
         self.assertEqual(0, report['counts']['passed'])
         self.assertEqual('expected-failure', report['tests'][0]['outcome'])
 
+    def test_failed_subtests_count_the_parent_once(self):
+        (self.tests / 'test_sample.py').write_text(
+            'import unittest\nclass Sample(unittest.TestCase):\n'
+            ' def test_sample(self):\n'
+            '  for value in (1, 2):\n'
+            '   with self.subTest(value=value):\n'
+            '    self.fail("subtest failure")\n', encoding='utf8')
+        output = self.root / 'local' / 'report.json'
+        result = self.run_runner(output)
+        self.assertNotEqual(0, result.returncode)
+        report = json.loads(output.read_text(encoding='utf8'))
+        self.assertEqual('FAIL', report['result'])
+        self.assertEqual(dict(discovered=1, executed=1, passed=0, failed=1,
+                              errors=0, skipped=0, notRun=0), report['counts'])
+        self.assertEqual(1, len(report['tests']))
+        self.assertEqual('testcase', report['tests'][0]['source'])
+        self.assertEqual(2, len(report['tests'][0]['messages']))
+
+    def test_errored_subtests_count_the_parent_once(self):
+        (self.tests / 'test_sample.py').write_text(
+            'import unittest\nclass Sample(unittest.TestCase):\n'
+            ' def test_sample(self):\n'
+            '  with self.subTest(value=1):\n'
+            '   raise ValueError("subtest error")\n', encoding='utf8')
+        output = self.root / 'local' / 'report.json'
+        result = self.run_runner(output)
+        self.assertNotEqual(0, result.returncode)
+        report = json.loads(output.read_text(encoding='utf8'))
+        self.assertEqual('FAIL', report['result'])
+        self.assertEqual(dict(discovered=1, executed=1, passed=0, failed=0,
+                              errors=1, skipped=0, notRun=0), report['counts'])
+        self.assertEqual(1, len(report['tests']))
+        self.assertEqual('testcase', report['tests'][0]['source'])
+        self.assertIn('ValueError: subtest error', report['tests'][0]['messages'][0])
+
+    def test_class_setup_errors_remain_visible(self):
+        (self.tests / 'test_sample.py').write_text(
+            'import unittest\nclass Sample(unittest.TestCase):\n'
+            ' @classmethod\n def setUpClass(cls):\n'
+            '  raise RuntimeError("setup error")\n'
+            ' def test_sample(self):\n  self.fail("must not run")\n', encoding='utf8')
+        output = self.root / 'local' / 'report.json'
+        result = self.run_runner(output)
+        self.assertNotEqual(0, result.returncode)
+        report = json.loads(output.read_text(encoding='utf8'))
+        self.assertEqual('FAIL', report['result'])
+        self.assertEqual(1, report['counts']['errors'])
+        self.assertEqual(1, report['counts']['notRun'])
+        setup_errors = [test for test in report['tests'] if test['source'] == 'fixture-setup']
+        self.assertEqual(1, len(setup_errors))
+        self.assertIn('RuntimeError: setup error', setup_errors[0]['messages'][0])
+
     def test_safe_new_report_runs_real_tests_and_records_counts(self):
         output = self.root / 'local' / 'results' / 'report.json'
         result = self.run_runner(output)

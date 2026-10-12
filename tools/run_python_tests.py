@@ -452,7 +452,10 @@ def main(argv):
     # 只统计 tests_report 会把这些**真实错误**漏掉，所以显式补进来。
     for holder, err_text in list(result.errors) + list(result.failures):
         hid = holder.id()
-        if hid in discovered_ids:
+        # Subtests are TestCase instances and addSubTest already records their
+        # outcome on the discovered parent. Only setup/teardown holders belong
+        # here; counting subtests again inflates executed/failed/error totals.
+        if hid in discovered_ids or isinstance(holder, unittest.TestCase):
             continue
         outcome = "error" if any(h is holder for h, _ in result.errors) else "failed"
         last = err_text.strip().splitlines()[-1] if err_text.strip() else ""
