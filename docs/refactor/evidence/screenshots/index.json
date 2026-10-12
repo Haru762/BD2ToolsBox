@@ -11,6 +11,8 @@
   "tool": "tools/capture_ui_screenshots.py (adb screencap -p + pull + uiautomator 标签导航)",
   "note": "截图全部来自本轮构建的 release APK 在设备上的真实渲染；未使用旧截图或网页原型。",
   "limitations": [
+    "设置工作表里没找到「清空」，确认框未采。",
+    "壁纸状态（无/亮/暗/高纹理）**未采到真实截图**：`restoreWallpaper` 要求 URI 在 `persistedUriPermissions` 里，否则主动清掉该偏好（刻意的，避免空白背景）。该权限只能由 App 自己 `takePersistableUriPermission` 得到，即必须走系统文件选择器 —— 需要真人级交互。本轮改为验证**行为**：注入无权限 URI 后 App 确实清掉了它（见 wallpaper-ungranted-uri.png）。",
     "本机（MuMu）是固定 1920x1080 横屏，`settings put system user_rotation` 不生效，实际只采到 ['landscape'] 一种方向。**竖屏布局与旋转恢复的观感未验证**，需要真机或可竖屏的模拟器补拍。"
   ],
   "shots": [
@@ -20,13 +22,14 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0",
       "actualOrientation": "landscape",
       "size": [
         1920,
         1080
       ],
-      "bytes": 175255,
-      "sha256": "902f828fa1f26ead997126e3a65fcf684000bb5b675fc0c1dcd55c5f6246a136"
+      "bytes": 175474,
+      "sha256": "b898365fa2e1eed626b5e45f35a16d9a56dc1448733795c10c99a29a3763ad63"
     },
     {
       "file": "dark-default.png",
@@ -34,13 +37,14 @@
       "appThemeMode": "DARK",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "DARK|PURPLE|1.0",
       "actualOrientation": "landscape",
       "size": [
         1920,
         1080
       ],
-      "bytes": 174093,
-      "sha256": "819dac5a0f338e02d4cf57b21222699b5230b33522a094690ac496ed6b21595a"
+      "bytes": 174331,
+      "sha256": "9a3e2c0446dd8fd775f5784cee5276119de04db3c75141a6abf41a6fe45247aa"
     },
     {
       "file": "light-teal.png",
@@ -48,13 +52,14 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "TEAL",
       "fontScale": "1.0",
+      "dimensionKey": "LIGHT|TEAL|1.0",
       "actualOrientation": "landscape",
       "size": [
         1920,
         1080
       ],
-      "bytes": 175832,
-      "sha256": "2297a406839a27c28616082011846a74a018a2ff467a40017fdd873ad19773d2"
+      "bytes": 176047,
+      "sha256": "3883450ca20573233bc575bfbf60ed477c5a2db29fd13cfcaa645e70cf3b43c4"
     },
     {
       "file": "dark-graphite.png",
@@ -62,13 +67,14 @@
       "appThemeMode": "DARK",
       "colorPreset": "GRAPHITE",
       "fontScale": "1.0",
+      "dimensionKey": "DARK|GRAPHITE|1.0",
       "actualOrientation": "landscape",
       "size": [
         1920,
         1080
       ],
-      "bytes": 174398,
-      "sha256": "91e82e8f1753b723285a1d1bc6d7dad6b22703ae75150ca57dcb75854c562fbf"
+      "bytes": 174385,
+      "sha256": "df5f0c922fa22a09f7e04baa03303c575531288f6a5d83284bed2ebfca6bf5a6"
     },
     {
       "file": "light-font1.3.png",
@@ -76,13 +82,14 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.3",
+      "dimensionKey": "LIGHT|PURPLE|1.3",
       "actualOrientation": "landscape",
       "size": [
         1920,
         1080
       ],
-      "bytes": 199385,
-      "sha256": "a258c362de7a9014e7eb05c733fe6fcba38ba64761903d52718d20bdf999a141"
+      "bytes": 199276,
+      "sha256": "892bd4467a09032509b4d1d219050a9856c20f9ef4f46389c77f3471438a2dec"
     },
     {
       "file": "light-font2.0.png",
@@ -90,13 +97,14 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "2.0",
+      "dimensionKey": "LIGHT|PURPLE|2.0",
       "actualOrientation": "landscape",
       "size": [
         1920,
         1080
       ],
-      "bytes": 240793,
-      "sha256": "d1b864e1b3ffc1eda805186a3fb928f22154d842a589bc042c82bdff7d85855d"
+      "bytes": 240638,
+      "sha256": "032a5f51caad1658adcf648974405afef4e611c473001f4657385b517970bfa0"
     },
     {
       "file": "dark-font2.0.png",
@@ -104,13 +112,14 @@
       "appThemeMode": "DARK",
       "colorPreset": "PURPLE",
       "fontScale": "2.0",
+      "dimensionKey": "DARK|PURPLE|2.0",
       "actualOrientation": "landscape",
       "size": [
         1920,
         1080
       ],
-      "bytes": 239538,
-      "sha256": "6c6804df88af47ad2d79d0c57cf70ff0418beb3f6c72f299b9ffecb657dab851"
+      "bytes": 239939,
+      "sha256": "f86488a51d069e7cccd9304ca3866e62984757ea4e009b526d234e3ac0eb8df3"
     },
     {
       "file": "screen-redeem.png",
@@ -118,6 +127,7 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|screen-redeem",
       "actualOrientation": "landscape",
       "bytes": 94391,
       "sha256": "c1ed8b7ee8ce8ef15ddcf45ef5169213a7a020f360b5639881c6c0b4c9e8adff"
@@ -128,9 +138,10 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|screen-guide",
       "actualOrientation": "landscape",
-      "bytes": 294791,
-      "sha256": "24f999a0fe66f0647194ee2248b5e090100095ac5da09fdb489b6babdaad6e9c"
+      "bytes": 295042,
+      "sha256": "0c1ff41f558c55b4ce4d49b1e4568feba6ae2cea5b14d73b24f47f8fe73bfa6f"
     },
     {
       "file": "screen-sheet-appearance-light.png",
@@ -138,9 +149,10 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 255919,
-      "sha256": "998889ca09d87ae88ccff7403f64e56a6f9fbcd3e9d5a126b41cfb0df3563ba2"
+      "bytes": 218222,
+      "sha256": "813e384fff49be85d6d0baa636b71adff4184687d2b9429f4e16e3c5fc0655cd"
     },
     {
       "file": "screen-sheet-appearance-dark.png",
@@ -148,9 +160,10 @@
       "appThemeMode": "DARK",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "DARK|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 252015,
-      "sha256": "2826231da044a1315e5b77d38e0bf63a4ce9a932427934614f4ddec845f4d4e1"
+      "bytes": 215530,
+      "sha256": "ca0f3fd71e272d31d89fb8279d055432cdefb5663738ac51973f6abc5c8bd677"
     },
     {
       "file": "screen-licenses.png",
@@ -158,19 +171,54 @@
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|screen-licenses",
       "actualOrientation": "landscape",
-      "bytes": 105925,
-      "sha256": "71abfcc0aa47c0eb07ef677e2d0fa70eb9467ea60b0697c22c39e835e132160f"
+      "bytes": 106295,
+      "sha256": "4d7bf687914e20b9e0f667dc2d55bcb2022972803e0bbc2055dd8f524de30ae4"
     },
     {
-      "file": "dialog-clear-cache.png",
-      "label": "清空缓存的确认框（只截图，未确认）",
+      "file": "wallpaper-none-light.png",
+      "label": "无壁纸（浅色）",
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|main-no-wallpaper",
       "actualOrientation": "landscape",
-      "bytes": 260633,
-      "sha256": "adc8c26d51422c0a0003b7fd7c8aa6b418f9027c599837a1fa24cb625974ea0f"
+      "bytes": 139622,
+      "sha256": "9f27b8ebe1a8159fc350a19bb1d1417075b85fb0ea00e58679ebd8574ab00c8d"
+    },
+    {
+      "file": "wallpaper-ungranted-uri.png",
+      "label": "注入无持久权限的壁纸 URI（App 应当清掉它）",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|main-no-wallpaper",
+      "actualOrientation": "landscape",
+      "bytes": 139622,
+      "sha256": "9f27b8ebe1a8159fc350a19bb1d1417075b85fb0ea00e58679ebd8574ab00c8d"
+    },
+    {
+      "file": "system-night-yes.png",
+      "label": "SYSTEM 模式 + 系统深色",
+      "appThemeMode": "DARK",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "dimensionKey": "DARK|PURPLE|1.0|main-system-night",
+      "actualOrientation": "landscape",
+      "bytes": 140668,
+      "sha256": "0b872c64f8940fa7b6c6cc6ab1ca1609f57421917f2d7df77d05a76ac8d5b915"
+    },
+    {
+      "file": "system-night-no.png",
+      "label": "SYSTEM 模式 + 系统浅色",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|main-no-wallpaper",
+      "actualOrientation": "landscape",
+      "bytes": 139622,
+      "sha256": "9f27b8ebe1a8159fc350a19bb1d1417075b85fb0ea00e58679ebd8574ab00c8d"
     }
   ]
 }

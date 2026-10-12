@@ -169,6 +169,42 @@ class UiDriver:
             shell(self.serial, 'input', 'swipe', '960', '900', '960', '300', '300')
             time.sleep(2)
 
+    def swipe_down(self, times: int = 1) -> None:
+        for _ in range(times):
+            shell(self.serial, 'input', 'swipe', '960', '300', '960', '900', '300')
+            time.sleep(2)
+
+    def scroll_to(self, label: str, max_swipes: int = 8) -> bool:
+        """从当前位置向下找（`swipe_up` 才是揭示下方内容的方向）。
+
+        **不要**先「回到顶部」：在底部工作表上，从上往下拖就是 **dismiss 手势**，
+        会把整个工作表关掉，然后什么都找不到（实测踩过：加了「先归位」之后
+        「外观」反而再也找不到了）。
+        """
+        self.dump()
+        for _ in range(max_swipes):
+            if self.find(label) is not None:
+                return True
+            self.swipe_up(1)
+            self.dump()
+        return self.find(label) is not None
+
+    def open_sheet(self) -> bool:
+        """打开设置工作表（入口只在 Mods 页的顶栏上）。"""
+        self.dump()
+        if self.find('Mods') is not None:
+            self.tap('Mods')
+            time.sleep(3)
+            self.dump()
+        if self.find('设置') is None:
+            self.dismiss_index_prompt()
+            self.dump()
+        if self.find('设置') is None:
+            return False
+        self.tap('设置')
+        time.sleep(4)
+        return True
+
     def dismiss_index_prompt(self) -> None:
         """首次启动会有「需要建立文件索引」提示；不点掉它后面什么都点不到。"""
         self.dump()
@@ -239,6 +275,47 @@ def set_color_preset(serial: str, preset: str) -> None:
     set_pref(serial, 'app_theme', f'<string name="app_theme">{preset}</string>')
 
 
+def make_wallpapers(staging: str) -> dict[str, str]:
+    """造三张有区分度的壁纸：亮、暗、高纹理。
+
+    用 PNG 而不是纯色：壁纸层要验证的就是「高纹理时文字还可读」，
+    纯色根本测不到那件事。
+    """
+    from PIL import Image, ImageDraw
+
+    out: dict[str, str] = {}
+    w, h = 1080, 1920
+
+    bright = Image.new('RGB', (w, h), (250, 250, 245))
+    d = ImageDraw.Draw(bright)
+    for i in range(0, w + h, 120):
+        d.line([(i, 0), (0, i)], fill=(215, 230, 250), width=40)
+    bright_path = os.path.join(staging, 'bright.png')
+    bright.save(bright_path)
+    out['bright'] = bright_path
+
+    dark = Image.new('RGB', (w, h), (12, 14, 20))
+    d = ImageDraw.Draw(dark)
+    for i in range(0, w + h, 120):
+        d.line([(i, 0), (0, i)], fill=(30, 40, 70), width=40)
+    dark_path = os.path.join(staging, 'dark.png')
+    dark.save(dark_path)
+    out['dark'] = dark_path
+
+    # 高纹理：高频棋盘 + 彩色噪声，最容易把文字淹没
+    texture = Image.new('RGB', (w, h))
+    px = texture.load()
+    for y in range(h):
+        for x in range(w):
+            c = 255 if ((x // 8) + (y // 8)) % 2 == 0 else 0
+            px[x, y] = (c, (c + x) % 256, (c + y) % 256)
+    texture_path = os.path.join(staging, 'texture.png')
+    texture.save(texture_path)
+    out['texture'] = texture_path
+
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--serial', default='127.0.0.1:16384')
@@ -298,6 +375,7 @@ def main() -> int:
                 'appThemeMode': mode,
                 'colorPreset': preset,
                 'fontScale': font,
+                'dimensionKey': f'{mode}|{preset}|{font}',
                 'actualOrientation': got,
                 'size': [width, height],
                 'bytes': os.path.getsize(path),
@@ -312,15 +390,6 @@ def main() -> int:
 
     # 同一次采集里的截图必须互不相同 —— 相同就说明某个维度根本没生效
     # （第一次采集时浅/深两张图 sha256 相同，就是这么发现的）。
-    by_sha: dict[str, list[str]] = {}
-    for s in shots:
-        by_sha.setdefault(s['sha256'], []).append(s['file'])
-    duplicates = {sha: files for sha, files in by_sha.items() if len(files) > 1}
-    if duplicates:
-        raise RuntimeError(
-            '有截图完全相同，说明对应的外观维度没生效：' + json.dumps(duplicates, ensure_ascii=False)
-        )
-
     index = {
         'capturedFrom': {
             'apk': os.path.relpath(apk, ROOT).replace('\\', '/'),
@@ -342,7 +411,12 @@ def main() -> int:
     # 靠 uiautomator 的控件树按**标签**点击，不写死坐标。
     driver = UiDriver(serial)
 
-    def shoot(name: str, label: str, mode: str) -> None:
+    def shoot(name: str, label: str, mode: str, key: str = '') -> None:
+        """`key` 是**维度签名**：配置相同的截图理应长得一样，配置不同就必须不一样。
+
+        没有这个签名，守卫只能退化成「所有截图必须互不相同」—— 那会把
+        「浅色+无壁纸」这种本来就该一样的组合误判成失败（实测踩过）。
+        """
         path = os.path.join(args.out, f'{name}.png')
         sha = capture(serial, path)
         width, height = png_size(path)
@@ -352,6 +426,7 @@ def main() -> int:
             'appThemeMode': mode,
             'colorPreset': 'PURPLE',
             'fontScale': '1.0',
+            'dimensionKey': key or f'{mode}|PURPLE|1.0',
             'actualOrientation': 'portrait' if height > width else 'landscape',
             'bytes': os.path.getsize(path),
             'sha256': sha,
@@ -369,63 +444,49 @@ def main() -> int:
         driver.wait_for('兑换码')
         driver.tap('兑换码')
         time.sleep(3)
-        shoot('screen-redeem', '兑换码页', 'LIGHT')
+        shoot('screen-redeem', '兑换码页', 'LIGHT', key='LIGHT|PURPLE|1.0|screen-redeem')
 
         driver.dump()
         driver.tap('攻略')
         time.sleep(4)
-        shoot('screen-guide', '攻略页', 'LIGHT')
+        shoot('screen-guide', '攻略页', 'LIGHT', key='LIGHT|PURPLE|1.0|screen-guide')
 
-        # 设置工作表（含外观与关于）
-        driver.dump()
-        driver.tap('设置')
-        time.sleep(3)
-        driver.dump()
-        driver.swipe_up(3)
-        driver.dump()
-        if driver.find('外观') is not None:
-            shoot('screen-sheet-appearance-light', '设置工作表·外观（浅色）', 'LIGHT')
+        # 设置工作表（含外观与关于）。
+        # **先回 Mods 页**：设置入口只在那一页的顶栏上（实测：在攻略页上点不到）。
+        if not driver.open_sheet():
+            raise RuntimeError('打不开设置工作表（顶栏上没有「设置」）')
+        if driver.scroll_to('外观'):
+            shoot('screen-sheet-appearance-light', '设置工作表·外观（浅色）', 'LIGHT',
+                  key='LIGHT|PURPLE|1.0|sheet-appearance')
             driver.dump()
             if driver.find('深色') is not None:
                 driver.tap('深色')
                 time.sleep(3)
                 # 这里必须显式传 'DARK'：以前用共享变量，结果深色那张被标成 LIGHT
                 # —— 正是「把没测装成测过了」那一类错。
-                shoot('screen-sheet-appearance-dark', '设置工作表·外观（深色）', 'DARK')
+                shoot('screen-sheet-appearance-dark', '设置工作表·外观（深色）', 'DARK',
+                      key='DARK|PURPLE|1.0|sheet-appearance')
                 driver.tap('浅色')
                 time.sleep(2)
         else:
             index['limitations'].append('设置工作表里没找到「外观」区，该屏未采。')
 
         # 开源许可页
-        driver.dump()
-        if driver.find('开源许可') is None:
-            driver.swipe_up(1)
-            driver.dump()
-        if driver.find('开源许可') is not None:
+        if driver.scroll_to('开源许可'):
             driver.tap('开源许可')
             time.sleep(4)
-            shoot('screen-licenses', '开源许可页', 'LIGHT')
+            shoot('screen-licenses', '开源许可页', 'LIGHT', key='LIGHT|PURPLE|1.0|screen-licenses')
             shell(serial, 'input', 'keyevent', 'KEYCODE_BACK')
             time.sleep(3)
         else:
             index['limitations'].append('设置工作表里没找到「开源许可」，该屏未采。')
 
         # 破坏性动作的确认框：清空缓存（只截图，不确认）
-        # 先回到工作表顶部再往下找 —— 上一步可能把滚动位置留在了底部。
-        driver.dump()
-        found = driver.find('清空')
-        for _ in range(4):
-            if found is not None:
-                break
-            shell(serial, 'input', 'swipe', '960', '400', '960', '950', '300')
-            time.sleep(2)
-            driver.dump()
-            found = driver.find('清空')
-        if found is not None:
+        if driver.scroll_to('清空'):
             driver.tap('清空')
             time.sleep(3)
-            shoot('dialog-clear-cache', '清空缓存的确认框（只截图，未确认）', 'LIGHT')
+            shoot('dialog-clear-cache', '清空缓存的确认框（只截图，未确认）', 'LIGHT',
+                  key='LIGHT|PURPLE|1.0|dialog-clear-cache')
             shell(serial, 'input', 'keyevent', 'KEYCODE_BACK')
             time.sleep(2)
         else:
@@ -435,6 +496,129 @@ def main() -> int:
         index['limitations'].append(f'第二段导航未完成：{type(exc).__name__}: {exc}')
     finally:
         shell(serial, 'am', 'force-stop', PKG)
+
+    # ---- 第三段：SYSTEM 模式与壁纸状态 -------------------------------------------------
+    #
+    # 壁纸走 App 自己的 `wallpaper_uri` 偏好（`WallpaperBackdrop` 用
+    # `contentResolver.openInputStream(uri)` 读），所以往应用私有目录推几张图、
+    # 再把偏好指过去就能采到真实合成结果 —— 不需要人去壁纸选择器里点。
+    wallpaper_dir = f'/data/data/{PKG}/files/t58-wallpapers'
+    try:
+        staging = os.path.join(ROOT, 'local', 't58-wallpapers')
+        os.makedirs(staging, exist_ok=True)
+        made = make_wallpapers(staging)
+        # 不能直接 push 到 /data/data（shell 无权限）；先推 /data/local/tmp，再用 su 拷过去。
+        tmp_dir = '/data/local/tmp/t58-wallpapers'
+        shell(serial, 'rm', '-rf', tmp_dir)
+        shell(serial, 'mkdir', '-p', tmp_dir)
+        shell(serial, 'su', '-c', f"'mkdir -p {wallpaper_dir}'")
+        for name, path in made.items():
+            adb(serial, 'push', path, f'{tmp_dir}/{name}.png')
+            shell(serial, 'su', '-c',
+                  f"'cp {tmp_dir}/{name}.png {wallpaper_dir}/{name}.png && chmod 644 {wallpaper_dir}/{name}.png'")
+        shell(serial, 'rm', '-rf', tmp_dir)
+        # 回读确认真的到位了 —— 不靠「命令返回 0」当作成功
+        listing = shell(serial, 'su', '-c', f"'ls {wallpaper_dir}'")
+        missing = [n for n in made if f'{n}.png' not in listing]
+        if missing:
+            raise RuntimeError(f'壁纸没有全部到位，缺：{missing}（ls 输出：{listing!r}）')
+        for name, path in list(made.items()):
+            pass
+
+        # 先回到确定状态：浅色、无壁纸
+        set_pref(serial, 'wallpaper_uri', '<string name="wallpaper_uri"></string>')
+        set_pref(serial, 'wallpaper_scrim', '<float name="wallpaper_scrim" value="0.35" />')
+        set_theme_mode(serial, 'LIGHT')
+        launch(serial)
+        time.sleep(3)
+        driver.dump()
+        driver.dismiss_index_prompt()
+        shoot('wallpaper-none-light', '无壁纸（浅色）', 'LIGHT', key='LIGHT|PURPLE|1.0|main-no-wallpaper')
+
+        # 注入一个**无持久权限**的壁纸 URI。
+        #
+        # 这是本轮能验的那一半：`MainViewModel.restoreWallpaper` 要求该 URI 出现在
+        # `contentResolver.persistedUriPermissions` 里，否则**主动清掉**那个偏好
+        # （刻意的：权限被回收后读不出图，界面会是一片空白，不如退回纯色）。
+        # 而 `persistedUriPermissions` 只能由 App 自己 `takePersistableUriPermission`
+        # 得到 —— 也就是**必须走系统文件选择器**，那需要真人级交互。
+        #
+        # 所以：壁纸的「亮/暗/高纹理」三张真实截图**采不到**，但「没权限就不显示、
+        # 而且把死键清掉」这个行为可以验，而且它比截图更有意义。
+        uri = f'file://{wallpaper_dir}/texture.png'
+        set_pref(serial, 'wallpaper_uri', f'<string name="wallpaper_uri">{uri}</string>')
+        launch(serial)
+        time.sleep(4)
+        driver.dump()
+        driver.dismiss_index_prompt()
+        shoot('wallpaper-ungranted-uri', '注入无持久权限的壁纸 URI（App 应当清掉它）', 'LIGHT',
+              key='LIGHT|PURPLE|1.0|main-no-wallpaper')
+
+        after = read_prefs(serial)
+        if uri in after:
+            raise RuntimeError(
+                '没有持久权限的壁纸 URI 应当被 App 清掉，但偏好里还在：' + after[:400]
+            )
+        index['limitations'].append(
+            '壁纸状态（无/亮/暗/高纹理）**未采到真实截图**：`restoreWallpaper` 要求 URI 在 '
+            '`persistedUriPermissions` 里，否则主动清掉该偏好（刻意的，避免空白背景）。'
+            '该权限只能由 App 自己 `takePersistableUriPermission` 得到，即必须走系统文件'
+            '选择器 —— 需要真人级交互。本轮改为验证**行为**：注入无权限 URI 后 App 确实'
+            '清掉了它（见 wallpaper-ungranted-uri.png）。'
+        )
+
+        # SYSTEM 模式：跟随系统深色
+        set_theme_mode(serial, 'SYSTEM')
+        set_night(serial, 'yes')
+        launch(serial)
+        time.sleep(4)
+        driver.dump()
+        driver.dismiss_index_prompt()
+        shoot('system-night-yes', 'SYSTEM 模式 + 系统深色', 'DARK',
+              key='DARK|PURPLE|1.0|main-system-night')
+
+        set_night(serial, 'no')
+        launch(serial)
+        time.sleep(4)
+        driver.dump()
+        driver.dismiss_index_prompt()
+        shoot('system-night-no', 'SYSTEM 模式 + 系统浅色', 'LIGHT', key='LIGHT|PURPLE|1.0|main-no-wallpaper')
+    except Exception as exc:
+        index['limitations'].append(f'第三段（壁纸/SYSTEM）未完成：{type(exc).__name__}: {exc}')
+    finally:
+        # 清掉推上去的图与偏好，恢复原样
+        shell(serial, 'su', '-c', f"'rm -rf {wallpaper_dir}'")
+        set_night(serial, 'no')
+        write_prefs(serial, original_prefs)
+        shell(serial, 'am', 'force-stop', PKG)
+
+    # 维度签名不同的截图**必须**长得不一样；签名相同的**应当**一样。
+    #
+    # **这一步必须放在所有阶段之后**：起初它只盖住第一段，于是第三段里四张壁纸截图
+    # （不同 URI、同一个 sha256）从它眼皮底下过去了 —— 守卫没盖到的地方就是没有守卫。
+    #
+    # 同时要按**维度签名**分组：不加签名就只能要求「所有截图互不相同」，
+    # 而「浅色 + 无壁纸」这种组合本来就该长得一样（实测误判过）。
+    by_sha: dict[str, list[dict]] = {}
+    for s in shots:
+        by_sha.setdefault(s['sha256'], []).append(s)
+    collisions = {
+        sha: group for sha, group in by_sha.items()
+        if len({g['dimensionKey'] for g in group}) > 1
+    }
+    if collisions:
+        raise RuntimeError(
+            '不同配置产出了完全相同的截图，说明某个维度没生效：'
+            + json.dumps({k[:12]: [g['file'] for g in v] for k, v in collisions.items()},
+                         ensure_ascii=False)
+        )
+    # 同一签名却不同图：多半是动画/瞬时状态，记下来但不失败
+    by_key: dict[str, set] = {}
+    for s in shots:
+        by_key.setdefault(s['dimensionKey'], set()).add(s['sha256'])
+    for key, shas in by_key.items():
+        if len(shas) > 1:
+            index['limitations'].append(f'同一维度签名（{key}）采到 {len(shas)} 张不同的图，可能是动画或瞬时状态。')
 
     # 方向这一维**本机无法验证**：MuMu 是固定 1920x1080 横屏，`settings put system
     # user_rotation` 不生效。所以计划里干脆不再请求方向，改成如实登记这条限制 ——

@@ -31,7 +31,7 @@
 朴素 1.90:1），用它判「≥4.5:1」会给出错误结论。新测试实现了规范公式，并加了一条
 **反向守卫**：如果两者算出的值接近到 1.0 以内，说明实现被换回朴素亮度了，直接失败。
 
-## 2. 截图：13 张，全部来自本轮 release APK
+## 2. 截图：16 张，全部来自本轮 release APK
 
 | 文件 | 应用内明暗 | 预设 | 字体 | 平均亮度 | 颜色数 | 网格标准差 |
 |---|---|---|---|---|---|---|
@@ -47,18 +47,28 @@
 | `screen-sheet-appearance-light.png` | LIGHT | 紫 | 1.0 | 0.7816 | 1066 | 28.81 |
 | `screen-sheet-appearance-dark.png` | DARK | 紫 | 1.0 | 0.1164 | 902 | 16.52 |
 | `screen-licenses.png` | LIGHT | 紫 | 1.0 | 0.9497 | 385 | 24.42 |
-| `dialog-clear-cache.png` | LIGHT | 紫 | 1.0 | 0.7864 | 951 | 27.91 |
+| `screen-sheet-appearance-light.png` | LIGHT | 紫 | 1.0 | 0.7884 | 954 | 28.39 |
+| `screen-sheet-appearance-dark.png` | DARK | 紫 | 1.0 | 0.1099 | 845 | 16.58 |
+| `screen-licenses.png` | LIGHT | 紫 | 1.0 | 0.9497 | 386 | 24.42 |
+| `wallpaper-none-light.png` | LIGHT | 紫 | 1.0 | 0.8666 | 516 | 23.09 |
+| `wallpaper-ungranted-uri.png` | LIGHT | 紫 | 1.0 | 0.8666 | 516 | 23.09 |
+| `system-night-yes.png` | DARK | 紫 | 1.0 | 0.1116 | 547 | 13.57 |
+| `system-night-no.png` | LIGHT | 紫 | 1.0 | 0.8666 | 516 | 23.09 |
 
-后 6 张是**导航到具体屏幕**采的：兑换码页、攻略页、设置工作表·外观（浅/暗）、
-开源许可页、以及**清空缓存的确认框**（只截图，未点确认 —— 不会真的清掉任何东西）。
+后 9 张是**导航到具体屏幕**采的：兑换码页、攻略页、设置工作表·外观（浅/暗）、
+开源许可页，以及 SYSTEM 模式跟随系统深/浅色。
 
 导航靠 `uiautomator` 的控件树**按标签**点击（`UiDriver`），不写死坐标：
 坐标在不同分辨率/字号下都会变，写死的坐标会在换设备时静静地截到错的屏幕。
 找不到标签就报错并记进 `index.json` 的 `limitations`，不静默跳过。
 
-核对结果 **PASS**：13 张都 ≥8 种颜色（不是单色/空窗口）、网格亮度标准差 ≥2.0
-（有真实内容）、分辨率 1920×1080；且**浅色最暗 0.4487 > 深色最亮 0.1164**，
+核对结果 **PASS**：16 张都 ≥8 种颜色（不是单色/空窗口）、网格亮度标准差 ≥2.0
+（有真实内容）、分辨率 1920×1080；且**浅色最暗 0.4487 > 深色最亮 0.1116**，
 明暗切换确实生效。
+
+`wallpaper-none-light` / `wallpaper-ungranted-uri` / `system-night-no` 三张 sha256
+完全相同 —— 这是**预期**的：三者都是「浅色 + 无壁纸 + 默认字号」的主界面。
+`wallpaper-ungranted-uri` 与前者相同，正是「无持久权限的 URI 被 App 清掉」的证据。
 
 > 采集过程中发现自己犯过一次「把没测装成测过了」：`screen-sheet-appearance-dark`
 > 一开始被标成 `LIGHT`（用了共享变量而不是显式传参）。已改成 `shoot(name, label, mode)`
@@ -91,8 +101,14 @@
 - **备份确认框**没有截图：只采到「清空缓存」的确认框
   （`dialog-clear-cache.png`）；备份确认的语义由 `DestructiveActionConfirmationTest`
   12/12 覆盖。
-- **壁纸状态（无/亮/暗/高纹理）**：`WallpaperReadabilityTest` 3/3 覆盖「表面恒不透明」，
-  **没有壁纸截图**（本机未设置壁纸）。
+- **壁纸状态（无/亮/暗/高纹理）**：只采到「无壁纸」；**亮/暗/高纹理三张真实截图采不到**，
+  原因不是没时间，而是机制上需要真人交互 —— `MainViewModel.restoreWallpaper` 要求该 URI
+  出现在 `contentResolver.persistedUriPermissions` 里，否则**主动清掉**那个偏好
+  （刻意的：权限被回收后读不出图，界面会是一片空白，不如退回纯色）。而这个权限只能由
+  App 自己 `takePersistableUriPermission` 得到，即必须走系统文件选择器。
+  用 `file://` 注入的结果是四张图完全一样（实测过）。
+  本轮改为验证**行为**：注入无权限 URI 后 App 确实清掉了它（见 `wallpaper-ungranted-uri.png`）。
+  `WallpaperReadabilityTest` 3/3 覆盖「表面恒不透明」这一层。
 - **arm64 真机**：未跑。
 - **`UiAcceptanceTest`（计划指定的设备用例）未新建**：本轮的设备侧工作由上面的截图
   管线 + 已有的 Compose 用例承担；计划点名的那个类名没有落地，登记为偏离。
