@@ -2616,6 +2616,8 @@ Test-Bd2ReleaseSmoke -Case 'performance-scenarios' -Abi 'arm64-v8a'
 
 - [ ] **T60 完成**
 
+**2026-10-12 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** `LocalAll` 补成完整五步（依赖 → JVM → Python → 两个 release 构建 → 静态审计），新增 `Test-Bd2UnitAll`（每 flavor 一次 Gradle，判据与逐类入口一致：failures/errors/skipped 任一非零即失败）；新增 `docs/refactor/build-and-verify.md` 与 `docs/refactor/data-contracts.md`，README 中英各补「开发与验证」章节。**全新 PowerShell 进程 `& verification.ps1 -Mode LocalAll` 实测 exit 0**（`UnitAll tests=1456 failures=0 errors=0 skipped=0`）。**隔离环境的干净构建未做、fixture 清单未再核对、字节级可复现未实测、缺 catalog 分支未验证**，不勾 DONE。见 [T60 证据](../../refactor/evidence/T60.md)。
+
 **优先级：** P1　**前置：** T59、T55
 
 **文件范围（实施工作区）：**

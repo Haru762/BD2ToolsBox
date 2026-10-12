@@ -99,6 +99,72 @@ mod 不完整或不兼容安卓版。完整的角色 mod 需要三个文件：`.
 
 ---
 
+## 开发与验证
+
+### 一条命令跑完本地验证（不需要设备）
+
+```powershell
+& (Join-Path $Root 'tools/verification.ps1') -ProjectRoot $Root -Mode LocalAll
+```
+
+依次跑：依赖解析 → 全部 JVM 单测 → 全部 Python 测试 → 两个 ABI 的 release 构建 →
+静态审计（分层架构、APK 组成/ABI/native/资源/DEX 键名、native ABI）。
+**任一步失败即非零退出；skip 不算通过。** 设备测试**不**包含在内，必须显式调用
+`Test-Bd2Device` / `Test-Bd2ReleaseSmoke`，不会默认往已连接设备上装东西。
+
+完整清单、干净构建与可复现性边界见 [`docs/refactor/build-and-verify.md`](docs/refactor/build-and-verify.md)。
+
+### 工具链与版本
+
+| 项 | 值 | 位置 |
+|---|---|---|
+| Kotlin / AGP / Gradle | 2.2.20 / 8.11.1 / 8.13 | `gradle/libs.versions.toml` |
+| Chaquopy（Python 运行时） | 16.1.0，目标解释器 **3.8** | `app/build.gradle.kts` |
+| compileSdk / minSdk / targetSdk | 36 / **29** / 34 | `gradle/libs.versions.toml` |
+| NDK（native 剥离） | 26.3.11579264 | `gradle/libs.versions.toml` |
+| App 发布版本 | `versionName` / `versionCode` | **`gradle/version.properties`**（可用 `APP_VERSION_NAME` 覆盖） |
+| Python 依赖锁定 | 9 个直接依赖 `==` 锁定 | `app/requirements-android.txt`（解析结果见 `docs/refactor/python-dependencies.md`） |
+
+构建机 Python 按 `local.properties` 的 `chaquopy.python` → `CHAQUOPY_PYTHON` → `PATH`
+依次查找；Android SDK 读 `local.properties` 的 `sdk.dir`。**不写死绝对路径。**
+
+### 两个 ABI 分开分发
+
+| ABI | flavor | 产物 |
+|---|---|---|
+| arm64-v8a（手机） | `arm64` | `app/build/outputs/apk/arm64/release/app-arm64-release.apk` |
+| x86_64（模拟器） | `x64` | `app/build/outputs/apk/x64/release/app-x64-release.apk` |
+
+不再产出 universal 包：单 ABI flavor 让 `lib/` 与 Chaquopy 的 `assets/IMY` **都只含当前架构**。
+
+### 主题与壁纸
+
+浅色 / 深色 / 跟随系统三选一，另有七套配色预设与「跟随壁纸取色」（Android 12+）。
+自定义壁纸只存 SAF URI（不拷图进应用目录），并可在设置里调遮罩强度。
+**壁纸只在背景层可见；列表、工具栏、弹窗等文字密集区一律用不透明底色**，
+不让图片穿过文字。
+
+### 后台限制与数据恢复
+
+*   转换 / 装入 / 扫描 / 预解包都挂在**前台服务**上（通知栏可见进度）。
+  系统拒绝启动前台服务时**明确失败并提示**，不会照常开跑。
+*   进程被杀后重启：只读操作日志做**分类**（中断 / 待核对 / 结果未知 / 已提交），
+  在界面上说清下一步，**不自动重放**安装步骤、不改账本、不碰游戏文件。
+  已提交的事实不会被覆盖。
+*   游戏文件的提交是**同目录暂存 + 校验 + 原子替换**，不是事务：目录树拷贝时
+  每个文件各自独立提交，失败会按目标分别上报。
+
+磁盘格式与迁移规则见 [`docs/refactor/data-contracts.md`](docs/refactor/data-contracts.md)。
+
+### 许可证
+
+应用内「设置 → 开源许可」由 AboutLibraries 生成，数据来自构建期产出的
+`res/raw/aboutlibraries.json`（含 SPDX 全文，**离线可读**）。
+组件来源与义务见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)，
+清单与全文位置见 [`docs/refactor/license-inventory.md`](docs/refactor/license-inventory.md)。
+
+---
+
 ## 致谢
 
 本项目站在这些项目之上：

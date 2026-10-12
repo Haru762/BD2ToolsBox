@@ -1539,48 +1539,193 @@ function Get-Bd2PythonTestPatterns {
     return @(Get-ChildItem -LiteralPath $dir -Filter 'test_*.py' -File | ForEach-Object { $_.Name } | Sort-Object)
 }
 
+function Get-Bd2ReleaseAuditTargets {
+    <#
+      .SYNOPSIS
+        两个 ABI 的 release APK 路径与它们各自的 flavor 任务。
+      .DESCRIPTION
+        路径与 flavor 的对应关系只有这一处定义；LocalAll 与各减包任务都从这里取，
+        避免「文档写一个路径、脚本用另一个」。
+    #>
+    return @(
+        @{ abi = 'arm64-v8a'; flavor = 'arm64'; task = ':app:assembleArm64Release'
+           apk = 'app/build/outputs/apk/arm64/release/app-arm64-release.apk' },
+        @{ abi = 'x86_64'; flavor = 'x64'; task = ':app:assembleX64Release'
+           apk = 'app/build/outputs/apk/x64/release/app-x64-release.apk' }
+    )
+}
+
+function Test-Bd2UnitAll {
+    <#
+      .SYNOPSIS
+        一次跑完全部 JVM 用例（每个 flavor 变体一次 Gradle），并读 JUnit XML 判定。
+
+      .DESCRIPTION
+        与 [Test-Bd2Unit] 的区别：那个是**逐类**跑（每类一份 runId 与 summary，
+        供各任务引用具体证据）；本地总入口要的是「整批跑一遍且不能假绿」，
+        逐类调用会把同一个 Gradle 任务重跑几十次。
+
+        判据与 [Test-Bd2Unit] 一致，不放宽：
+          · 跑之前把该任务的 test-results 目录移入回收站，避免上一轮 XML 被当成这一轮；
+          · 跑之后必须读到 TEST-*.xml；
+          · failures / errors / skipped 任一非零即抛（skip 不是「通过」）。
+    #>
+    Assert-Bd2Environment
+    $state = Get-Bd2GitState
+    $variant = Get-Bd2UnitTestTasks
+    $runDir = New-Bd2RunDirectory 'unit-all'
+    $plan = [ordered]@{
+        runId = Split-Path -Leaf $runDir
+        git = $state
+        scope = 'all'
+        variant = $variant.variant
+        tasks = $variant.tasks
+        counts = [ordered]@{ tests = 0; failures = 0; errors = 0; skipped = 0 }
+        taskResults = @()
+        result = 'FAIL'
+    }
+    $total = [ordered]@{ tests = 0; failures = 0; errors = 0; skipped = 0 }
+    foreach ($task in $variant.tasks) {
+        $resultsDir = Get-Bd2UnitResultsDir -Task $task
+        Move-Bd2UnitResultsToRecycleBin -ResultsDir $resultsDir
+        Invoke-Bd2GradleRaw $task --console=plain
+        $gradleExit = $script:Bd2LastExitCode
+        $summary = Read-Bd2UnitXml -ResultsDir $resultsDir
+        # Read-Bd2UnitXml 返回的是**扁平的**聚合（tests/failures/errors/skipped 直接在顶层），
+        # 不是嵌在 counts 里 —— 这里按它的真实形状取。
+        $entry = [ordered]@{
+            task = $task
+            gradleExit = $gradleExit
+            resultsDir = $resultsDir
+            counts = [ordered]@{
+                tests = [int]$summary.tests
+                failures = [int]$summary.failures
+                errors = [int]$summary.errors
+                skipped = [int]$summary.skipped
+            }
+        }
+        $plan.taskResults += $entry
+        foreach ($k in @('tests', 'failures', 'errors', 'skipped')) {
+            $total[$k] += [int]$summary.$k
+        }
+    }
+    $plan.counts = $total
+    $problems = @()
+    foreach ($entry in $plan.taskResults) {
+        if ($entry.gradleExit -ne 0) { $problems += "$($entry.task): gradle exit $($entry.gradleExit)" }
+    }
+    if ($total.tests -eq 0) { $problems += '没有任何 JVM 用例被执行' }
+    if ($total.failures -gt 0) { $problems += "failures=$($total.failures)" }
+    if ($total.errors -gt 0) { $problems += "errors=$($total.errors)" }
+    if ($total.skipped -gt 0) { $problems += "skipped=$($total.skipped)（skip 不算通过）" }
+    $plan.problems = $problems
+    if ($problems.Count -eq 0) { $plan.result = 'PASS' }
+    Write-Bd2Json -Value $plan -Path (Join-Path $runDir 'summary.json')
+    Write-Host ("UnitAll [{0}]: tests={1} failures={2} errors={3} skipped={4} -> {5}" -f `
+        $variant.variant, $total.tests, $total.failures, $total.errors, $total.skipped, $plan.result)
+    if ($problems.Count -gt 0) {
+        throw ("Test-Bd2UnitAll FAILED for $($variant.variant)：{0}（见 {1}）" -f `
+            ($problems -join '; '), (Join-Path $runDir 'summary.json'))
+    }
+}
+
 function Invoke-Bd2LocalAll {
     <#
       .SYNOPSIS
-        本地验证总入口（Mode=LocalAll）。
+        本地验证总入口（Mode=LocalAll）：一条命令跑完**不需要设备**的全部检查。
 
       .DESCRIPTION
-        §6.1 把**完整** LocalAll 调度交给 T60；T04 负责测试入口本身。本函数因此：
+        顺序（任一步失败即非零退出，不静默少跑）：
 
-          1. 真的跑本轮已实现的本地验证（全部 JVM 单测 + 全部 Python 测试，逐个走
-             Test-Bd2Unit / Test-Bd2Python 的报告与 skip 判定），不返回空成功；
-          2. 跑完之后**明确拒绝**把这次运行当作完整 LocalAll —— release 重建、
-             架构检查、许可与包体静态审计所需的工具（T48 的 audit_apk_size.py、
-             T55/T60 的 check_architecture.py、T37/T38 的许可清单）在 T04 时尚不存在，
-             缺失步骤必须非零，不能静默少跑几步就 exit 0。
+          1. 依赖解析（`releaseRuntimeClasspath` 可解析，offline 也可）；
+          2. 全部 JVM 单测（逐个走 Test-Bd2Unit 的报告与 skip 判定）；
+          3. 全部 Python 测试（逐个走 Test-Bd2Python 的报告与 skip 判定）；
+          4. 两个 ABI 的 release 构建（arm64Release / x64Release）；
+          5. 静态审计：架构分层、APK 组成/ABI/native/资源/DEX 键名、native ABI。
 
-        不隐式安装设备、不自动发布、不访问真实游戏目录 —— 设备动作只在显式调用
-        Test-Bd2Device / Test-Bd2ReleaseSmoke 时发生。
+        **设备测试不在这里**：`Test-Bd2Device` / `Test-Bd2ReleaseSmoke` 必须显式调用，
+        绝不默认往任意已连接设备上装东西。缺真实 catalog 之类的外部输入时，
+        对应的兼容测试只能标「未运行」，不能拿「构建通过」冒充完整验证。
     #>
     Assert-Bd2Environment
-    Write-Host 'LocalAll: 本轮已实现的本地验证开始（JVM 单测 + Python 测试）'
-    $unitClasses = Get-Bd2UnitTestClasses
-    if ($unitClasses.Count -eq 0) { throw 'LocalAll: 未发现任何 JVM 单测类' }
-    foreach ($class in $unitClasses) { Test-Bd2Unit -TestClass $class }
-    foreach ($pattern in Get-Bd2PythonTestPatterns) { Test-Bd2Python -Pattern $pattern }
+    $failures = New-Object System.Collections.ArrayList
+    $steps = New-Object System.Collections.ArrayList
 
-    $missing = New-Object System.Collections.ArrayList
-    foreach ($tool in @('tools/check_architecture.py', 'tools/audit_apk_size.py', 'tools/stage_android_python.py')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $Root $tool) -PathType Leaf)) {
-            [void]$missing.Add($tool)
+    Write-Host 'LocalAll [1/5] 依赖解析'
+    try {
+        Show-Bd2Dependencies
+        [void]$steps.Add('dependencies')
+    } catch {
+        [void]$failures.Add("依赖解析：$($_.Exception.Message)")
+    }
+
+    Write-Host 'LocalAll [2/5] JVM 单测'
+    try {
+        $unitClasses = Get-Bd2UnitTestClasses
+        if ($unitClasses.Count -eq 0) { throw '未发现任何 JVM 单测类' }
+        # 一次跑完（每个 flavor 一次 Gradle），不逐类调用 —— 那个会把同一个任务重跑几十次。
+        # 逐类证据仍可用 Test-Bd2Unit 单独取。
+        Test-Bd2UnitAll
+        [void]$steps.Add("jvm-unit:$($unitClasses.Count) classes")
+    } catch {
+        [void]$failures.Add("JVM 单测：$($_.Exception.Message)")
+    }
+
+    Write-Host 'LocalAll [3/5] Python 测试'
+    try {
+        $patterns = Get-Bd2PythonTestPatterns
+        if ($patterns.Count -eq 0) { throw '未发现任何 Python 测试文件' }
+        foreach ($pattern in $patterns) { Test-Bd2Python -Pattern $pattern }
+        [void]$steps.Add("python:$($patterns.Count) files")
+    } catch {
+        [void]$failures.Add("Python 测试：$($_.Exception.Message)")
+    }
+
+    Write-Host 'LocalAll [4/5] 两个 ABI 的 release 构建'
+    $targets = Get-Bd2ReleaseAuditTargets
+    try {
+        Invoke-Bd2Gradle ($targets | ForEach-Object { $_.task }) --console=plain
+        foreach ($t in $targets) {
+            $path = Join-Path $Root $t.apk
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                throw "release 产物缺失：$($t.apk)"
+            }
         }
+        [void]$steps.Add('release-builds')
+    } catch {
+        [void]$failures.Add("release 构建：$($_.Exception.Message)")
     }
-    foreach ($task in @(':app:assembleArm64Release', ':app:assembleX64Release')) {
-        $tasks = (Get-Bd2GradleTaskList) -join [Environment]::NewLine
-        if ($tasks -notmatch ('(?m)^\s*' + [regex]::Escape($task.Split(':')[-1]) + '(?:\s|$)')) {
-            [void]$missing.Add("Gradle task $task")
+
+    Write-Host 'LocalAll [5/5] 静态审计'
+    try {
+        Invoke-Bd2Python (Join-Path $Root 'tools/check_architecture.py') --root $Root --quiet
+        [void]$steps.Add('architecture')
+        foreach ($t in $targets) {
+            $path = Join-Path $Root $t.apk
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            $auditOut = Join-Path $Root ("local/refactor-artifacts/localall-{0}.json" -f $t.flavor)
+            Invoke-Bd2Python (Join-Path $Root 'tools/audit_apk_size.py') `
+                --apk $path --expected-abi $t.abi `
+                --require-resource-name raw/aboutlibraries `
+                --require-resource-name xml/file_paths `
+                --require-dex-string schemaVersion --require-dex-string savedAt `
+                --output $auditOut --quiet
+            Invoke-Bd2Python (Join-Path $Root 'tools/audit_native_abi.py') `
+                --apk $path --abi $t.abi `
+                --output (Join-Path $Root ("local/refactor-artifacts/localall-native-{0}.json" -f $t.flavor)) | Out-Null
+            [void]$steps.Add("apk-audit:$($t.abi)")
         }
+    } catch {
+        [void]$failures.Add("静态审计：$($_.Exception.Message)")
     }
-    if ($missing.Count -gt 0) {
-        throw ("LocalAll 未完成：完整调度需要以下步骤，本项（T04）尚未实现，T60 负责补齐 —— " `
-               + ($missing -join '; ') + '。本轮已跑的测试结果见 local/refactor-artifacts/test-results/。')
+
+    Write-Host '=== LocalAll 摘要 ==='
+    foreach ($step in $steps) { Write-Host "  OK   $step" }
+    foreach ($f in $failures) { Write-Host "  FAIL $f" }
+    if ($failures.Count -gt 0) {
+        throw "LocalAll 失败 $($failures.Count) 项；本地验证不完整。"
     }
-    Write-Host 'LocalAll: PASS'
+    Write-Host 'LocalAll: PASS（设备测试未包含；需显式调用 Test-Bd2Device / Test-Bd2ReleaseSmoke）'
 }
 
 if ($Mode -eq 'LocalAll') {
