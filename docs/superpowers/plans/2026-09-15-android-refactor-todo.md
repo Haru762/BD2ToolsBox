@@ -782,6 +782,8 @@ Test-Bd2Python -Pattern 'test_*.py'
 
 - [x] **T15 完成** — 状态 **DONE**（2026-09-27）：minSdk 29 / compileSdk 36 / targetSdk 34（用户裁定）；前台服务被拒安全停止+反馈、SAF 授权失效弹窗、删两个未用存储权限、libtexture2ddecoder 16KB 重编 + pageSizeCompat。PlatformBehaviorTest 13/13 于 MuMu API32 + AVD API29/34/36-16KB；JVM 435、Python 122；**原生 arm64 真机** Runtime+Dependency probe PASS。见 [T15.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T15.md>)。 — 状态 **IMPLEMENTED_NOT_VERIFIED**（2026-09-27）：x86_64 全部验收项通过（MuMu API 32 `Test-Bd2Device` 13/13，AVD API 29/34/36-16KB 13/13）；本任务替换了 arm64 `libtexture2ddecoder.so`，按 arm64 验证策略升格 A 类，**缺原生 arm64 release probe**。见 [T15.md](<D:/bd2 mod/worktrees/bdroid-android-refactor/docs/refactor/evidence/T15.md>)。
 
+**2026-10-12 补：16 KB 页运行时已验证。** 本地 AVD `bd2-x64-api36-16k`（镜像 `google_apis_ps16k`，`getconf PAGE_SIZE` = **16384**，API 36）上 `PlatformBehaviorTest` **13/13 PASS**，含 `packagedJniLibrariesAre16KbAligned` 与 **`jniLibrariesLoadOnThisPageSize`（16 KB 页上真实 `System.loadLibrary`）**。见 [16 KB 设备验收](../../refactor/evidence/device-16k.md)。arm64 真机仍缺。
+
 **优先级：** P0　**前置：** T14
 
 **文件范围（实施工作区）：**
