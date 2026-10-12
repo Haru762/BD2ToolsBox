@@ -1,7 +1,7 @@
 {
   "capturedFrom": {
     "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-    "apkSha256": "81da0c5f48eb954238969aa4aef146446ba7532a4a352ac3a275ef2e33a3075e",
+    "apkSha256": "0fb8eaa9980ba911db8091554f374da850d040df93841ca986bc51a38c0758b8",
     "abi": "x86_64",
     "serial": "127.0.0.1:16384",
     "package": "com.bd2toolsbox",
@@ -13,6 +13,7 @@
   "limitations": [
     "设置工作表里没找到「清空」，确认框未采。",
     "壁纸状态（无/亮/暗/高纹理）**未采到真实截图**：`restoreWallpaper` 要求 URI 在 `persistedUriPermissions` 里，否则主动清掉该偏好（刻意的，避免空白背景）。该权限只能由 App 自己 `takePersistableUriPermission` 得到，即必须走系统文件选择器 —— 需要真人级交互。本轮改为验证**行为**：注入无权限 URI 后 App 确实清掉了它（见 wallpaper-ungranted-uri.png）。",
+    "带「收起/取消」的 `TaskProgressPanel` **未采到截图**：它只在装入/预解包这类任务里出现，需要跑一个真的装入流程；索引扫描弹的是另一个进度页（已采）。面板的收起/再展开语义由 `TaskPanelLifecycleTest` 6/6 在 Compose 层覆盖。",
     "本机（MuMu）是固定 1920x1080 横屏，`settings put system user_rotation` 不生效，实际只采到 ['landscape'] 一种方向。**竖屏布局与旋转恢复的观感未验证**，需要真机或可竖屏的模拟器补拍。"
   ],
   "shots": [
@@ -28,8 +29,8 @@
         1920,
         1080
       ],
-      "bytes": 175474,
-      "sha256": "b898365fa2e1eed626b5e45f35a16d9a56dc1448733795c10c99a29a3763ad63"
+      "bytes": 175653,
+      "sha256": "c6bd3bd8e4ecc48518e4386f3e4bf44a3d38baaa8c95d08455d6fb4c57b6a137"
     },
     {
       "file": "dark-default.png",
@@ -43,8 +44,8 @@
         1920,
         1080
       ],
-      "bytes": 174331,
-      "sha256": "9a3e2c0446dd8fd775f5784cee5276119de04db3c75141a6abf41a6fe45247aa"
+      "bytes": 174475,
+      "sha256": "ce46a580ea28c788a8fc4a7e70291158033dab1748cf24e871632a6b958de8b6"
     },
     {
       "file": "light-teal.png",
@@ -58,8 +59,8 @@
         1920,
         1080
       ],
-      "bytes": 176047,
-      "sha256": "3883450ca20573233bc575bfbf60ed477c5a2db29fd13cfcaa645e70cf3b43c4"
+      "bytes": 176201,
+      "sha256": "df07b63b7585bbecd8dcb676b9840c7e136f280a96352cbfdc95d5cbb9d86db8"
     },
     {
       "file": "dark-graphite.png",
@@ -73,8 +74,8 @@
         1920,
         1080
       ],
-      "bytes": 174385,
-      "sha256": "df5f0c922fa22a09f7e04baa03303c575531288f6a5d83284bed2ebfca6bf5a6"
+      "bytes": 174516,
+      "sha256": "b3bcc18dcfc0cc27e6457462fc72d6ac32b84e947c11c87d05b2759f8b4ea769"
     },
     {
       "file": "light-font1.3.png",
@@ -88,8 +89,8 @@
         1920,
         1080
       ],
-      "bytes": 199276,
-      "sha256": "892bd4467a09032509b4d1d219050a9856c20f9ef4f46389c77f3471438a2dec"
+      "bytes": 199346,
+      "sha256": "b7a14172e5065b4c53588b1c3a791ec0757745fb7541a3128aee877faa448074"
     },
     {
       "file": "light-font2.0.png",
@@ -103,8 +104,8 @@
         1920,
         1080
       ],
-      "bytes": 240638,
-      "sha256": "032a5f51caad1658adcf648974405afef4e611c473001f4657385b517970bfa0"
+      "bytes": 240652,
+      "sha256": "2276e3a44382a0fed844457b63ef6af99300c40f2a855641848ea31f064490c3"
     },
     {
       "file": "dark-font2.0.png",
@@ -118,8 +119,8 @@
         1920,
         1080
       ],
-      "bytes": 239939,
-      "sha256": "f86488a51d069e7cccd9304ca3866e62984757ea4e009b526d234e3ac0eb8df3"
+      "bytes": 239206,
+      "sha256": "2e1042f092b701f1bdae06f6d3d295ee8e118160488f308e79be02a8f36c0e07"
     },
     {
       "file": "screen-redeem.png",
@@ -151,8 +152,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 218222,
-      "sha256": "813e384fff49be85d6d0baa636b71adff4184687d2b9429f4e16e3c5fc0655cd"
+      "bytes": 218043,
+      "sha256": "36cb8b7e02a62b0c7448450d2626fba8cbc0a452c25503b48618ecf25de637b8"
     },
     {
       "file": "screen-sheet-appearance-dark.png",
@@ -162,8 +163,8 @@
       "fontScale": "1.0",
       "dimensionKey": "DARK|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 215530,
-      "sha256": "ca0f3fd71e272d31d89fb8279d055432cdefb5663738ac51973f6abc5c8bd677"
+      "bytes": 215713,
+      "sha256": "38aa2d085bb7dfa71537a6314a64ebf0068e9a915e99ceaf1af857db8599e5a8"
     },
     {
       "file": "screen-licenses.png",
@@ -173,8 +174,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|screen-licenses",
       "actualOrientation": "landscape",
-      "bytes": 106295,
-      "sha256": "4d7bf687914e20b9e0f667dc2d55bcb2022972803e0bbc2055dd8f524de30ae4"
+      "bytes": 106230,
+      "sha256": "d0c3b34268d475c2feaf19145e445058cfb0b4eef53de9f4057121ce4dca5853"
     },
     {
       "file": "wallpaper-none-light.png",
@@ -206,8 +207,8 @@
       "fontScale": "1.0",
       "dimensionKey": "DARK|PURPLE|1.0|main-system-night",
       "actualOrientation": "landscape",
-      "bytes": 140668,
-      "sha256": "0b872c64f8940fa7b6c6cc6ab1ca1609f57421917f2d7df77d05a76ac8d5b915"
+      "bytes": 140681,
+      "sha256": "2812214df14284ad672377f4ed03b1e107a96ebb4ee458484fc9f25ff88594ae"
     },
     {
       "file": "system-night-no.png",
@@ -219,6 +220,17 @@
       "actualOrientation": "landscape",
       "bytes": 139622,
       "sha256": "9f27b8ebe1a8159fc350a19bb1d1417075b85fb0ea00e58679ebd8574ab00c8d"
+    },
+    {
+      "file": "task-panel-scan-running.png",
+      "label": "运行中的任务进度（索引扫描）",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|task-scan-running",
+      "actualOrientation": "landscape",
+      "bytes": 137764,
+      "sha256": "0b0f9416e52315cf00fcf2cad432c99f2508e6a0564b401ec5b1b7c10433eb9d"
     }
   ]
 }

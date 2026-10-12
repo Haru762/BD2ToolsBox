@@ -592,6 +592,42 @@ def main() -> int:
         write_prefs(serial, original_prefs)
         shell(serial, 'am', 'force-stop', PKG)
 
+    # ---- 第四段：运行中的任务进度 ---------------------------------------------------
+    #
+    # 先说明一个实测结论：点「开始扫描」弹出来的是**索引扫描进度**
+    #（标签是「扫描中 / 正在建立文件索引... / 正在扫描」），**不是**带「收起/取消」的
+    # `TaskProgressPanel`。后者只在装入/预解包这类任务里出现，要它得上一个真的装入流程。
+    # 所以这里采到的名字叫 `task-panel-scan-running`，不冒充 `TaskProgressPanel`。
+    # 面板的收起/再展开语义由 `TaskPanelLifecycleTest`（6/6）在 Compose 层覆盖。
+    try:
+        set_theme_mode(serial, 'LIGHT')
+        set_font_scale(serial, '1.0')
+        shell(serial, 'am', 'force-stop', PKG)
+        time.sleep(2)
+        shell(serial, 'am', 'start', '-W', '-n', f'{PKG}/.MainActivity')
+        time.sleep(5)
+        driver.dump()
+        if driver.find('开始扫描') is not None:
+            driver.tap('开始扫描')
+            time.sleep(4)
+            driver.dump()
+            if driver.find('正在扫描') is not None or driver.find('扫描中') is not None:
+                shoot('task-panel-scan-running', '运行中的任务进度（索引扫描）', 'LIGHT',
+                      key='LIGHT|PURPLE|1.0|task-scan-running')
+            else:
+                index['limitations'].append('点了「开始扫描」但没看到扫描进度。')
+        else:
+            index['limitations'].append('没看到「开始扫描」入口，扫描进度未采。')
+        index['limitations'].append(
+            '带「收起/取消」的 `TaskProgressPanel` **未采到截图**：它只在装入/预解包这类任务里'
+            '出现，需要跑一个真的装入流程；索引扫描弹的是另一个进度页（已采）。'
+            '面板的收起/再展开语义由 `TaskPanelLifecycleTest` 6/6 在 Compose 层覆盖。'
+        )
+    except Exception as exc:
+        index['limitations'].append(f'第四段（任务进度）未完成：{type(exc).__name__}: {exc}')
+    finally:
+        shell(serial, 'am', 'force-stop', PKG)
+
     # 维度签名不同的截图**必须**长得不一样；签名相同的**应当**一样。
     #
     # **这一步必须放在所有阶段之后**：起初它只盖住第一段，于是第三段里四张壁纸截图

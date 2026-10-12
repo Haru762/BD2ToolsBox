@@ -1726,6 +1726,23 @@ function Test-Bd2ReleaseSmoke {
             $warmMedian = Get-Bd2Median $warm
 
             # --- PSS ×3：读 TOTAL PSS 取中位数 ---
+            # `dumpsys meminfo` 的输出格式随版本变：
+            #   · 较新（实测 API 32/36）：`TOTAL PSS: 165974`
+            #   · 较旧（实测 API 29）：汇总表里的 `        TOTAL   145854   120036 ...`
+            #     或单行 `TOTAL:   145854       TOTAL SWAP PSS:      267`
+            # 以前只认第一种，于是 API 29 上永远报「读不到 TOTAL PSS」—— 那是解析器的问题，
+            # 不是设备的问题。
+            function Read-Bd2TotalPss([string]$Meminfo) {
+                foreach ($pattern in @(
+                    'TOTAL PSS:\s*(\d+)',
+                    '(?m)^\s*TOTAL:\s*(\d+)',
+                    '(?m)^\s*TOTAL\s+(\d+)')) {
+                    $m = [regex]::Match($Meminfo, $pattern)
+                    if ($m.Success) { return [int]$m.Groups[1].Value }
+                }
+                return $null
+            }
+
             Start-Sleep -Seconds 5
             $pssSamples = @()
             for ($i = 0; $i -lt 3; $i++) {
@@ -1742,18 +1759,21 @@ function Test-Bd2ReleaseSmoke {
                 if ([string]::IsNullOrWhiteSpace($pidText)) { throw '性能场景：进程未在运行且无法拉起' }
                 $mem = ((& $Bd2Adb -s $serial shell dumpsys meminfo $pidText) -join [Environment]::NewLine)
                 [IO.File]::WriteAllText((Join-Path $runDir "meminfo-$i.txt"), $mem, (New-Object Text.UTF8Encoding($false)))
-                $pss = [regex]::Match($mem, 'TOTAL PSS:\s*(\d+)')
-                if (-not $pss.Success) {
+                $pssValue = Read-Bd2TotalPss $mem
+                if ($null -eq $pssValue) {
                     # 一次读不到就重试一次，仍失败才报错（不让偶发竞态变成「性能回退」）
                     Start-Sleep -Seconds 2
                     $pidText = ((& $Bd2Adb -s $serial shell pidof com.bd2toolsbox) -join '').Trim()
                     if (-not [string]::IsNullOrWhiteSpace($pidText)) {
                         $mem = ((& $Bd2Adb -s $serial shell dumpsys meminfo $pidText) -join [Environment]::NewLine)
-                        $pss = [regex]::Match($mem, 'TOTAL PSS:\s*(\d+)')
+                        [IO.File]::WriteAllText((Join-Path $runDir "meminfo-$i.txt"), $mem, (New-Object Text.UTF8Encoding($false)))
+                        $pssValue = Read-Bd2TotalPss $mem
                     }
-                    if (-not $pss.Success) { throw "性能场景：读不到 TOTAL PSS（pid=$pidText）" }
+                    if ($null -eq $pssValue) {
+                        throw "性能场景：读不到 TOTAL PSS（pid=$pidText；已知格式都试过了）"
+                    }
                 }
-                $pssSamples += [int]$pss.Groups[1].Value
+                $pssSamples += $pssValue
                 Start-Sleep -Seconds 2
             }
             $pssMedian = Get-Bd2Median $pssSamples

@@ -11,8 +11,8 @@
 |---|---|---|---|---|---|---|---|---|
 | MuMu 模拟器 | x86_64 | 32 | 4 KB | `127.0.0.1:16384` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
 | AVD `bd2-x64-api36-16k` | x86_64 | 36 | **16 KB** | `emulator-5556` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
-| AVD `bd2-x64-api34` | x86_64 | **34** | 4 KB | `emulator-5558` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | 未跑（本轮） |
-| AVD `bd2-x64-api29` | x86_64 | **29**（= minSdk） | 4 KB | `emulator-5554` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | 未跑（本轮） |
+| AVD `bd2-x64-api34` | x86_64 | **34** | 4 KB | `emulator-5558` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
+| AVD `bd2-x64-api29` | x86_64 | **29**（= minSdk） | 4 KB | `emulator-5554` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
 | 真机 Xiaomi 2509FPN0BC | **arm64-v8a** | 36 | 4 KB | `f7f409ac` | **未跑** | 未跑（本轮） | 未跑（本轮） | 未跑（本轮） |
 
 - **16 KB 页**那一格是 `getconf PAGE_SIZE` 实测的 16384，不是声明的；
@@ -47,7 +47,29 @@
 | minSdk / targetSdk / compileSdk | 29 / 34 / 36 |
 | universal APK | **不存在**（单 ABI flavor，T49） |
 
-## 3.5 16 KB 页上的 release smoke（10/10）
+## 3.5 release smoke：x86_64 四个 API 档全 10/10
+
+| 平台 | 结果 | 备注 |
+|---|---|---|
+| API 29（minSdk） | **10/10** | `dumpsys meminfo` 是旧格式，见下 |
+| API 32（MuMu） | **10/10** | |
+| API 34 | **10/10** | |
+| API 36 / **16 KB 页** | **10/10** | 冷启动中位数 989 ms、PSS 136,598 KB |
+
+### 顺带修掉的解析缺陷：`TOTAL PSS` 的老格式
+
+API 29 上 `performance-scenarios` 一直报「读不到 TOTAL PSS」。查 `meminfo-0.txt` 发现
+那是**解析器的问题，不是设备的问题**：
+
+```
+较新（API 32/36）：  TOTAL PSS: 165974
+较旧（API 29）：              TOTAL   145854   120036 ...      （汇总表行）
+                     TOTAL:   145854       TOTAL SWAP PSS: 267 （单行汇总）
+```
+
+已改成按三种格式依次匹配。修之前 API 29 的性能场景**从未真正测到过**。
+
+## 3.6 16 KB 页上的 release smoke（10/10）
 
 ```
 16KSMOKE baseline-startup -> PASS         16KSMOKE engine-and-preview -> PASS
