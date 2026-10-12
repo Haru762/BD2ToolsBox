@@ -69,7 +69,7 @@
 
 计数口径：JVM/设备列是 `@Test` 注解的**静态计数**；Python 是 unittest 发现到的**动态计数**（已实跑）。
 
-### 3.1 JVM 单测 `app/src/test/java`（19 条）
+### 3.1 JVM 单测 `app/src/test/java`（**66 个类 / 728 条用例**，2026-10-12 实测）
 
 | 文件 | 用例 | 覆盖内容 | 依赖夹具 | 状态 |
 |---|---:|---|---|---|
@@ -84,7 +84,7 @@ manifest 的 `usedBy` 找到 `repo.wiki-v2-detail-2238`，核对存在性与哈�
 此前是空转的——该文件不查存在也不查哈希（见 `T04.md` §5.4.2）。`PrepackCacheIntegrationTest`
 不声明任何外部夹具，故它的 `fixtures` 段为空数组，属正常。
 
-### 3.2 Python `tests/`（71 条，已实跑计数）
+### 3.2 Python `tests/`（**16 个文件 / 208 条用例**，2026-10-12 实测）
 
 | 文件 | 用例 | 覆盖内容 | 依赖夹具 |
 |---|---:|---|---|
@@ -99,7 +99,7 @@ manifest 的 `usedBy` 找到 `repo.wiki-v2-detail-2238`，核对存在性与哈�
 （`try/finally`，不泄漏到后续调用）。测试文件在**模块顶层**读取该环境变量 ——
 `@unittest.skipUnless` 这类类装饰器在导入期求值，事后 monkeypatch 无效。
 
-### 3.3 设备 instrumentation（`app/src/androidTest/java` 35 条，另 `:release-probe` 1 条）
+### 3.3 设备 instrumentation（`app/src/androidTest/java` **39 个类 / 190 条用例**，另 `:release-probe` 7 个类）
 
 | 文件 | 用例 | 覆盖内容 | 设备覆盖（x86_64，`127.0.0.1:16384`） |
 |---|---:|---|---|
@@ -126,13 +126,76 @@ manifest 的 `usedBy` 找到 `repo.wiki-v2-detail-2238`，核对存在性与哈�
 
 | 缺口 | 说明 | 归属 |
 |---|---|---|
-| arm64-v8a 真机 | 授权设备 MuMu `127.0.0.1:16384` 的 `abilist` 里 `arm64-v8a` 是**转译**提供的，不是真机。`baseline-startup -Abi arm64-v8a` 保持**未完成**，不放宽为猜测或默认设备。 | 待真机 |
-| `libraryManifest` 只读目录快照 | `ModDiscoveryTest#realLibraryPreservesAllPreviouslyVisibleAndroidVariants` 需要 `-e libraryManifest <path>` 指向一份捕获的只读目录快照（断言硬编码 1044 条 Android-only / 1741 条混合）。仓库里没有该夹具，也没有调用方传该参数，故该用例**上机必跳过**。它声称覆盖的「真实只读目录快照」实际是空的——要么补夹具，要么承认无覆盖。 | 待定 |
-| `PrepackService` 本体 | SAF 拷贝、Chaquopy 调用、通知与进度上报仍在 Android `Service` 里，JVM 无接缝。T04 覆盖的是它调用的判定链（`PrepackCommitPolicy`），不是整个 Service。 | T21–T26 |
-| release 契约全量 | T04 只落实 `baseline-startup`。`snapshot-compatibility` / `json-migration` / `engine-and-preview` / `native-load-and-decode` / `full-r8-contract` / `resources-and-licenses` / `all-core-features` / `platform-matrix` / `performance-scenarios` 尚未实现，调用即非零失败。 | T44 / T57 / T60 |
-| `LocalAll` 完整调度 | 架构检查、两个 release 构建、ABI/许可/包体静态检查所需的工具（`tools/check_architecture.py`、`tools/audit_apk_size.py`、`tools/stage_android_python.py`）与 per-ABI release 任务在本项时尚不存在，`-Mode LocalAll` 跑完已实现的测试后**明确非零**列出缺项。 | T60 |
-| 单 ABI flavors | `testArm64DebugUnitTest` / `testX64DebugUnitTest` 尚不存在，JVM 单测当前跑在共享 ABI 的 `testDebugUnitTest` 上。 | T49 |
+| arm64-v8a **真实设备** | 真机 `f7f409ac` 已在本轮跑过一批（见 `device-arm64.md`），但**本批接线没有 arm64 证据**（当时真机在充电）。MuMu 与 AVD 的 `arm64-v8a` 都是**转译/仿真**，不算数。 | 待真机 |
+| `libraryManifest` 只读目录快照 | `ModDiscoveryTest#realLibraryPreservesAllPreviouslyVisibleAndroidVariants` 需要 `-e libraryManifest <path>` 指向一份捕获的只读目录快照（断言硬编码 1044 条 Android-only / 1741 条混合）。仓库里没有该夹具，也没有调用方传该参数，故该用例**上机必跳过**。它声称覆盖的「真实只读目录快照」实际是空的 —— 要么补夹具，要么承认无覆盖。 | 待定 |
+| **ASTC 实际解码** | `native-load-and-decode` smoke 走的是 **BC1**（`decode_bc1`）。`libastcenc` 的 ASTC 解码入口没有端到端调用。 | T51 |
+| **真实软键盘 / 刘海 / 横屏侧边栏观感** | `InsetsAdaptationTest` 验的是结构契约（`windowInsetsPadding` 真的产生位移、输入框在 `imePadding` 容器里可用），**不是**真实软键盘弹出后的截图核对。 | T46 / T58 |
+| **真实 SAF 树 URI 上建 `.nomedia`** | `SafMediaExclusion` 的 JVM 侧契约有覆盖，但真实树 URI 上 `DocumentFile.createFile` 需要交互授权，**未验证**。 | T62 |
+| **真实 Shizuku 授权 / 断连** | 设备上装了 Shizuku，但授权需要人工在设备上确认，**未走流程**。`ShizukuConnectionLifecycleTest` 只覆盖不依赖真实绑定的部分。 | T19 |
+| **旋转 / 滚动恢复** | `ModFilterRestorationTest` 验的是 `SavedStateHandle` 往返，**不是**真实旋转后的界面状态。 | T28 / T58 |
+| **UI 截图观感** | 主题/壁纸/明暗/大字体在真实页面上的观感未截图核对。 | T40 / T41 / T58 |
+| **16 KB 页上的 ASTC / 更多 API 级别** | 16 KB 页已验（`device-16k.md`），但只有 API 36 那一台；API 30/31/33/34/35 未跑。 | T57 |
 | 安装账本 / 兑换历史 / 隐藏列表 / 更新 APK | 设备侧保全时即缺失，见 `fixture-manifest.json` 的 `gaps`。 | T25 / T28 / T31 / T35 / T57 |
+
+### 4.1 已经闭合、从上一版缺口表里移除的
+
+| 原缺口 | 现状 |
+|---|---|
+| release 契约全量（9 个 case） | **9 个 case 全部实现**并在 x86_64 MuMu 上 PASS（`json-migration`、`native-load-and-decode`、`resources-and-licenses`、`engine-and-preview`、`full-r8-contract`、`all-core-features`、`performance-scenarios`、`platform-matrix` + 原有两个）。见 `wiring-2026-10-11.md`。 |
+| `LocalAll` 完整调度 | **已完成**：依赖 → JVM → Python → 两个 release 构建 → 静态审计（含基线清单核对），全新 PowerShell 进程实测 exit 0。见 `build-and-verify.md`。 |
+| 单 ABI flavors | **已存在**：`arm64`/`x64` 两个 flavor，JVM 单测跑在 `testArm64DebugUnitTest` + `testX64DebugUnitTest` 上（每类各跑一遍）。 |
+| 16 KB 页运行时 | **已验证**：AVD `bd2-x64-api36-16k`（`PAGE_SIZE` = 16384）上 15 个类 / 87 次执行全 PASS，含真实 `System.loadLibrary`。见 `device-16k.md`。 |
+
+---
+
+## 4.2 T56 要求的功能场景 → 实际覆盖（2026-10-12）
+
+T56 要求覆盖 14 类场景，并「在复制/校验/备份/账本/Binder/网络各边界注入失败」。
+下表是**实际**覆盖位置（不是计划）；标「缺」的即当前没有覆盖。
+
+| 场景 | 覆盖位置 | 状态 |
+|---|---|---|
+| 导入（导入 mod 源目录） | `ModDiscoveryTest` 12（设备）、`ModRepository` 相关 JVM | 部分 |
+| 来源扫描 | `ScanExecutorTest` 7（JVM，含未连接/读取失败/占用释放）、`ScanServiceTest` 5（设备）、`ModDiscoveryTest` 12（设备） | 有 |
+| 游戏索引扫描 | 同上 | 有 |
+| 预解包 | `PrepackExecutorTest` 8（JVM）、`PrepackCacheIntegrationTest`（JVM）、`PrepackService` 设备侧 | 有（Service 本体靠设备） |
+| SD/HD 转换 | `NativeEngineSmokeTest` 9（设备，真实转换 + 产物逐字节检查） | 有（单一路径） |
+| 同 bundle 多 MOD 叠加/卸载 | `UninstallExecutorTest` 5、`InstallExecutorTest#restoringOneBundleCannotClearOtherInstalledRecords` | 有 |
+| 跨 bundle | `InstallExecutorTest#commitsOnlyFrozenTargetsAndPreservesUnrelatedDownloads` | 有 |
+| 日期/好感剧情 | `tests/test_scan_full_default.py` 3（全量扫描默认，修「剧情/好感类 mod 永远 UNKNOWN」）、`tests/test_spill_window.py` 5（500MB 体量帽与磁盘溢出，修 422MB 约会大包预览被拒） | **有**（纯 IO 与判定链；真实大包的峰值内存靠基准，不在本矩阵） |
+| 静态/Spine 预览 | `PreviewCacheNegativeTest` 5、`PreviewCacheSizeSlotTest` 6（设备）、`tests/test_unpack_fast_filter.py`（解包快筛）、`SpinePreviewActivity` 主题（T47）、`WebContentThemeTest` 6（设备，真实 WebView） | 部分（pixi-spine 运行时的真实加载未在设备上验） |
+| Wiki 双版本 | `GamekeeBattleV2RendererTest`（真实抓下的 v2 夹具 `wiki-v2-detail-2238.json`，夹具哈希已登记在 fixture 清单）、`GuideHtmlRendererTest` 7、`GuideRequestRaceTest` 14 | 有（v2 用真实夹具；v3/其它版本没有夹具） |
+| 兑换 | `CdkViewModelTest` 24、`RedeemSummaryTest` 20、`CdkResultPresentationTest` 5（设备） | 有（真实官方接口未跑） |
+| 更新 | `UpdateViewModelTest` 14、`ApkSelectorTest` | 有（真实下载/安装未跑） |
+| 日志导出 | `LogExporterTest` 3（设备） | 有 |
+
+### 4.2.1 故障注入边界
+
+| 边界 | 覆盖位置 |
+|---|---|
+| 复制失败 | `InstallExecutorTest#fileReplacementFailureKeepsSourceAndPendingJournal` |
+| 校验失败（源在计划后变化） | `InstallExecutorTest#aSourceChangedAfterPlanningNeverReachesGame` |
+| 账本失败 | `InstallExecutorTest#ledgerFailureAfterCopyIsNotReportedAsSuccessfulInstall` |
+| 备份门禁 | `BackupFailureSummaryTest` 5（设备）、`TryUseBackupTrustGateTest` 2（设备） |
+| Binder/连接 | `ScanExecutorTest`（未连接 vs 读取失败、占用释放）、`ShizukuFileServiceListingTest` 5（设备） |
+| 网络 | `GuideRequestRaceTest` 14（请求代次）、`CdkViewModelTest#repositoryFailureIsSurfacedNotSwallowed` |
+| 进程死亡 | `ProcessDeathRecoveryTest` 4（设备）、`LedgerRecoveryStartupTest` 4（设备）、`OperationRecoveryTest`（JVM） |
+| 磁盘/权限 | `GameFileCommitTest` 13（设备，含 API 29 的卷不兑现权限的前提判定） |
+
+**没有**覆盖的边界：磁盘写满、真实网络中断（只做了「仓储抛异常」这一层）、
+真实 Binder 断连（需要 Shizuku 授权）。
+
+### 4.2.2 与 T56 验收条的对照
+
+| T56 验收条 | 现状 |
+|---|---|
+| 无半份 `__data` | `AtomicFileWriter` 的同目录暂存 + 原子替换有设备覆盖；**进程被杀在提交中途**的实测未做 |
+| 误删来源 | `InstallExecutorTest#commitsOnlyFrozenTargetsAndPreservesUnrelatedDownloads` |
+| 污染可信原版 | `BundleBackupRepositoryTest` 36、`TryUseBackupTrustGateTest` 2 |
+| 丢安装记录 | `InstallExecutorTest#ledgerFailureAfterCopyIsNotReportedAsSuccessfulInstall` |
+| 请求晚到覆盖新页面 | `GuideRequestRaceTest` 14（含红绿证伪） |
+| 虚假兑换成功 | `CdkViewModelTest` 24、`RedeemSummaryTest` 20 |
+| 破坏性场景在隔离数据上跑 | 是：所有用例都在自建临时目录或自建夹具上跑，**不用真实游戏目录** |
 
 ---
 
