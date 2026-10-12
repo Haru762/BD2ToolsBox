@@ -92,6 +92,7 @@ import com.bd2toolsbox.ui.screens.CharacterScreen
 import com.bd2toolsbox.ui.screens.CharacterSheet
 import com.bd2toolsbox.ui.screens.CdkScreen
 import com.bd2toolsbox.ui.screens.GuideScreen
+import com.bd2toolsbox.ui.screens.ModRoute
 import com.bd2toolsbox.ui.screens.ModScreen
 import com.bd2toolsbox.ui.screens.OnboardingScreen
 import com.bd2toolsbox.ui.screens.WorkbenchSheet
@@ -722,7 +723,8 @@ class MainActivity : ComponentActivity() {
                                             onRetryAvatarSync = { viewModel.retryAvatarSync() }
                                         )
                                     } else {  // page == 1，全部视图
-                                        ModScreen(
+                                        // T28：Route 负责采集与装配，Screen 只读 state + 发 events。
+                                        ModRoute(
                                             viewModel = viewModel,
                                             // 不按加工阶段过滤：两类混排，与「按角色」视图口径一致
                                             kindFilter = null,

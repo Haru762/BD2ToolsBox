@@ -50,39 +50,23 @@ import com.bd2toolsbox.data.model.ResolutionState
 import com.bd2toolsbox.ui.components.ModActionButtons
 import com.bd2toolsbox.ui.components.StatusBadge
 import com.bd2toolsbox.ui.components.StatusTone
-import com.bd2toolsbox.ui.viewmodel.MainViewModel
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ModScreen(
-    viewModel: MainViewModel,
-    /**
-     * 这一页只显示哪一类 mod；null 表示不过滤、两类混排。
-     *
-     * 「按角色」视图把同一套皮肤的源与产物合并成一条，所以它不能再被加工阶段切开 ——
-     * 那样同一套皮肤又会分裂成两行，正是原先按阶段分两页的毛病换个地方重现。
-     * 「全部」视图传 null，批量多选转换仍在这里做。
-     */
-    kindFilter: ModKind?,
-    onSelectModSource: () -> Unit,
-    onUninstallRequest: (String) -> Unit,
-    onRemoveModRequest: (ModInfo) -> Unit,
-    onBackupManageRequest: () -> Unit,
-    onRenameRequest: (ModInfo) -> Unit,
-    onDeleteFolderRequest: (ModInfo) -> Unit,
-    onInstallConverted: (List<ModInfo>) -> Unit,
-    onRequestNotification: () -> Unit
+    state: ModScreenState,
+    events: ModScreenEvents
 ) {
-    val modSourceDirectoryUri by viewModel.modSourceDirectoryUri.collectAsState()
-    // 先按 tab 的类型收窄，再做原有的分组。后续所有计数（全选三态、筛选 chip）都基于
+    // T28：页面不再接收 MainViewModel —— 只读 state、只发 events。
+    // 采集与装配在 ModRoute（它才知道 kindFilter 与各导航回调）。
+    val modSourceDirectoryUri = state.modSourceDirectoryUri
+    // 收窄（kindFilter）已在 Route 侧做完：后续所有计数（全选三态、筛选 chip）都基于
     // 这份收窄后的列表，否则会出现「本页看不到的条目也被算进全选」这类错位。
-    val modsList = viewModel.filteredModsList.collectAsState().value
-        .filter { kindFilter == null || it.kind == kindFilter }
-    val allMods = viewModel.modsList.collectAsState().value
-        .filter { kindFilter == null || it.kind == kindFilter }
-    val stateFilter by viewModel.stateFilter.collectAsState()
+    val modsList = state.modsList
+    val allMods = state.allMods
+    val stateFilter = state.stateFilter
     // —— 四区划分：正常 / 异常 / 待更新 / 未识别 ——
     // T28：划分与角色分组已抽成纯投影（feature/mods/ModUiState.kt），可在 JVM 单测里验证；
     // 这里只消费结果，不再在 Composable 里写筛选逻辑。
@@ -133,19 +117,18 @@ fun ModScreen(
     // 「全部删除」的确认框开关（异常区头按钮）。同样必须先确认再动文件。
     var showDeleteAllAbnormal by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val selectedMods by viewModel.selectedMods.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val selectedMods = state.selectedMods
+    val isLoading = state.isLoading
     // 待更新区正在改名：按钮置灰，防重复点（改名本身很快，不需要进度条）
-    val isUpdatingOutdated by viewModel.isUpdatingOutdated.collectAsState()
+    val isUpdatingOutdated = state.isUpdatingOutdated
     // 异常区正在整批删除：区头「全部删除」置灰，防重入
-    val isDeletingAbnormal by viewModel.isDeletingAbnormal.collectAsState()
-    val showShimmer by viewModel.showShimmer.collectAsState()
+    val isDeletingAbnormal = state.isDeletingAbnormal
+    val showShimmer = state.showShimmer
     val context = LocalContext.current
     // 搜索框已上移到 MainActivity 的顶栏（展开与否也归那里管），这里只留查询词：
     // 空态要说「没有名称包含 xxx 的 mod」，删除异常区的文案也要看当前有没有搜索条件。
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedQuality by viewModel.selectedQuality.collectAsState()
-
+    val searchQuery = state.searchQuery
+    val selectedQuality = state.selectedQuality
 
     // M3 1.3 起「是否在刷新」由调用方持有（旧 state.isRefreshing/endRefresh 已移除）。
     val pullToRefreshState = rememberPullToRefreshState()
@@ -158,10 +141,10 @@ fun ModScreen(
         pullRefreshing = true
         // 下拉刷新重扫的是「记住的所有目录」，不是当前第一个 ——
         // 多目录合并之后，只扫一个会让另外几个目录的 mod 凭空消失。
-        viewModel.rescanAllModSources()
+        events.onRescan()
         // 死角：一个目录都没记住时 rescanAllModSources 直接 break、isLoading 根本
         // 不翻，下面的收起等不到触发，转圈会卡死 —— 这里手动收掉。
-        if (viewModel.modSourceDirs.value.isEmpty()) pullRefreshing = false
+        if (state.modSourceDirs.isEmpty()) pullRefreshing = false
     }
 
     LaunchedEffect(isLoading) {
@@ -175,7 +158,7 @@ fun ModScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val selectedQuality by viewModel.selectedQuality.collectAsState()
+                val selectedQuality = state.selectedQuality
                 var qualityExpanded by remember { mutableStateOf(false) }
                 // 画质选择器已挪到顶部工具栏（与 ASTC 开关并列），这里不再放：
                 // 一是它原先只在选中 mod 后才出现，而画质影响的是解析与下载，属于开工前
@@ -200,9 +183,9 @@ fun ModScreen(
                         onClick = {
                             // 转换/装入挂在前台服务上（防止放着不管被系统回收），
                             // 通知是它唯一的可见进度，所以动手前先要一次权限。
-                            onRequestNotification()
-                            if (allConverted) onInstallConverted(chosen)
-                            else viewModel.initiateBatchRepack(context)
+                            events.onRequestNotification()
+                            if (allConverted) events.onInstallConverted(chosen)
+                            else events.onInitiateBatchRepack()
                         },
                         icon = {
                             Icon(
@@ -277,15 +260,15 @@ fun ModScreen(
                         StateFilterRow(
                             allMods = normalAllMods,
                             current = stateFilter,
-                            onSelect = { viewModel.setStateFilter(it) },
+                            onSelect = { events.onSetStateFilter(it) },
                             selectAllState = selectAllState,
-                            onSelectAll = { viewModel.toggleSelectAll() }
+                            onSelectAll = { events.onToggleSelectAll() }
                         )
 
                         // 目录重扫进度条：用户反馈「点了重新扫描不知道有没有开始」。
                         // 位置按用户要求 —— 分类筛选行下方、异常区上方的那条空间。
                         // 不占独立高度：不扫时整条不渲染，列表布局不跳动。
-                        val modScanProgress by viewModel.modScanProgress.collectAsState()
+                        val modScanProgress = state.modScanProgress
                         modScanProgress?.let { progress ->
                             Row(
                                 modifier = Modifier
@@ -314,7 +297,7 @@ fun ModScreen(
                         }
 
                         if (modSourceDirectoryUri == null) {
-                            WelcomeScreen(onSelectModSource)
+                            WelcomeScreen(events.onSelectModSource)
                         } else if (showShimmer) {
                             ShimmerLoadingScreen()
                         } else if (modsList.isEmpty()) {
@@ -326,9 +309,9 @@ fun ModScreen(
                             } else if (stateFilter != null) {
                                 NoFilterResultsScreen()
                             } else {
-                                // kindFilter 现在恒为 null（「全部」视图两类混排），
-                                // 但空态文案仍按 kind 分岔留着 —— 万一以后又要单看某一类，改回来只是传个参数。
-                                EmptyModsScreen(kindFilter)
+                                // T28：空态文案仍按 kind 分岔留着 —— 万一以后又要单看
+                                // 某一类，Route 把 kindFilter 放进 state 即可。
+                                EmptyModsScreen(null)
                             }
                         } else {
                             LazyColumn(
@@ -388,7 +371,7 @@ fun ModScreen(
                                             onClick = { outdatedExpanded = !outdatedExpanded },
                                             trailing = {
                                                 TextButton(
-                                                    onClick = { viewModel.updateAllOutdatedMods(context) },
+                                                    onClick = { events.onUpdateAllOutdated() },
                                                     enabled = !isUpdatingOutdated
                                                 ) {
                                                     Text(
@@ -407,7 +390,7 @@ fun ModScreen(
                                             OutdatedModRow(
                                                 mod = mod,
                                                 updating = isUpdatingOutdated,
-                                                onUpdate = { viewModel.updateOutdatedMod(context, mod) }
+                                                onUpdate = { events.onUpdateOutdated(mod) }
                                             )
                                         }
                                     }
@@ -454,9 +437,9 @@ fun ModScreen(
                                             BundleGroupHeader(
                                                 group = bg,
                                                 selectedMods = selectedMods,
-                                                onUninstall = { onUninstallRequest(bg.hash) },
+                                                onUninstall = { events.onUninstallRequest(bg.hash) },
                                                 onToggleAll = {
-                                                    viewModel.toggleSelectAllForUris(
+                                                    events.onToggleSelectAllForUris(
                                                         bg.mods.map { it.uri }.toSet()
                                                     )
                                                 }
@@ -469,20 +452,20 @@ fun ModScreen(
                                             ModCard(
                                                 modInfo = modInfo,
                                                 isSelected = modInfo.uri in selectedMods,
-                                                onToggleSelection = { viewModel.toggleModSelection(modInfo.uri) },
-                                                onPreview = { viewModel.prepareAndShowPreview(context, modInfo) },
+                                                onToggleSelection = { events.onToggleSelection(modInfo.uri) },
+                                                onPreview = { events.onPreview(modInfo) },
                                                 // 只有确实生效中的才给移除入口 —— 未装的没什么可移除，
                                                 // 状态未知时贸然还原反而可能盖掉别的东西
                                                 onRemove = if (modInfo.installState == ModInstallState.INSTALLED) {
-                                                    { onRemoveModRequest(modInfo) }
+                                                    { events.onRemoveModRequest(modInfo) }
                                                 } else null,
                                                 // 重命名只对已转换产物有意义：PC mod 的名字就是文件夹名，
                                                 // 产物的名字才是从 hash 反查出来的、可能需要人工订正
                                                 onRename = if (modInfo.kind == ModKind.CONVERTED_BUNDLE) {
-                                                    { onRenameRequest(modInfo) }
+                                                    { events.onRenameRequest(modInfo) }
                                                 } else null,
-                                                onHide = { viewModel.hideMod(modInfo) },
-                                                onDeleteFolder = { onDeleteFolderRequest(modInfo) }
+                                                onHide = { events.onHideMod(modInfo) },
+                                                onDeleteFolder = { events.onDeleteFolderRequest(modInfo) }
                                             )
                                         }
                                     }
@@ -513,7 +496,7 @@ fun ModScreen(
         // 条目恰好是某个源文件夹根本身的场景（把「根级就是一堆 skel/png」的目录选成
         // 了源文件夹）：删它删的是整棵树，确认框里「只删这一个」就成了谎言。
         // 这种情况不提供删除，指到文件管理器去处理。
-        val isSourceRoot = viewModel.isModSourceRoot(mod.uri)
+        val isSourceRoot = state.isSourceRoot(mod.uri)
         if (isSourceRoot) {
             AlertDialog(
                 onDismissRequest = { pendingDeleteMod = null },
@@ -569,7 +552,7 @@ fun ModScreen(
                         // 删除交给 ViewModel：它先把条目摘掉、账本同步销账（乐观更新，
                         // SAF 删目录要几秒，不能让界面看着像没反应），真删在后台跑，
                         // 失败会把条目放回来并回报 —— 成功/失败都说一声。
-                        viewModel.deleteModFolder(context, target) { _, msg ->
+                        events.onDeleteModFolder(target) { _, msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     },
@@ -622,7 +605,7 @@ fun ModScreen(
                 Button(
                     onClick = {
                         showDeleteAllAbnormal = false
-                        viewModel.deleteAbnormalMods(context, targets)
+                        events.onDeleteAbnormalMods(targets)
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error
