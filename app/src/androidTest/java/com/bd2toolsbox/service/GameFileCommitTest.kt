@@ -355,6 +355,18 @@ class GameFileCommitTest {
         } catch (e: UnsupportedOperationException) {
             throw AssertionError("这个卷不支持 POSIX 权限视图 —— 本用例的前提不成立，不许静默跳过", e)
         }
+        // **前提必须单独判出来**：有的卷 setPosixFilePermissions 既不抛异常、也不生效
+        // （实测 API 29 的 emulator 外部卷：设成 0644，读回仍是 0664）。那种卷上继续跑，
+        // 得到的会是一句**误导性**的「提交把权限降级了」，而真正的原因是这个卷根本不
+        // 兑现权限设置 —— 把平台的限制说成我们的回归。这里如实报前提不成立。
+        val precondition = java.nio.file.Files.getPosixFilePermissions(dst.toPath())
+        if (precondition != wanted) {
+            throw AssertionError(
+                "这个卷**不兑现** setPosixFilePermissions（设成 $wanted，读回 $precondition）——" +
+                    "「提交后保持目标权限」这条契约在该卷上无法成立，本用例的前提不成立。" +
+                    "这不是本次提交的回归；已登记在 docs/refactor/evidence/device-api29.md"
+            )
+        }
 
         assertTrue(service.copyFile(src.absolutePath, dst.absolutePath))
 
