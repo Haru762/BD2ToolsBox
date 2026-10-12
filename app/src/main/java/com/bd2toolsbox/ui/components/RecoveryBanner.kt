@@ -1,5 +1,6 @@
 package com.bd2toolsbox.ui.components
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +38,17 @@ object RecoveryPresentation {
     /** 是否需要给用户看。 */
     fun shouldShow(dispositions: List<RecoveryDisposition>): Boolean =
         actionable(dispositions).isNotEmpty()
+
+    /**
+     * 这些处置能不能靠「核对并修复记录」处理掉。
+     *
+     * [RecoveryDisposition.Unknown] **不算**：那条记录根本读不出来，重跑核对只会
+     * 再失败一次 —— 该做的是检查存储权限。给一个按下去必然失败的按钮，比不给按钮更糟。
+     */
+    fun canReconcile(dispositions: List<RecoveryDisposition>): Boolean =
+        actionable(dispositions).any {
+            it is RecoveryDisposition.NeedsReconciliation || it is RecoveryDisposition.Interrupted
+        }
 
     /** 横幅标题：按最严重的形态定调，不笼统说「出错了」。 */
     fun title(dispositions: List<RecoveryDisposition>): String {
@@ -81,7 +93,14 @@ object RecoveryPresentation {
 fun RecoveryBanner(
     dispositions: List<RecoveryDisposition>,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * 「核对并修复记录」的入口。
+     *
+     * 正文一直让用户去用这个功能，但此前**没有按钮** —— 用户被指到一个没有入口的地方。
+     * 为空时不显示按钮（例如纯 `Unknown` 的情况）。
+     */
+    onReconcile: (() -> Unit)? = null
 ) {
     if (!RecoveryPresentation.shouldShow(dispositions)) return
     val hasUnknown = RecoveryPresentation.actionable(dispositions)
@@ -114,6 +133,11 @@ fun RecoveryBanner(
                 color = if (hasUnknown) MaterialTheme.colorScheme.onErrorContainer
                 else MaterialTheme.colorScheme.onSecondaryContainer
             )
+            if (onReconcile != null && RecoveryPresentation.canReconcile(dispositions)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onReconcile) { Text("核对并修复记录") }
+                }
+            }
         }
     }
 }

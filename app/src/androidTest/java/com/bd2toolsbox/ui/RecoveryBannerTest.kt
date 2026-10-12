@@ -103,4 +103,46 @@ class RecoveryBannerTest {
         composeRule.onNodeWithText("知道了").assertIsDisplayed().performClick()
         assertEquals(1, dismissed)
     }
+
+    // ---- T25 补：正文指路 → 界面必须有入口 ----
+
+    @Test
+    fun reconcileEntryIsOfferedForFixableDispositions() {
+        assertTrue(
+            "中断与待核对必须能一键核对",
+            RecoveryPresentation.canReconcile(
+                listOf(RecoveryDisposition.Interrupted("op", listOf("b"), emptyList()))
+            )
+        )
+        assertTrue(
+            RecoveryPresentation.canReconcile(
+                listOf(RecoveryDisposition.NeedsReconciliation("op", listOf("b"), emptyList()))
+            )
+        )
+    }
+
+    @Test
+    fun reconcileEntryIsNotOfferedForUnreadableRecords() {
+        // 记录读不出来时重跑核对只会再失败一次 —— 该做的是查存储权限。
+        // 给一个按下去必然失败的按钮比不给按钮更糟。
+        assertFalse(
+            RecoveryPresentation.canReconcile(
+                listOf(RecoveryDisposition.Unknown("journal 解析失败"))
+            )
+        )
+        assertFalse("已提交不打扰用户", RecoveryPresentation.canReconcile(emptyList()))
+    }
+
+    @Test
+    fun mixedDispositionsStillOfferReconcile() {
+        assertTrue(
+            "只要有一条能修，就该给入口",
+            RecoveryPresentation.canReconcile(
+                listOf(
+                    RecoveryDisposition.Unknown("读不出来"),
+                    RecoveryDisposition.NeedsReconciliation("op2", listOf("b"), emptyList())
+                )
+            )
+        )
+    }
 }

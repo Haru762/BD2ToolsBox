@@ -666,7 +666,12 @@ class MainActivity : ComponentActivity() {
                             if (!recoveryDismissed) {
                                 RecoveryBanner(
                                     dispositions = recovery,
-                                    onDismiss = { recoveryDismissed = true }
+                                    onDismiss = { recoveryDismissed = true },
+                                    // T25：正文一直让用户去用「核对并修复记录」，此前却没有入口。
+                                    onReconcile = {
+                                        recoveryDismissed = true
+                                        viewModel.reconcilePendingInstalls()
+                                    }
                                 )
                             }
                             if (activeTitle != null && collapsed) {
