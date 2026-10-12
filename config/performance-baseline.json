@@ -215,5 +215,62 @@
         ],
         "runs": 12,
         "noiseNote": "Warm-start samples are extremely dispersed (26..398 ms). Gate requires BOTH >10% AND exceeding max(within-run range, between-run range). Keep this file ASCII-only: Windows PowerShell 5.1 Get-Content -Raw decodes as ANSI without -Encoding UTF8."
-    }
+    },
+    "x86_64@29": {
+        "capturedAt": "2026-10-13T06:11:25.5044616+08:00",
+        "abi": "x86_64",
+        "apiLevel": 29,
+        "apkSha256": "0fb8eaa9980ba911db8091554f374da850d040df93841ca986bc51a38c0758b8",
+        "coldStartMedianMs": 1294,
+        "warmStartMedianMs": 69,
+        "pssMedianKb": 144738,
+        "coldStartRaw": [
+            1217,
+            1296,
+            1316,
+            1253,
+            1294
+        ],
+        "warmStartRaw": [
+            55,
+            69,
+            56,
+            69,
+            76
+        ],
+        "pssRaw": [
+            143721,
+            144739,
+            144738
+        ]
+    },
+    "x86_64@34": {
+        "capturedAt": "2026-10-13T06:19:30.3174678+08:00",
+        "abi": "x86_64",
+        "apiLevel": 34,
+        "apkSha256": "0fb8eaa9980ba911db8091554f374da850d040df93841ca986bc51a38c0758b8",
+        "coldStartMedianMs": 1049,
+        "warmStartMedianMs": 126,
+        "pssMedianKb": 250235,
+        "coldStartRaw": [
+            1046,
+            1074,
+            1049,
+            1032,
+            1133
+        ],
+        "warmStartRaw": [
+            91,
+            126,
+            205,
+            160,
+            90
+        ],
+        "pssRaw": [
+            532429,
+            249688,
+            250235
+        ]
+    },
+    "_note": "Keyed by '<abi>@<api>'. The x86_64@36 entry was removed because it was captured before the warm-start sampling bug was fixed (it recorded TotalTime=0 samples, which means 'never launched', not 'fast'). It will be re-registered on the next run."
 }
