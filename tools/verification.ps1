@@ -1698,6 +1698,12 @@ function Invoke-Bd2LocalAll {
 
     Write-Host 'LocalAll [5/5] 静态审计'
     try {
+        # 先核对清单里登记的哈希（历史 0.2.16 / 重建包 / 优化前 / fixture / 审计报告）。
+        # T60 明确要求「不能删掉唯一基线」，这一步是那句话的可执行形式：只要基线被动过，
+        # 这里立刻非零。只读，不删不移。
+        Invoke-Bd2Python (Join-Path $Root 'tools/verify_manifests.py') --root $Root `
+            --json (Join-Path $Root 'local/refactor-artifacts/localall-manifests.json') --quiet
+        [void]$steps.Add('manifests')
         Invoke-Bd2Python (Join-Path $Root 'tools/check_architecture.py') --root $Root --quiet
         [void]$steps.Add('architecture')
         foreach ($t in $targets) {
