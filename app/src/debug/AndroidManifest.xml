@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- debug 专用：让 androidTest 能用本机回环上的真实服务器做网络失败注入。
+         main 的 manifest 不定义 networkSecurityConfig，所以这里是纯新增，不需要 tools:replace。 -->
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>

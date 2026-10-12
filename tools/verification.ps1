@@ -1690,18 +1690,37 @@ function Test-Bd2ReleaseSmoke {
             [IO.File]::WriteAllText((Join-Path $runDir 'cold-start.txt'), ($cold -join "`n"), (New-Object Text.UTF8Encoding($false)))
             $coldMedian = Get-Bd2Median $cold
             if ($coldMedian -gt 10000) { throw "冷启动过慢：中位数 $coldMedian ms（原始：$($cold -join '/')）" }
+            # 冷启动样本也必须 > 0：0 意味着根本没启动，不是「很快」
+            if (@($cold | Where-Object { $_ -le 0 }).Count -gt 0) {
+                throw "冷启动样本里出现了 0（说明那次根本没启动）：$($cold -join '/')"
+            }
 
             # --- 暖启动 ×5：回桌面再拉起，进程还在 ---
+            #
+            # 两个坑都踩过：
+            #   · `input keyevent HOME` 是**异步**的，立刻 `am start -W` 时 HOME 还没生效，
+            #     那时 activity 已在前台，`am start -W` 会直接返回、不带 `TotalTime`；
+            #   · 即使返回了，那种情况下 `TotalTime` 会是 **0** —— 那不是「很快」，
+            #     而是「根本没启动」。把 0 当样本会让整个暖启动指标变成假数据。
+            # 所以：回桌面后等足够长，并**只接受 TotalTime > 0 的样本**，否则重试。
             $warm = @()
-            & $Bd2Adb -s $serial shell input keyevent KEYCODE_HOME | Out-Null
-            Start-Sleep -Seconds 2
             for ($i = 0; $i -lt 5; $i++) {
-                $startOut = (& $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
-                $m = [regex]::Match($startOut, 'TotalTime:\s*(\d+)')
-                if (-not $m.Success) { throw "暖启动未返回 TotalTime：$startOut" }
-                $warm += [int]$m.Groups[1].Value
-                & $Bd2Adb -s $serial shell input keyevent KEYCODE_HOME | Out-Null
-                Start-Sleep -Seconds 1
+                $sample = $null
+                for ($attempt = 0; $attempt -lt 4 -and $null -eq $sample; $attempt++) {
+                    & $Bd2Adb -s $serial shell input keyevent KEYCODE_HOME | Out-Null
+                    Start-Sleep -Seconds 3
+                    $startOut = (& $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
+                    $m = [regex]::Match($startOut, 'TotalTime:\s*(\d+)')
+                    if ($m.Success -and [int]$m.Groups[1].Value -gt 0) {
+                        $sample = [int]$m.Groups[1].Value
+                    } else {
+                        Write-Host "    暖启动样本无效（TotalTime=$($m.Groups[1].Value)），重试"
+                    }
+                }
+                if ($null -eq $sample) {
+                    throw "暖启动拿不到有效样本（4 次尝试都是 0 或缺失）：$startOut"
+                }
+                $warm += $sample
             }
             [IO.File]::WriteAllText((Join-Path $runDir 'warm-start.txt'), ($warm -join "`n"), (New-Object Text.UTF8Encoding($false)))
             $warmMedian = Get-Bd2Median $warm

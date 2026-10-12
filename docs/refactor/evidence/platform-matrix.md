@@ -10,7 +10,7 @@
 | 平台 | ABI | API | 页大小 | 设备 | ASTC 往返 | 平台行为 | 端到端 | release smoke |
 |---|---|---|---|---|---|---|---|---|
 | MuMu 模拟器 | x86_64 | 32 | 4 KB | `127.0.0.1:16384` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
-| AVD `bd2-x64-api36-16k` | x86_64 | 36 | **16 KB** | `emulator-5556` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | 未跑（本轮） |
+| AVD `bd2-x64-api36-16k` | x86_64 | 36 | **16 KB** | `emulator-5556` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
 | AVD `bd2-x64-api34` | x86_64 | **34** | 4 KB | `emulator-5558` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | 未跑（本轮） |
 | AVD `bd2-x64-api29` | x86_64 | **29**（= minSdk） | 4 KB | `emulator-5554` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | 未跑（本轮） |
 | 真机 Xiaomi 2509FPN0BC | **arm64-v8a** | 36 | 4 KB | `f7f409ac` | **未跑** | 未跑（本轮） | 未跑（本轮） | 未跑（本轮） |
@@ -47,11 +47,28 @@
 | minSdk / targetSdk / compileSdk | 29 / 34 / 36 |
 | universal APK | **不存在**（单 ABI flavor，T49） |
 
+## 3.5 16 KB 页上的 release smoke（10/10）
+
+```
+16KSMOKE baseline-startup -> PASS         16KSMOKE engine-and-preview -> PASS
+16KSMOKE snapshot-compatibility -> PASS   16KSMOKE full-r8-contract -> PASS
+16KSMOKE json-migration -> PASS           16KSMOKE all-core-features -> PASS
+16KSMOKE native-load-and-decode -> PASS   16KSMOKE performance-scenarios -> PASS
+16KSMOKE resources-and-licenses -> PASS   16KSMOKE platform-matrix -> PASS
+```
+
+性能（16 KB 页）：冷启动中位数 **989 ms**（原始 1014/958/989/1048/943）、
+PSS 中位数 **136,598 KB**。
+
+> 第一次跑时 `json-migration` 报了 Gradle 错、`performance-scenarios` 报了
+> 「冷启动未返回 TotalTime」。前者是**我并发跑了另一个 Gradle 构建**造成的锁冲突，
+> 干净重跑即过；后者查出来是暖启动拿到 `TotalTime: 0` 被当成有效样本 —— 已修（见 T56 证据）。
+
 ## 4. 明确未覆盖
 
 - **arm64 真机整行**（见 §1）。
-- **16 KB 与 API 29 上的 release smoke 10 个 case**：本轮只跑了设备用例；
-  release smoke 本轮只在 MuMu 上跑过。
+- **API 29 / API 34 上的 release smoke 10 个 case**：本轮只跑了设备用例；
+  release smoke 已在 MuMu（API 32）与 16 KB AVD（API 36）上跑满 10 个。
 - ~~API 34 缺~~ → **已补**（`bd2-x64-api34`，3 个类全过）。
 - **arm64 的 API 34 AVD**（`bd2-arm64-api34`）未用：它在 x86_64 主机上是全指令转译，
   耗时长且不代表真实 arm64；arm64 一律以真机为准。

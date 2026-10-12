@@ -1,6 +1,7 @@
 package com.bd2toolsbox.data.remote
 
 import android.util.Log
+import com.bd2toolsbox.core.fileaccess.AtomicFileWriter
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -89,7 +90,6 @@ class GamekeeApi @Inject constructor() {
     fun download(url: String, dest: File, referer: Boolean = false): Boolean {
         var conn: HttpURLConnection? = null
         return try {
-            dest.parentFile?.mkdirs()
             conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
@@ -98,8 +98,16 @@ class GamekeeApi @Inject constructor() {
                 if (referer) setRequestProperty("Referer", "https://www.gamekee.com/")
             }
             if (conn.responseCode != HttpURLConnection.HTTP_OK) return false
-            conn.inputStream.use { input ->
-                dest.outputStream().use { out -> input.copyTo(out) }
+            // **必须先写临时件再原子替换**，不能直接往 `dest` 写。
+            //
+            // 以前是 `dest.outputStream().use { input.copyTo(it) }`：连接中途断掉时
+            // `copyTo` 抛异常、被下面 catch 吞成 `false`，但**半个文件已经落在 `dest` 上**。
+            // 而缓存读取只判 `exists() && length() > 0`（`loadThumb` 等），
+            // 于是那个截断的文件会被当成有效缓存，**而且永远不会重试**。
+            // 顺带：直接写还会把上一次的有效缓存毁掉。
+            // `AtomicFileWriter` 同时解决两件事：失败时删掉临时件、旧文件原样保留。
+            AtomicFileWriter().write(target = dest) { out ->
+                conn.inputStream.use { input -> input.copyTo(out) }
             }
             dest.length() > 0
         } catch (e: Exception) {
