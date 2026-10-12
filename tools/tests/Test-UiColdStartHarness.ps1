@@ -22,9 +22,17 @@ function Assert-Throws($action, $message) {
 $script:passed = 0
 $good = '<hierarchy><node package="com.bd2toolsbox" content-desc="搜索"/><node package="com.bd2toolsbox" content-desc="筛选"/></hierarchy>'
 $dialog = '<hierarchy><node package="com.bd2toolsbox" text="需要建立文件索引"/><node package="com.bd2toolsbox" text="跳过" bounds="[10,20][30,40]"/></hierarchy>'
+$onboarding = '<hierarchy><node package="com.bd2toolsbox" text="跳过"/><node package="com.bd2toolsbox" text="下一步"/></hierarchy>'
+$onboardingLast = '<hierarchy><node package="com.bd2toolsbox" text="上一步"/><node package="com.bd2toolsbox" text="开始使用"/></hierarchy>'
 Assert-Bd2UiChrome -XmlText $good | Out-Null; $passed++
 Assert-Throws { Assert-Bd2UiChrome -XmlText ($good.Replace('com.bd2toolsbox','com.android.settings')) } 'main chrome'
 Assert-Throws { Assert-Bd2UiChrome -XmlText $dialog } 'main chrome'
+# 引导页：允许时通过，不允许时仍必须失败（否则这条豁免就成了万能通行证）
+Assert-Bd2UiChrome -XmlText $onboarding -AllowOnboarding | Out-Null; $passed++
+Assert-Bd2UiChrome -XmlText $onboardingLast -AllowOnboarding | Out-Null; $passed++
+Assert-Throws { Assert-Bd2UiChrome -XmlText $onboarding } 'main chrome'
+Assert-Throws { Assert-Bd2UiChrome -XmlText $onboardingLast } 'main chrome'
+Assert-Throws { Assert-Bd2UiChrome -XmlText ($onboarding.Replace('com.bd2toolsbox','com.android.settings')) -AllowOnboarding } 'main chrome'
 Assert-Throws { Assert-Bd2UiChrome -XmlText '<hierarchy><node' } 'XML'
 Assert-Throws { Assert-Bd2UiChrome -XmlText '<!DOCTYPE hierarchy [<!ENTITY x SYSTEM "file:///not-allowed">]><hierarchy>&x;</hierarchy>' } 'XML'
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('bd2-ui-harness-' + [guid]::NewGuid().ToString('N'))
