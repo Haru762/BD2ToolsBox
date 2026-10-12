@@ -186,5 +186,35 @@ class VerifyManifestsTest(unittest.TestCase):
         self.assertGreaterEqual(report["summary"]["checked"], 18)
 
 
+
+    def test_missing_delivery_artifact_is_a_failure(self):
+        """交付记录对应的产物不在，就是失败 —— 它记的是「要交付的那两个包」。"""
+        self._manifest("artifact-manifest", {
+            "t61Delivery": {
+                "artifacts": {
+                    "x86_64": {"path": "app/build/outputs/apk/x64/release/app.apk",
+                               "contentSha256": "f" * 64},
+                }
+            }
+        })
+        report = vm.verify(self.tmp, check_delivery=True)
+        self.assertEqual(1, len(report["mismatched"]))
+        self.assertEqual([], report["missing"])
+        self.assertEqual(1, vm.main(["--root", self.tmp, "--quiet", "--check-delivery"]))
+
+    def test_missing_local_only_artifact_is_not_a_failure(self):
+        """本地保全产物缺失是预期的（换一台机器本来就该缺），只记 missing。"""
+        self._manifest("artifact-manifest", {
+            "categories": [{
+                "id": "keep", "localDir": "local/keep",
+                "items": [{"file": "gone.apk", "sha256": "f" * 64}],
+            }]
+        })
+        report = vm.verify(self.tmp)
+        self.assertEqual([], report["mismatched"])
+        self.assertEqual(1, len(report["missing"]))
+        self.assertEqual(0, vm.main(["--root", self.tmp, "--quiet"]))
+
+
 if __name__ == "__main__":
     unittest.main()

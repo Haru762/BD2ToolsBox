@@ -119,7 +119,14 @@ def verify(root: str, check_delivery: bool = False) -> Dict:
             }
             if not os.path.isfile(path):
                 record['reason'] = 'not present locally'
-                missing.append(record)
+                # 交付记录（带 contentSha256）**缺失就是失败**：它记的是「要交付的那两个包」，
+                # 文件不在就没法证明可追溯。而本地保全产物（fixture 等）缺失是预期的
+                # （换一台机器本来就该缺），所以只记进 missing 不算失败。
+                if isinstance(entry.get('contentSha256'), str):
+                    record['hashKind'] = 'apkContent'
+                    mismatched.append(record)
+                else:
+                    missing.append(record)
                 continue
             # 有 contentSha256 的条目核**内容哈希**：APK 文件哈希随构建实例变化
             # （签名块），拿它当身份会让每次重建都报一次假失败。见
@@ -192,6 +199,8 @@ def main(argv=None) -> int:
             '  （交付记录未核对；发版前请加 --check-delivery，见 release-checklist.md）\n')
     for record in report['mismatched']:
         sys.stderr.write('  MISMATCH %s: %s\n' % (record['path'], record['reason']))
+    for record in report['missing']:
+        sys.stderr.write('  MISSING  %s: %s\n' % (record['path'], record['reason']))
     return 1 if report['mismatched'] else 0
 
 
