@@ -1075,6 +1075,157 @@ function Get-Bd2CurrentReleaseArtifact {
     return @{ path = $path; relative = $relative; expectedSha256 = (Get-Bd2Sha256 -Path $path); mappingPath = $mapping; mappingSha256 = (Get-Bd2Sha256 -Path $mapping) }
 }
 
+function Get-Bd2ReleaseSmokeCase {
+    <#
+      .SYNOPSIS
+        release smoke 的 case 表：每个 case 由「探针」+「APK 级断言」组成。
+
+      .DESCRIPTION
+        此前只有 baseline-startup 与 snapshot-compatibility 两个 case，而计划里引用了
+        九个。缺的那些不是「没东西可验」，而是没人把已有的探针与审计工具**组装**起来。
+
+        这里显式声明每个 case 要跑哪些探针、要对 APK 做哪些静态断言；两者都必须过。
+        没有 case 能靠「什么都不做」返回成功 —— 未实现的 case 直接抛。
+    #>
+    param([Parameter(Mandatory=$true)][string]$Case)
+    $table = @{
+        # 冻结基线：装得上、起得来、身份对得上（T03/T04 的口径，不动）
+        'baseline-startup' = @{ probes = @(); apk = @{}; snapshot = $false; performance = $false; matrix = $false }
+        # 冻结基线的快照契约 + mapping 守卫（T10 的口径，不动）
+        'snapshot-compatibility' = @{ probes = @(); apk = @{}; snapshot = $true; performance = $false; matrix = $false }
+        # T35/T36：老数据读得回来 —— 键名常量还在 DEX 里 + 用真实 minified Store 跨进程
+        # 读写 0.2.16 的**混淆格式**冻结夹具
+        'json-migration' = @{
+            probes = @()
+            apk = @{
+                requireDexStrings = @('schemaVersion', 'savedAt', 'mods', 'sourceDirs', 'installedAt', 'bundleName', 'targetHashedName', 'convertedHashDir')
+                requireResources = @('raw/aboutlibraries')
+            }
+            snapshot = $true; performance = $false; matrix = $false
+        }
+        # T51：native 真的能加载并解码 —— 真实 BC1 解码 + 调试信息确实剥离
+        'native-load-and-decode' = @{
+            probes = @('com.bd2toolsbox.integration.ReleasePythonDependencyProbeTest#nativeTextureDecoderAvailable')
+            apk = @{ expectedAbi = $true; requireNoNativeDebugInfo = $true; requireNativeAbi = $true }
+            snapshot = $false; performance = $false; matrix = $false
+        }
+        # T37/T38/T53：许可证数据与图标资源在收缩后仍在，且全文可解析
+        'resources-and-licenses' = @{
+            probes = @()
+            apk = @{
+                requireResources = @('raw/aboutlibraries', 'xml/file_paths', 'mipmap/ic_launcher', 'string/app_name')
+                requireLicenseContent = $true
+            }
+            snapshot = $false; performance = $false; matrix = $false
+        }
+        # T50/T47：裁剪后的 Python 引擎与预览链路仍可用；桌面 FMOD 确实不在包里
+        'engine-and-preview' = @{
+            probes = @('com.bd2toolsbox.integration.ReleasePythonDependencyProbeTest#targetPythonImports', 'com.bd2toolsbox.integration.ReleasePythonDependencyProbeTest#nativeTextureDecoderAvailable')
+            apk = @{ forbidNestedImySubstring = @('vendor/UnityPy/lib/FMOD') }
+            snapshot = $false; performance = $false; matrix = $false
+        }
+        # T52：R8 精修后真实动态入口仍通 —— 冷启动 + Python 回调 + 快照契约 + mapping 守卫
+        'full-r8-contract' = @{
+            probes = @('com.bd2toolsbox.integration.ReleasePythonDependencyProbeTest#targetPythonImports')
+            apk = @{ requireDexStrings = @('schemaVersion', 'savedAt', 'mods', 'sourceDirs') }
+            snapshot = $true; performance = $false; matrix = $false
+        }
+        # T54：上面几项的核心并集
+        'all-core-features' = @{
+            probes = @('com.bd2toolsbox.integration.ReleasePythonDependencyProbeTest#targetPythonImports', 'com.bd2toolsbox.integration.ReleasePythonDependencyProbeTest#nativeTextureDecoderAvailable')
+            apk = @{
+                requireDexStrings = @('schemaVersion', 'savedAt', 'mods', 'sourceDirs')
+                requireResources = @('raw/aboutlibraries', 'xml/file_paths')
+                expectedAbi = $true
+                forbidNestedImySubstring = @('vendor/UnityPy/lib/FMOD')
+            }
+            snapshot = $true; performance = $false; matrix = $false
+        }
+        # T59：启动与内存的实测值（断言的是「没有明显退化」的阈值，不是基准数字）
+        'performance-scenarios' = @{ probes = @(); apk = @{}; snapshot = $false; performance = $true; matrix = $false }
+        # T57：本 ABI/本 API 级别上的安装与启动（多 API 级别的矩阵需要多台设备）
+        'platform-matrix' = @{ probes = @(); apk = @{ expectedAbi = $true }; snapshot = $false; performance = $false; matrix = $true }
+    }
+    if (-not $table.ContainsKey($Case)) {
+        throw "release case '$Case' 尚未实现。拒绝返回空成功。"
+    }
+    return $table[$Case]
+}
+
+function Assert-Bd2ApkContract {
+    <#
+      .SYNOPSIS
+        release smoke 的 APK 级静态断言（只读，不执行 APK 代码）。
+
+      .DESCRIPTION
+        用仓库里已有的审计工具：tools/audit_apk_size.py（资源名、DEX 字符串常量、
+        ABI、native 调试节、嵌套 IMY 条目名）与 tools/audit_native_abi.py
+        （ELF 架构、导出、DT_NEEDED、16 KB 对齐）。断言全部来自实际产物。
+    #>
+    param(
+        [Parameter(Mandatory=$true)][string]$ApkPath,
+        [Parameter(Mandatory=$true)][string]$Abi,
+        [Parameter(Mandatory=$true)][string]$RunDirectory,
+        $Contract
+    )
+    if ($null -eq $Contract -or $Contract.Count -eq 0) { return @() }
+    $steps = @()
+    $sizeArgs = @('--apk', $ApkPath, '--quiet')
+    if ($Contract.expectedAbi) { $sizeArgs += @('--expected-abi', $Abi) }
+    # 注意 @($null) 会得到一个「含一个 null」的数组 —— 不过滤就会把
+    # `--require-dex-string` 传成没有值的裸参数（argparse 直接报错）。
+    foreach ($name in @($Contract.requireResources | Where-Object { $_ })) {
+        $sizeArgs += @('--require-resource-name', $name)
+    }
+    foreach ($text in @($Contract.requireDexStrings | Where-Object { $_ })) {
+        $sizeArgs += @('--require-dex-string', $text)
+    }
+    $sizeOut = Join-Path $RunDirectory 'apk-contract.json'
+    $sizeArgs += @('--output', $sizeOut)
+
+    Invoke-Bd2Python (Join-Path $Root 'tools/audit_apk_size.py') @sizeArgs | Out-Null
+    $report = Get-Content -LiteralPath $sizeOut -Raw -Encoding UTF8 | ConvertFrom-Json
+    $steps += 'apk-contract-audit'
+
+    if ($Contract.requireNoNativeDebugInfo) {
+        if ([int]$report.nativeDebugBytes -ne 0) {
+            throw "native 调试信息未剥离：nativeDebugBytes=$($report.nativeDebugBytes)"
+        }
+        $steps += 'apk-native-debug-info-stripped'
+    }
+    foreach ($needle in @($Contract.forbidNestedImySubstring | Where-Object { $_ })) {
+        $hit = @($report.nestedImy | Where-Object { $_.entry -like "*$needle*" })
+        if ($hit.Count -gt 0) { throw "APK 里仍有被排除的路径：$needle（$($hit[0].entry)）" }
+        $inner = @($report.nestedImy | Where-Object { @($_.soFiles | Where-Object { $_.name -like "*$needle*" }).Count -gt 0 })
+        if ($inner.Count -gt 0) { throw "嵌套 IMY 里仍有被排除的路径：$needle" }
+        $steps += 'apk-forbidden-path-absent'
+    }
+    if ($Contract.requireLicenseContent) {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($ApkPath)
+        try {
+            $entry = @($zip.Entries | Where-Object { $_.FullName -like 'res/*.json' }) | Select-Object -First 1
+            if ($null -eq $entry) { throw 'APK 里找不到 aboutlibraries.json' }
+            $reader = New-Object IO.StreamReader($entry.Open(), [Text.Encoding]::UTF8)
+            try { $json = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            $doc = $json | ConvertFrom-Json
+            if (@($doc.libraries).Count -lt 50) { throw "许可清单条目过少：$(@($doc.libraries).Count)" }
+            $apache = $doc.licenses.'Apache-2.0'.content
+            if ([string]::IsNullOrWhiteSpace($apache) -or $apache.Length -lt 5000) {
+                throw 'Apache-2.0 许可全文缺失或过短'
+            }
+            $steps += 'apk-license-fulltext-present'
+        } finally { $zip.Dispose() }
+    }
+    if ($Contract.requireNativeAbi) {
+        $nativeOut = Join-Path $RunDirectory 'native-abi.json'
+        Invoke-Bd2Python (Join-Path $Root 'tools/audit_native_abi.py') --apk $ApkPath --abi $Abi --output $nativeOut | Out-Null
+        if (-not (Test-Path -LiteralPath $nativeOut -PathType Leaf)) { throw 'native ABI 审计未产出报告' }
+        $steps += 'apk-native-abi-audit'
+    }
+    return $steps
+}
+
 function Test-Bd2ReleaseSmoke {
     <#
       .SYNOPSIS
@@ -1092,15 +1243,19 @@ function Test-Bd2ReleaseSmoke {
         [Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi
     )
     Assert-Bd2AndroidTools
-    if ($Case -notin @('baseline-startup', 'snapshot-compatibility')) {
-        throw "release case '$Case' 尚未实现。拒绝返回空成功。"
-    }
+    $contract = Get-Bd2ReleaseSmokeCase -Case $Case
 
-    $artifact = if ($Case -eq 'snapshot-compatibility') {
+    # 只有 baseline-startup 面向 T03 冻结的「同源原工具链重建包」；其余 case 验的都是
+    # **本轮重构构建出来的** minified release。此前这里是 `if snapshot-compatibility
+    # → current else → frozen`，等于把「新增的 case」默认丢给冻结基线 —— 那样
+    # resources-and-licenses 会在 0.2.16 老包上找 AboutLibraries 资源，必然找不到。
+    $artifact = if ($Case -eq 'baseline-startup') {
+        Get-Bd2ReleaseArtifact -Abi $Abi
+    } else {
         $preflightDevice = Get-Bd2Device -Abi $Abi
         $null = Assert-Bd2DeviceOnline -Device $preflightDevice
         Get-Bd2CurrentReleaseArtifact -Abi $Abi
-    } else { Get-Bd2ReleaseArtifact -Abi $Abi }
+    }
     $actualSha = Get-Bd2Sha256 -Path $artifact.path
     if ($actualSha -ne $artifact.expectedSha256) {
         throw "release 基线哈希不符：$($artifact.relative) 期望 $($artifact.expectedSha256)，实际 $actualSha"
@@ -1143,7 +1298,7 @@ function Test-Bd2ReleaseSmoke {
         result = 'FAIL'
     }
     try {
-        if ($Case -eq 'snapshot-compatibility') {
+        if ($contract.snapshot) {
             Copy-Item -LiteralPath $artifact.mappingPath -Destination (Join-Path $runDir 'mapping.txt')
         }
         # 用自足的 :release-probe APK，不用 :app 的 androidTest 包。两条实测过的死路：
@@ -1183,7 +1338,27 @@ function Test-Bd2ReleaseSmoke {
         $summary.probeTests = $count
         $summary.steps += 'release-contract-probe'
 
-        if ($Case -eq 'snapshot-compatibility') {
+        # ---- case 自己的探针（同一套 release-probe APK，同一份签名） ----
+        $summary.probes = @()
+        foreach ($spec in @($contract.probes | Where-Object { $_ })) {
+            $parts = $spec -split '#', 2
+            $cls = $parts[0]
+            $method = if ($parts.Count -gt 1) { $parts[1] } else { $null }
+            $probeResult = Invoke-Bd2Instrumentation -Serial $serial `
+                -TestClass $cls -Method $method -TestPackage 'com.bd2toolsbox.releaseprobe'
+            $safe = ($spec -replace '[#]', '-')
+            [IO.File]::WriteAllText((Join-Path $runDir ("probe-$safe.txt")), $probeResult.output, (New-Object Text.UTF8Encoding($false)))
+            $null = Assert-Bd2InstrumentationResult -Result $probeResult -Label $spec
+            $summary.probes += $spec
+            $summary.steps += "probe-$safe"
+        }
+
+        # ---- APK 级静态断言（只读；断言全部来自实际产物） ----
+        $apkSteps = Assert-Bd2ApkContract -ApkPath $artifact.path -Abi $Abi `
+            -RunDirectory $runDir -Contract $contract.apk
+        foreach ($step in @($apkSteps)) { $summary.steps += $step }
+
+        if ($contract.snapshot) {
             $snapshotRunId = 'snapshot-' + [guid]::NewGuid().ToString('N')
             $summary.snapshot = Invoke-Bd2SnapshotPhases -Serial $serial -RunId $snapshotRunId -RunDirectory $runDir
             $summary.steps += 'minified-store-cross-process-snapshot'
@@ -1261,6 +1436,50 @@ function Test-Bd2ReleaseSmoke {
         if ($badging -notmatch 'versionCode=17') { throw '应用身份不符：设备上的 versionCode 不是 17' }
         if ($badging -notmatch 'versionName=0\.2\.16') { throw '应用身份不符：设备上的 versionName 不是 0.2.16' }
         $summary.steps += 'verify-app-identity'
+
+        if ($contract.performance) {
+            # T59：实测冷启动与内存。断言的是「没有明显退化」的阈值（不是基准数字）：
+            # 一次都没起来、或启动超过 10 秒、或 PSS 超过 1.5 GB，都算回归。
+            $times = @()
+            for ($i = 0; $i -lt 3; $i++) {
+                & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
+                Start-Sleep -Seconds 2
+                $startOut = (& $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
+                $m = [regex]::Match($startOut, 'TotalTime:\s*(\d+)')
+                if (-not $m.Success) { throw "冷启动未返回 TotalTime：$startOut" }
+                $times += [int]$m.Groups[1].Value
+            }
+            [IO.File]::WriteAllText((Join-Path $runDir 'cold-start.txt'), ($times -join "`n"), (New-Object Text.UTF8Encoding($false)))
+            $max = ($times | Measure-Object -Maximum).Maximum
+            if ($max -gt 10000) { throw "冷启动过慢：$max ms（三次：$($times -join '/')）" }
+            $summary.coldStartMs = $times
+            $summary.steps += 'cold-start-measured'
+
+            Start-Sleep -Seconds 5
+            $pidText = ((& $Bd2Adb -s $serial shell pidof com.bd2toolsbox) -join '').Trim()
+            if ([string]::IsNullOrWhiteSpace($pidText)) { throw '性能场景：进程未在运行' }
+            $mem = ((& $Bd2Adb -s $serial shell dumpsys meminfo $pidText) -join [Environment]::NewLine)
+            [IO.File]::WriteAllText((Join-Path $runDir 'meminfo.txt'), $mem, (New-Object Text.UTF8Encoding($false)))
+            $pss = [regex]::Match($mem, 'TOTAL PSS:\s*(\d+)')
+            if (-not $pss.Success) { throw '性能场景：读不到 TOTAL PSS' }
+            $summary.totalPssKb = [int]$pss.Groups[1].Value
+            if ($summary.totalPssKb -gt 1500000) {
+                throw "内存占用过高：$($summary.totalPssKb) KB"
+            }
+            $summary.steps += 'meminfo-measured'
+        }
+
+        if ($contract.matrix) {
+            # T57：本设备的 ABI/API 级别必须与声明一致，且落在受支持的集合里。
+            # 多 API 级别的矩阵需要多台设备 —— 这里如实只覆盖当前这一台。
+            $apiLevel = [int](((& $Bd2Adb -s $serial shell getprop ro.build.version.sdk) -join '').Trim())
+            $reportedAbi = ((& $Bd2Adb -s $serial shell getprop ro.product.cpu.abi) -join '').Trim()
+            if ($reportedAbi -ne $Abi) { throw "平台矩阵：设备 ABI 是 $reportedAbi，与请求的 $Abi 不符" }
+            if ($apiLevel -lt 29) { throw "平台矩阵：API $apiLevel 低于 minSdk 29" }
+            $summary.apiLevel = $apiLevel
+            $summary.reportedAbi = $reportedAbi
+            $summary.steps += 'platform-identity'
+        }
 
         $summary.result = 'PASS'
     } catch {

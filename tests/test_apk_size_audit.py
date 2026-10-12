@@ -383,5 +383,29 @@ class AuditApkSizeTest(unittest.TestCase):
                                         "--quiet"]))
 
 
+    # ---------------------------------------------------------------- T35/T36 DEX 键名
+
+    def test_required_dex_string_present(self):
+        apk = self._apk([("classes.dex", b"dexmagic" + b"schemaVersion")])
+        self.assertEqual([], audit.check_required_dex_strings(apk, ["schemaVersion"]))
+
+    def test_required_dex_string_missing(self):
+        apk = self._apk([("classes.dex", b"somethingelse")])
+        problems = audit.check_required_dex_strings(apk, ["schemaVersion"])
+        self.assertEqual("missing-dex-string", problems[0]["kind"])
+
+    def test_missing_dex_is_reported(self):
+        apk = self._apk([("resources.arsc", b"x")])
+        problems = audit.check_required_dex_strings(apk, ["schemaVersion"])
+        self.assertEqual("missing-dex", problems[0]["kind"])
+
+    def test_cli_require_dex_string_exit_code(self):
+        ok = self._apk([("classes.dex", b"savedAt")], name="dex-ok.apk")
+        self.assertEqual(0, audit.main(["--apk", ok, "--require-dex-string", "savedAt",
+                                        "--quiet"]))
+        self.assertEqual(1, audit.main(["--apk", ok, "--require-dex-string", "nope",
+                                        "--quiet"]))
+
+
 if __name__ == "__main__":
     unittest.main()

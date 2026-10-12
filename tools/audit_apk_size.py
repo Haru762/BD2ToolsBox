@@ -346,6 +346,27 @@ def compare_reports(before: dict, after: dict) -> dict:
     }
 
 
+def check_required_dex_strings(apk_path: str, required: List[str]) -> List[dict]:
+    """断言 DEX 里仍有某个字符串常量（T35/T36 的序列化键名守卫）。
+
+    kotlinx.serialization 的磁盘/网络键名是编译进字节码的**字符串常量**（来自
+    `@SerialName`）。类名、方法名会被 R8 改名，但这些字面量不会 —— 所以「键名还在
+    DEX 里」是「老数据读得回来」的必要条件，且能用一条只读检查钉住。
+
+    只读，不解析 DEX 结构。
+    """
+    with zipfile.ZipFile(apk_path) as zf:
+        dex = b"".join(zf.read(n) for n in sorted(n for n in zf.namelist()
+                                                  if n.endswith(".dex")))
+    problems = []
+    if not dex:
+        return [{"kind": "missing-dex"}]
+    for name in required:
+        if name.encode("utf-8") not in dex:
+            problems.append({"kind": "missing-dex-string", "name": name})
+    return problems
+
+
 def audit(apk_path: str) -> dict:
     if not os.path.isfile(apk_path):
         raise AuditError("APK not found: %s" % apk_path)
@@ -484,6 +505,9 @@ def main(argv=None) -> int:
     parser.add_argument("--require-resource-name", action="append", default=[],
                         metavar="NAME",
                         help="断言 resources.arsc 里仍有该资源名（可重复，如 raw/aboutlibraries）")
+    parser.add_argument("--require-dex-string", action="append", default=[],
+                        metavar="TEXT",
+                        help="断言 DEX 里仍有该字符串常量（可重复，如 schemaVersion）")
     parser.add_argument("--quiet", action="store_true", help="不打印摘要")
     args = parser.parse_args(argv)
 
@@ -532,6 +556,12 @@ def main(argv=None) -> int:
         report["requiredResourceNames"] = sorted(set(args.require_resource_name))
         report["requiredResourceProblems"] = res_problems
         problems = problems + res_problems
+
+    if args.require_dex_string:
+        dex_problems = check_required_dex_strings(args.apk, args.require_dex_string)
+        report["requiredDexStrings"] = sorted(set(args.require_dex_string))
+        report["requiredDexProblems"] = dex_problems
+        problems = problems + dex_problems
 
     text = json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     if args.output:
