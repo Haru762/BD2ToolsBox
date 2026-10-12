@@ -106,6 +106,77 @@ def set_rotation(serial: str, rotation: int) -> None:
     time.sleep(2)
 
 
+class UiDriver:
+    """靠 uiautomator 的控件树做**按标签**导航。
+
+    不用写死坐标：坐标在不同分辨率/字号下都会变，写死的坐标会在下一次换设备时
+    静静地截到错的屏幕（那比报错更糟）。找不到标签就报错，不静默跳过。
+    """
+
+    def __init__(self, serial: str):
+        self.serial = serial
+        self._cache: list[dict] = []
+
+    def dump(self) -> list[dict]:
+        shell(self.serial, 'uiautomator', 'dump', '/data/local/tmp/t58-ui.xml')
+        out = adb(self.serial, 'shell', 'cat', '/data/local/tmp/t58-ui.xml')
+        nodes = []
+        for m in re.finditer(r'<node[^>]*>', out):
+            tag = m.group(0)
+
+            def attr(name: str) -> str:
+                mm = re.search(name + r'="([^"]*)"', tag)
+                return mm.group(1) if mm else ''
+
+            nodes.append({
+                'text': attr('text'), 'desc': attr('content-desc'),
+                'bounds': attr('bounds'), 'clickable': attr('clickable'),
+            })
+        self._cache = nodes
+        return nodes
+
+    def find(self, label: str) -> dict | None:
+        for n in self._cache:
+            if (n['text'] or n['desc']) == label:
+                return n
+        return None
+
+    def labels(self) -> list[str]:
+        return [n['text'] or n['desc'] for n in self._cache if (n['text'] or n['desc'])]
+
+    def tap(self, label: str) -> None:
+        node = self.find(label)
+        if node is None:
+            raise RuntimeError(f'界面上找不到「{label}」；当前标签：{self.labels()[:25]}')
+        m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node['bounds'])
+        if not m:
+            raise RuntimeError(f'「{label}」的 bounds 不可解析：{node["bounds"]}')
+        x = (int(m.group(1)) + int(m.group(3))) // 2
+        y = (int(m.group(2)) + int(m.group(4))) // 2
+        shell(self.serial, 'input', 'tap', str(x), str(y))
+
+    def wait_for(self, label: str, timeout: float = 12.0) -> None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self.dump()
+            if self.find(label) is not None:
+                return
+            time.sleep(1)
+        raise RuntimeError(f'等不到「{label}」；当前标签：{self.labels()[:25]}')
+
+    def swipe_up(self, times: int = 1) -> None:
+        for _ in range(times):
+            shell(self.serial, 'input', 'swipe', '960', '900', '960', '300', '300')
+            time.sleep(2)
+
+    def dismiss_index_prompt(self) -> None:
+        """首次启动会有「需要建立文件索引」提示；不点掉它后面什么都点不到。"""
+        self.dump()
+        if self.find('跳过') is not None:
+            self.tap('跳过')
+            time.sleep(3)
+
+
 PREFS = f'/data/data/{PKG}/shared_prefs/app_settings.xml'
 
 
@@ -260,11 +331,111 @@ def main() -> int:
             'versionName': '0.2.16',
             'versionCode': 17,
         },
-        'tool': 'tools/capture_ui_screenshots.py (adb screencap -p + pull)',
+        'tool': 'tools/capture_ui_screenshots.py (adb screencap -p + pull + uiautomator 标签导航)',
         'note': '截图全部来自本轮构建的 release APK 在设备上的真实渲染；未使用旧截图或网页原型。',
         'limitations': [],
         'shots': shots,
     }
+
+    # ---- 第二段：导航到各个具体屏幕 -------------------------------------------------
+    #
+    # 靠 uiautomator 的控件树按**标签**点击，不写死坐标。
+    driver = UiDriver(serial)
+
+    def shoot(name: str, label: str, mode: str) -> None:
+        path = os.path.join(args.out, f'{name}.png')
+        sha = capture(serial, path)
+        width, height = png_size(path)
+        shots.append({
+            'file': os.path.basename(path),
+            'label': label,
+            'appThemeMode': mode,
+            'colorPreset': 'PURPLE',
+            'fontScale': '1.0',
+            'actualOrientation': 'portrait' if height > width else 'landscape',
+            'bytes': os.path.getsize(path),
+            'sha256': sha,
+        })
+        print(f'  {name}: {width}x{height} {os.path.getsize(path)} B sha256={sha[:16]}...')
+
+    try:
+        set_theme_mode(serial, 'LIGHT')
+        set_font_scale(serial, '1.0')
+        launch(serial)
+        time.sleep(3)
+        driver.dismiss_index_prompt()
+
+        # 底部三个 tab
+        driver.wait_for('兑换码')
+        driver.tap('兑换码')
+        time.sleep(3)
+        shoot('screen-redeem', '兑换码页', 'LIGHT')
+
+        driver.dump()
+        driver.tap('攻略')
+        time.sleep(4)
+        shoot('screen-guide', '攻略页', 'LIGHT')
+
+        # 设置工作表（含外观与关于）
+        driver.dump()
+        driver.tap('设置')
+        time.sleep(3)
+        driver.dump()
+        driver.swipe_up(3)
+        driver.dump()
+        if driver.find('外观') is not None:
+            shoot('screen-sheet-appearance-light', '设置工作表·外观（浅色）', 'LIGHT')
+            driver.dump()
+            if driver.find('深色') is not None:
+                driver.tap('深色')
+                time.sleep(3)
+                # 这里必须显式传 'DARK'：以前用共享变量，结果深色那张被标成 LIGHT
+                # —— 正是「把没测装成测过了」那一类错。
+                shoot('screen-sheet-appearance-dark', '设置工作表·外观（深色）', 'DARK')
+                driver.tap('浅色')
+                time.sleep(2)
+        else:
+            index['limitations'].append('设置工作表里没找到「外观」区，该屏未采。')
+
+        # 开源许可页
+        driver.dump()
+        if driver.find('开源许可') is None:
+            driver.swipe_up(1)
+            driver.dump()
+        if driver.find('开源许可') is not None:
+            driver.tap('开源许可')
+            time.sleep(4)
+            shoot('screen-licenses', '开源许可页', 'LIGHT')
+            shell(serial, 'input', 'keyevent', 'KEYCODE_BACK')
+            time.sleep(3)
+        else:
+            index['limitations'].append('设置工作表里没找到「开源许可」，该屏未采。')
+
+        # 破坏性动作的确认框：清空缓存（只截图，不确认）
+        # 先回到工作表顶部再往下找 —— 上一步可能把滚动位置留在了底部。
+        driver.dump()
+        found = driver.find('清空')
+        for _ in range(4):
+            if found is not None:
+                break
+            shell(serial, 'input', 'swipe', '960', '400', '960', '950', '300')
+            time.sleep(2)
+            driver.dump()
+            found = driver.find('清空')
+        if found is not None:
+            driver.tap('清空')
+            time.sleep(3)
+            shoot('dialog-clear-cache', '清空缓存的确认框（只截图，未确认）', 'LIGHT')
+            shell(serial, 'input', 'keyevent', 'KEYCODE_BACK')
+            time.sleep(2)
+        else:
+            index['limitations'].append('设置工作表里没找到「清空」，确认框未采。')
+    except Exception as exc:
+        # 导航失败不掩盖：记进 limitations 并写清楚是哪一步
+        index['limitations'].append(f'第二段导航未完成：{type(exc).__name__}: {exc}')
+    finally:
+        shell(serial, 'am', 'force-stop', PKG)
+
     # 方向这一维**本机无法验证**：MuMu 是固定 1920x1080 横屏，`settings put system
     # user_rotation` 不生效。所以计划里干脆不再请求方向，改成如实登记这条限制 ——
     # 曾经把它标成「竖屏」并写进文件名，那是把「没拍到」记成「拍到了」。

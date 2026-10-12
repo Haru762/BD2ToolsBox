@@ -1,14 +1,14 @@
 {
   "capturedFrom": {
     "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-    "apkSha256": "d70ab6a15c13d6c26807921c34c549f9449586e83bdaed8c5c3e2384758a12ff",
+    "apkSha256": "81da0c5f48eb954238969aa4aef146446ba7532a4a352ac3a275ef2e33a3075e",
     "abi": "x86_64",
     "serial": "127.0.0.1:16384",
     "package": "com.bd2toolsbox",
     "versionName": "0.2.16",
     "versionCode": 17
   },
-  "tool": "tools/capture_ui_screenshots.py (adb screencap -p + pull)",
+  "tool": "tools/capture_ui_screenshots.py (adb screencap -p + pull + uiautomator 标签导航)",
   "note": "截图全部来自本轮构建的 release APK 在设备上的真实渲染；未使用旧截图或网页原型。",
   "limitations": [
     "本机（MuMu）是固定 1920x1080 横屏，`settings put system user_rotation` 不生效，实际只采到 ['landscape'] 一种方向。**竖屏布局与旋转恢复的观感未验证**，需要真机或可竖屏的模拟器补拍。"
@@ -25,8 +25,8 @@
         1920,
         1080
       ],
-      "bytes": 175450,
-      "sha256": "96c86d944276d773b04b2d5d96cb318531d44b9e64f4a7455403252ad6a7a24b"
+      "bytes": 175255,
+      "sha256": "902f828fa1f26ead997126e3a65fcf684000bb5b675fc0c1dcd55c5f6246a136"
     },
     {
       "file": "dark-default.png",
@@ -39,8 +39,8 @@
         1920,
         1080
       ],
-      "bytes": 174278,
-      "sha256": "d1ef7a2bfdb47675cc4d0aa387ccbbd37ce15b7970b1459764d183f30d59287a"
+      "bytes": 174093,
+      "sha256": "819dac5a0f338e02d4cf57b21222699b5230b33522a094690ac496ed6b21595a"
     },
     {
       "file": "light-teal.png",
@@ -53,8 +53,8 @@
         1920,
         1080
       ],
-      "bytes": 175717,
-      "sha256": "63971c4603155003935651f60387cc10b123dd92d27aa53bfe059d069ee040ee"
+      "bytes": 175832,
+      "sha256": "2297a406839a27c28616082011846a74a018a2ff467a40017fdd873ad19773d2"
     },
     {
       "file": "dark-graphite.png",
@@ -67,8 +67,8 @@
         1920,
         1080
       ],
-      "bytes": 174006,
-      "sha256": "dc0d2601b3f2b4b3280f7539757e7549d90216671e0ac51c676b534fa1ac6f20"
+      "bytes": 174398,
+      "sha256": "91e82e8f1753b723285a1d1bc6d7dad6b22703ae75150ca57dcb75854c562fbf"
     },
     {
       "file": "light-font1.3.png",
@@ -81,8 +81,8 @@
         1920,
         1080
       ],
-      "bytes": 198834,
-      "sha256": "4f7a544d2aa4ad22ec5049a8163edf0f0a895847331bce662833cd90d1721595"
+      "bytes": 199385,
+      "sha256": "a258c362de7a9014e7eb05c733fe6fcba38ba64761903d52718d20bdf999a141"
     },
     {
       "file": "light-font2.0.png",
@@ -95,8 +95,8 @@
         1920,
         1080
       ],
-      "bytes": 240373,
-      "sha256": "9e6e180a0efa67c01d63b0f9bc6a4639dfdb3fa79ef35680b4cbe224af71bc43"
+      "bytes": 240793,
+      "sha256": "d1b864e1b3ffc1eda805186a3fb928f22154d842a589bc042c82bdff7d85855d"
     },
     {
       "file": "dark-font2.0.png",
@@ -109,8 +109,68 @@
         1920,
         1080
       ],
-      "bytes": 239059,
-      "sha256": "9969a986407215ff176819ab836766aa9065b62343858c0213c6bea585b17e94"
+      "bytes": 239538,
+      "sha256": "6c6804df88af47ad2d79d0c57cf70ff0418beb3f6c72f299b9ffecb657dab851"
+    },
+    {
+      "file": "screen-redeem.png",
+      "label": "兑换码页",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "bytes": 94391,
+      "sha256": "c1ed8b7ee8ce8ef15ddcf45ef5169213a7a020f360b5639881c6c0b4c9e8adff"
+    },
+    {
+      "file": "screen-guide.png",
+      "label": "攻略页",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "bytes": 294791,
+      "sha256": "24f999a0fe66f0647194ee2248b5e090100095ac5da09fdb489b6babdaad6e9c"
+    },
+    {
+      "file": "screen-sheet-appearance-light.png",
+      "label": "设置工作表·外观（浅色）",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "bytes": 255919,
+      "sha256": "998889ca09d87ae88ccff7403f64e56a6f9fbcd3e9d5a126b41cfb0df3563ba2"
+    },
+    {
+      "file": "screen-sheet-appearance-dark.png",
+      "label": "设置工作表·外观（深色）",
+      "appThemeMode": "DARK",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "bytes": 252015,
+      "sha256": "2826231da044a1315e5b77d38e0bf63a4ce9a932427934614f4ddec845f4d4e1"
+    },
+    {
+      "file": "screen-licenses.png",
+      "label": "开源许可页",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "bytes": 105925,
+      "sha256": "71abfcc0aa47c0eb07ef677e2d0fa70eb9467ea60b0697c22c39e835e132160f"
+    },
+    {
+      "file": "dialog-clear-cache.png",
+      "label": "清空缓存的确认框（只截图，未确认）",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "actualOrientation": "landscape",
+      "bytes": 260633,
+      "sha256": "adc8c26d51422c0a0003b7fd7c8aa6b418f9027c599837a1fa24cb625974ea0f"
     }
   ]
 }
