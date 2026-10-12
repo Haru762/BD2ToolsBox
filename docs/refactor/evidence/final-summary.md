@@ -8,7 +8,7 @@
 
 | 维度 | 结论 |
 |---|---|
-| 代码质量门禁 | **全绿**（架构 0 违规、JVM 1462/0/0/0、Python 219/0/0/0、基线清单 16/16） |
+| 代码质量门禁 | **全绿**（架构 0 违规、JVM 1472/0/0/0、Python 219/0/0/0、基线清单 16/16） |
 | 产物 | **两个 ABI 的 minified release 已构建**，签名与既有 0.2.16 一致（可覆盖升级） |
 | 设备矩阵 | **3/4 平台已实测**（x86_64/API32、x86_64/API29、x86_64/API36-16KB）；**arm64 真机本轮未跑** |
 | release smoke | x86_64 上 **10/10 PASS**；arm64 未跑 |
@@ -20,7 +20,7 @@
 |---|---|---|
 | 架构规则 R1–R7 | `python tools/check_architecture.py --root . --quiet` | 退出码 **0**（0 违规） |
 | 基线清单核对 | `python tools/verify_manifests.py --root .` | **16/16** 哈希全对 |
-| JVM 单测（两个 flavor） | `Test-Bd2UnitAll` | **tests=1462 failures=0 errors=0 skipped=0 → PASS** |
+| JVM 单测（两个 flavor） | `Test-Bd2UnitAll` | **tests=1472 failures=0 errors=0 skipped=0 → PASS** |
 | Python 测试 | `Test-Bd2Python -Pattern 'test_*.py'` | **discovered=219 executed=219 passed=219 failed=0 skipped=0 → PASS** |
 | 一键本地验证 | `& tools/verification.ps1 -Mode LocalAll` | 退出码 **0**（此前实测；本轮改动只碰测试与工具，未重跑全量） |
 | UI 冷启动宿主测试 | `tools/tests/Test-UiColdStartHarness.ps1` | **19/19 PASS** |

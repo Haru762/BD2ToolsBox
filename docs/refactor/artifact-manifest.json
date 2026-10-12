@@ -755,7 +755,7 @@
         "verification": {
             "architectureViolations": 0,
             "jvmTests": {
-                "tests": 1462,
+                "tests": 1472,
                 "failures": 0,
                 "errors": 0,
                 "skipped": 0,

@@ -1,7 +1,5 @@
 package com.bd2toolsbox.feature.install
 
-import android.util.Log
-
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.data.repository.ConvertedSubmitResult
 
@@ -75,12 +73,11 @@ class DirectMoveCommitHost(
             // `InstallExecutor.move` 对**提交前**的校验失败（源文件已改变、目标路径无效、
             // 没有可提交目标等）是抛 `IOException` 的，不接就会让本实现直接违约 ——
             // `InstallService` 那边一直是接住的，这里此前没有。T56 端到端验收发现。
-            Log.e(TAG, "直接提交执行失败", e)
+            //
+            // 这里**不写日志**：feature 层不许依赖 `android.util.Log`（架构规则 R4）。
+            // 失败原因已经进 [MoveCommitResult.failure]，生产路径上的 `InstallService`
+            // 也会自己记一笔，不会丢。
             MoveCommitResult(request.id, null, emptyList(), e.message ?: e.javaClass.simpleName)
         }
-    }
-
-    private companion object {
-        const val TAG = "DirectMoveCommitHost"
     }
 }
