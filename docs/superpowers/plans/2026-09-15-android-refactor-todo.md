@@ -2517,6 +2517,8 @@ Test-Bd2Python -Pattern 'test_*.py'
 
 - [ ] **T57 完成**
 
+**2026-10-13 平台矩阵补齐。** 新增 `docs/refactor/evidence/platform-matrix.md`：x86_64 上 **API 29 / 32 / 34 / 36(16 KB) 四档**，每档跑 release smoke **10/10**、`AstcRoundTripTest` 3/3、`PlatformBehaviorTest` 13/13、`ModWorkflowAcceptanceTest` 6/6；16 KB 是 `getconf PAGE_SIZE` 实测的 16384。修掉一个解析缺陷：API 29 的 `dumpsys meminfo` 是旧格式（`TOTAL   145854`，不是 `TOTAL PSS:`），以前只认新格式，导致 **API 29 的性能场景从未真正测到过**；现在按三种格式依次匹配。**仍缺**：arm64 真机整行（本轮结束时设备未连接）。
+
 **2026-10-12 补：`platform-matrix` 现覆盖 API 32（MuMu）与 API 36（16 KB AVD）两个级别。** 见 [16 KB 设备验收](../../refactor/evidence/device-16k.md)。
 
 **2026-10-12 补：`platform-matrix` smoke 已实现并在 x86_64 PASS**（本设备 ABI/API 与声明一致；多 API 级别仍需多台设备）。
@@ -2554,7 +2556,9 @@ Test-Bd2ReleaseSmoke -Case 'platform-matrix' -Abi 'x86_64'
 
 - [ ] **T58 完成**
 
-**2026-10-13 部分完成。** 新增 `ThemeContrastTest`（**WCAG 2.1 规范公式**：先把 sRGB 通道线性化再加权；7 预设 × 明暗 × 11 对 = **154 对全部达标，0 对不足**，最紧的是「橙浅色 `outline/surface` 4.44:1」，要求 3.0）。顺带发现既有 `ThemeContractTest` 用的是**朴素亮度**（非 WCAG 相对亮度，中间调能差 20%+），新测试加了反向守卫防止被改回。新增 `tools/capture_ui_screenshots.py` + `tools/verify_ui_screenshots.py` + `tests/test_verify_ui_screenshots.py`（6/6），采集并程序化核对 **7 张真实 release 截图**（浅/深 × 2 预设 × 字号 1.0/1.3/2.0），核对 PASS。采集过程修掉 5 个问题：浅/深截图完全相同（查明 `theme_mode` 默认 LIGHT 是正确行为，加「同次采集不得重复」守卫）、release 不可 `run-as`（改用 `su`，不用 debug 包代替）、方向维度本机测不了（曾把请求竖屏的图写成 portrait 文件名 = 把「没拍到」记成「拍到了」，已改）、核对器缺字段就崩、朴素亮度判定。**仍缺**：竖屏与旋转恢复、壁纸状态、许可证/阅读器截图、任务面板/确认框截图、真实键盘与刘海、TalkBack 真人走查、arm64 真机；计划点名的 `ui/UiAcceptanceTest.kt` 未新建（登记偏离）。见 [ui-acceptance.md](../../refactor/evidence/ui-acceptance.md) 与 [T58 证据](../../refactor/evidence/T58.md)。
+**2026-10-13 部分完成。** 新增 `ThemeContrastTest`（**WCAG 2.1 规范公式**：先把 sRGB 通道线性化再加权；7 预设 × 明暗 × 11 对 = **154 对全部达标，0 对不足**，最紧的是「橙浅色 `outline/surface` 4.44:1」，要求 3.0）。顺带发现既有 `ThemeContractTest` 用的是**朴素亮度**（非 WCAG 相对亮度，中间调能差 20%+），新测试加了反向守卫防止被改回。新增 `tools/capture_ui_screenshots.py` + `tools/verify_ui_screenshots.py` + `tests/test_verify_ui_screenshots.py`（6/6），采集并程序化核对 **7 张真实 release 截图**（浅/深 × 2 预设 × 字号 1.0/1.3/2.0），核对 PASS。采集过程修掉 5 个问题：浅/深截图完全相同（查明 `theme_mode` 默认 LIGHT 是正确行为，加「同次采集不得重复」守卫）、release 不可 `run-as`（改用 `su`，不用 debug 包代替）、方向维度本机测不了（曾把请求竖屏的图写成 portrait 文件名 = 把「没拍到」记成「拍到了」，已改）、核对器缺字段就崩、朴素亮度判定。**2026-10-13 再补：截图 7 → 18 张。** 新增 `UiDriver`（按 uiautomator 控件树**按标签**导航，不写死坐标）；覆盖兑换码页、攻略页、**阅读器正文**、设置工作表·外观（浅/暗）、**开源许可页**、**清空缓存确认框**、SYSTEM 模式跟随系统深/浅、运行中的索引扫描进度。过程里修掉守卫自身的两个缺陷（重复截图检查只盖第一段 → 挪到末尾；随后又误判「浅色+无壁纸」这种本该一样的组合 → 改成按**维度签名**分组）。
+**查清壁纸状态为什么采不到**（不是没时间，是机制上需要真人交互）：`restoreWallpaper` 要求 URI 在 `persistedUriPermissions` 里，否则主动清掉该偏好（刻意的，避免空白背景）；该权限只能由 App 自己 `takePersistableUriPermission` 得到，即必须走系统文件选择器。本轮改为验证**行为**：注入无权限 URI 后 App 确实清掉了它。
+**仍缺**：竖屏与旋转恢复、壁纸亮/暗/高纹理（机制上需真人交互）、带「收起/取消」的 `TaskProgressPanel` 截图、备份确认框截图、真实键盘与刘海、TalkBack 真人走查、arm64 真机；计划点名的 `ui/UiAcceptanceTest.kt` 未新建（登记偏离）。真实键盘与刘海、TalkBack 真人走查、arm64 真机；计划点名的 `ui/UiAcceptanceTest.kt` 未新建（登记偏离）。见 [ui-acceptance.md](../../refactor/evidence/ui-acceptance.md) 与 [T58 证据](../../refactor/evidence/T58.md)。
 
 **优先级：** P1　**前置：** T46、T47、T57、T38
 
