@@ -1,0 +1,30 @@
+{
+    "x86_64@32":  {
+                      "capturedAt":  "2026-10-13T00:03:29.2466619+08:00",
+                      "abi":  "x86_64",
+                      "apiLevel":  32,
+                      "apkSha256":  "21c875aa0081185f67faef6451768b1562b9eda61c61ea80c5d08513482db22d",
+                      "coldStartMedianMs":  451,
+                      "warmStartMedianMs":  59,
+                      "pssMedianKb":  165974,
+                      "coldStartRaw":  [
+                                           445,
+                                           458,
+                                           439,
+                                           451,
+                                           452
+                                       ],
+                      "warmStartRaw":  [
+                                           60,
+                                           59,
+                                           26,
+                                           68,
+                                           42
+                                       ],
+                      "pssRaw":  [
+                                     165950,
+                                     166210,
+                                     165974
+                                 ]
+                  }
+}

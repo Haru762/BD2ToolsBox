@@ -1646,35 +1646,132 @@ function Test-Bd2ReleaseSmoke {
         $summary.steps += 'verify-app-identity'
 
         if ($contract.performance) {
-            # T59：实测冷启动与内存。断言的是「没有明显退化」的阈值（不是基准数字）：
-            # 一次都没起来、或启动超过 10 秒、或 PSS 超过 1.5 GB，都算回归。
-            $times = @()
-            for ($i = 0; $i -lt 3; $i++) {
+            # T59：多采样 + 中位数 + 波动 + 与基线的 10% 触发线。
+            #
+            # 判据分两层：
+            #   · **硬阈值**（与设备无关）：一次都没起来、冷启动中位数 > 10 s、
+            #     PSS 中位数 > 1.5 GB —— 直接失败；
+            #   · **基线对比**（与设备/API 相关）：`config/performance-baseline.json`
+            #     按 "<abi>@<api>" 存一份，命中时超过基线 10% 即失败（10% 是计划
+            #     给的「调查触发线」），没命中就记下来当基线、不做门禁。
+            #     同一台设备两次跑本来就有噪声，所以比的是**中位数**而不是单次。
+            $apiLevel = [int](((& $Bd2Adb -s $serial shell getprop ro.build.version.sdk) -join '').Trim())
+            $apkHash = Get-Bd2Sha256 -Path $artifact.path
+
+            function Get-Bd2Median([int[]]$Values) {
+                $sorted = @($Values | Sort-Object)
+                $n = $sorted.Count
+                if ($n -eq 0) { return 0 }
+                if ($n % 2 -eq 1) { return $sorted[[int](($n - 1) / 2)] }
+                return [int](($sorted[$n / 2 - 1] + $sorted[$n / 2]) / 2)
+            }
+
+            # --- 冷启动 ×5：每次先 force-stop，确保真是冷启动 ---
+            $cold = @()
+            for ($i = 0; $i -lt 5; $i++) {
                 & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
                 Start-Sleep -Seconds 2
                 $startOut = (& $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
                 $m = [regex]::Match($startOut, 'TotalTime:\s*(\d+)')
                 if (-not $m.Success) { throw "冷启动未返回 TotalTime：$startOut" }
-                $times += [int]$m.Groups[1].Value
+                $cold += [int]$m.Groups[1].Value
             }
-            [IO.File]::WriteAllText((Join-Path $runDir 'cold-start.txt'), ($times -join "`n"), (New-Object Text.UTF8Encoding($false)))
-            $max = ($times | Measure-Object -Maximum).Maximum
-            if ($max -gt 10000) { throw "冷启动过慢：$max ms（三次：$($times -join '/')）" }
-            $summary.coldStartMs = $times
-            $summary.steps += 'cold-start-measured'
+            [IO.File]::WriteAllText((Join-Path $runDir 'cold-start.txt'), ($cold -join "`n"), (New-Object Text.UTF8Encoding($false)))
+            $coldMedian = Get-Bd2Median $cold
+            if ($coldMedian -gt 10000) { throw "冷启动过慢：中位数 $coldMedian ms（原始：$($cold -join '/')）" }
 
-            Start-Sleep -Seconds 5
-            $pidText = ((& $Bd2Adb -s $serial shell pidof com.bd2toolsbox) -join '').Trim()
-            if ([string]::IsNullOrWhiteSpace($pidText)) { throw '性能场景：进程未在运行' }
-            $mem = ((& $Bd2Adb -s $serial shell dumpsys meminfo $pidText) -join [Environment]::NewLine)
-            [IO.File]::WriteAllText((Join-Path $runDir 'meminfo.txt'), $mem, (New-Object Text.UTF8Encoding($false)))
-            $pss = [regex]::Match($mem, 'TOTAL PSS:\s*(\d+)')
-            if (-not $pss.Success) { throw '性能场景：读不到 TOTAL PSS' }
-            $summary.totalPssKb = [int]$pss.Groups[1].Value
-            if ($summary.totalPssKb -gt 1500000) {
-                throw "内存占用过高：$($summary.totalPssKb) KB"
+            # --- 暖启动 ×5：回桌面再拉起，进程还在 ---
+            $warm = @()
+            & $Bd2Adb -s $serial shell input keyevent KEYCODE_HOME | Out-Null
+            Start-Sleep -Seconds 2
+            for ($i = 0; $i -lt 5; $i++) {
+                $startOut = (& $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity') -join [Environment]::NewLine
+                $m = [regex]::Match($startOut, 'TotalTime:\s*(\d+)')
+                if (-not $m.Success) { throw "暖启动未返回 TotalTime：$startOut" }
+                $warm += [int]$m.Groups[1].Value
+                & $Bd2Adb -s $serial shell input keyevent KEYCODE_HOME | Out-Null
+                Start-Sleep -Seconds 1
             }
-            $summary.steps += 'meminfo-measured'
+            [IO.File]::WriteAllText((Join-Path $runDir 'warm-start.txt'), ($warm -join "`n"), (New-Object Text.UTF8Encoding($false)))
+            $warmMedian = Get-Bd2Median $warm
+
+            # --- PSS ×3：读 TOTAL PSS 取中位数 ---
+            Start-Sleep -Seconds 5
+            $pssSamples = @()
+            for ($i = 0; $i -lt 3; $i++) {
+                $pidText = ((& $Bd2Adb -s $serial shell pidof com.bd2toolsbox) -join '').Trim()
+                if ([string]::IsNullOrWhiteSpace($pidText)) { throw '性能场景：进程未在运行' }
+                $mem = ((& $Bd2Adb -s $serial shell dumpsys meminfo $pidText) -join [Environment]::NewLine)
+                [IO.File]::WriteAllText((Join-Path $runDir "meminfo-$i.txt"), $mem, (New-Object Text.UTF8Encoding($false)))
+                $pss = [regex]::Match($mem, 'TOTAL PSS:\s*(\d+)')
+                if (-not $pss.Success) { throw '性能场景：读不到 TOTAL PSS' }
+                $pssSamples += [int]$pss.Groups[1].Value
+                Start-Sleep -Seconds 2
+            }
+            $pssMedian = Get-Bd2Median $pssSamples
+            if ($pssMedian -gt 1500000) { throw "内存占用过高：中位数 $pssMedian KB（原始：$($pssSamples -join '/')）" }
+
+            $summary.coldStartMs = $cold
+            $summary.coldStartMedianMs = $coldMedian
+            $summary.warmStartMs = $warm
+            $summary.warmStartMedianMs = $warmMedian
+            $summary.pssKb = $pssSamples
+            $summary.pssMedianKb = $pssMedian
+            $summary.apkSha256 = $apkHash
+            $summary.apiLevel = $apiLevel
+            $summary.steps += 'performance-sampled'
+
+            # --- 基线对比（按 abi@api 分键；没有基线就登记，不做门禁） ---
+            $baselinePath = Join-Path $Root 'config/performance-baseline.json'
+            $key = "$Abi@$apiLevel"
+            $baseline = $null
+            if (Test-Path -LiteralPath $baselinePath) {
+                $baseline = (Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json)
+            }
+            $entry = if ($null -ne $baseline -and $baseline.PSObject.Properties.Name -contains $key) { $baseline.$key } else { $null }
+            $regressions = @()
+            if ($null -ne $entry) {
+                $checks = @(
+                    @{ name = '冷启动中位数'; now = $coldMedian; was = [int]$entry.coldStartMedianMs },
+                    @{ name = '暖启动中位数'; now = $warmMedian; was = [int]$entry.warmStartMedianMs },
+                    @{ name = 'PSS 中位数';   now = $pssMedian;  was = [int]$entry.pssMedianKb }
+                )
+                foreach ($c in $checks) {
+                    if ($c.was -le 0) { continue }
+                    $delta = ($c.now - $c.was) / $c.was
+                    Write-Host ("    {0}: {1} -> {2} ({3:P1})" -f $c.name, $c.was, $c.now, $delta)
+                    # 10% 是计划给的调查触发线；低于它就当噪声
+                    if ($delta -gt 0.10) {
+                        $regressions += ("{0} 回退 {1:P1}（{2} -> {3}）" -f $c.name, $delta, $c.was, $c.now)
+                    }
+                }
+            } else {
+                Write-Host ("    基线 $key 不存在：本次结果登记为基线，不做门禁")
+                $record = [ordered]@{}
+                if ($null -ne $baseline) {
+                    foreach ($p in $baseline.PSObject.Properties) { $record[$p.Name] = $p.Value }
+                }
+                $record[$key] = [ordered]@{
+                    capturedAt = (Get-Date).ToString('o')
+                    abi = $Abi
+                    apiLevel = $apiLevel
+                    apkSha256 = $apkHash
+                    coldStartMedianMs = $coldMedian
+                    warmStartMedianMs = $warmMedian
+                    pssMedianKb = $pssMedian
+                    coldStartRaw = $cold
+                    warmStartRaw = $warm
+                    pssRaw = $pssSamples
+                }
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $baselinePath) | Out-Null
+                Write-Bd2Json -Value $record -Path $baselinePath
+                $summary.steps += 'performance-baseline-recorded'
+            }
+            $summary.regressions = $regressions
+            if ($regressions.Count -gt 0) {
+                throw ("性能相对基线回退（10% 触发线）：`n  " + ($regressions -join "`n  ") +
+                    "`n原始数据在 $runDir；需归因并复测（见 docs/refactor/evidence/performance.md）")
+            }
         }
 
         if ($contract.matrix) {

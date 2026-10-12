@@ -91,4 +91,71 @@ class BundleListingSnapshotTest {
         bundle(shared, "a", "ha")
         assertTrue(BundleListingSnapshot().page(shared, 0, 0).isEmpty())
     }
+
+    // ---- T59：目录枚举次数（性能回归的可判定面） ----
+
+    /**
+     * 计数的 [File]：`listFiles()` 被调几次都记下来，返回真实结果。
+     *
+     * `java.io.File` 不是 final、`listFiles()` 可覆盖，所以不用 mock 框架就能
+     * 在**真实目录树**上数调用次数 —— 数的不是「我以为会调几次」，是实际调用。
+     *
+     * **计数器必须共享**：`listFiles()` 每次返回**新**实例，把计数放在实例字段里
+     * 只会数到根目录那一次（实测踩过：断言期望 7、实际 1）。
+     */
+    private class CountingDir private constructor(path: String, private val counter: IntArray) :
+        File(path) {
+        constructor(path: File) : this(path.absolutePath, IntArray(1))
+
+        val listCalls: Int get() = counter[0]
+
+        override fun listFiles(): Array<File>? {
+            counter[0]++
+            return super.listFiles()?.map { CountingDir(it.absolutePath, counter) }?.toTypedArray()
+        }
+    }
+
+    @Test fun eachDirectoryIsEnumeratedExactlyOnce() {
+        val shared = temp.newFolder("Shared")
+        repeat(6) { i -> bundle(shared, "bundle$i", "hash$i") }
+        val counting = CountingDir(shared)
+
+        val all = BundleListingSnapshot.enumerate(counting)
+
+        assertEquals("6 个 bundle 必须都读到", 6, all.size)
+        // 顶层 1 次 + 每个 bundle 目录 1 次；多了就是重复枚举，少了就是漏了
+        assertEquals("每个目录只该枚举一次", 7, counting.listCalls)
+    }
+
+    @Test fun aBundleWithSeveralHashDirsStopsAtTheFirstWithData() {
+        val shared = temp.newFolder("Shared")
+        // 三个 hash 目录，只有第二个有 __data
+        File(shared, "b/h1").mkdirs()
+        File(shared, "b/h2").mkdirs()
+        File(shared, "b/h3").mkdirs()
+        File(File(shared, "b/h2"), "__data").writeBytes(ByteArray(5))
+        val counting = CountingDir(shared)
+
+        val all = BundleListingSnapshot.enumerate(counting)
+
+        assertEquals(1, all.size)
+        assertEquals("h2", all.single().hash)
+        // 顶层 + b 目录；命中后立刻 break，**不该**再进 h3
+        assertEquals("命中后必须停止枚举", 2, counting.listCalls)
+    }
+
+    @Test fun pagingDoesNotEnumerateTheTreeAgain() {
+        val shared = temp.newFolder("Shared")
+        repeat(5) { i -> bundle(shared, "bundle$i", "hash$i") }
+        val counting = CountingDir(shared)
+
+        // 第一页（offset=0）建快照，后续页必须复用
+        BundleListingSnapshot().apply {
+            page(counting, 0, 2)
+            val afterFirst = counting.listCalls
+            page(counting, 2, 2)
+            page(counting, 4, 2)
+            assertEquals("后续分页不该再枚举目录树", afterFirst, counting.listCalls)
+        }
+    }
 }

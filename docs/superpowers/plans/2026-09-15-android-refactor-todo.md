@@ -2583,6 +2583,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.UiAcceptanceTest' -Abi 'x86_64'
 
 - [ ] **T59 完成**
 
+**2026-10-13 部分完成。** `performance-scenarios` 升级为多采样（冷/暖 ×5、PSS ×3）+ 中位数 + 波动 + **基线 10% 触发线**（`config/performance-baseline.json` 按 `abi@api` 分键，首次运行自动登记）；新增 `tools/measure_conversion.py`（`_build_file_index` / `json_to_skel` 多采样）与 `tests/test_measure_conversion.py` 4/4；`BundleListingSnapshotTest` +3 条**枚举次数**断言（10/10）。实测 x86_64/API32：冷启动中位数 451→448 ms、暖启动 59→48 ms、PSS 165,974→157,649 KB（均无 10% 回退）；`_build_file_index`（9,240 文件）107.75 ms、`json_to_skel` 15.23 ms。**门禁本身被验证会拦**：把基线人为下调后同一条命令 EXITCODE=1（冷启动 +128.5%、PSS +57.5%）。**生产代码零改动**（没有观察到需要修的回归，也没做计划禁止的 largeHeap/@Stable 之类动作）。**仍缺**：ASTC 编解码耗时、大列表滚动帧率、arm64 真机数字、缓存冷热与网络因素。见 [performance.md](../../refactor/evidence/performance.md) 与 [T59 证据](../../refactor/evidence/T59.md)。
+
 **2026-10-12 补：`performance-scenarios` smoke 已实现并在 x86_64 PASS**（冷启动 ×3 `[814, 877, 713] ms`、PSS `194,028 KB`）。
 
 **优先级：** P1　**前置：** T54、T58
