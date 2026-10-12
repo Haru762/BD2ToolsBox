@@ -208,3 +208,22 @@ T56 要求覆盖 14 类场景，并「在复制/校验/备份/账本/Binder/网�
   不作为依据——该行的 `n` 含被跳过的用例。跳过要**点名**是哪些用例、为什么。
 - 不把「测试文件存在」记为覆盖；只有实跑过、且报告归档到 `test-results/<运行ID>/` 的才算。
 - 不通过删断言、放宽 golden 期望或把失败改成 skip 来制造通过；真实业务缺陷允许 FAIL 并挂到后续任务。
+
+### 4.3 端到端（T56）
+
+`integration/ModWorkflowAcceptanceTest`（设备，6 条）走**生产调用链**而不是替身：
+`InstallExecutor.move` → `MoveInstallStaging`（冻结 + 身份校验）→ `MoveInstallSubmitter`
+（journal + 原子替换 + 记账）→ `InstalledModRepository`（真实账本文件），
+文件操作走真实 `ShizukuFileService`。隔离在 `context.cacheDir/t56/`，
+账本与 journal 在 `@Before` 备份、`@After` 还原。
+
+| 用例 | 覆盖 |
+|---|---|
+| `installWritesTargetAndLedgerWithoutHalfData` | 全链路装入：内容/账本/journal 闭合/无 `.part` |
+| `twoModsOnTheSameBundleAreBothAccounted` | 同 bundle 多 MOD 叠加、跨 bundle |
+| `faultDuringCopyLeavesTargetAndLedgerUntouched` | 复制边界故障注入 |
+| `contentChangedAfterFreezeIsRejectedBeforeReplace` | 内容校验边界故障注入 |
+| `uninstallRemovesOnlyTheLedgerRecordAndKeepsSource` | 卸载只动账本、不误删来源 |
+| `successfulInstallLeavesNothingForRecoveryToWorryAbout` | 与 T25 恢复分类衔接 |
+
+实测：MuMu x86_64/API32 **6/6 PASS**、AVD x86_64/API29 **6/6 PASS**。

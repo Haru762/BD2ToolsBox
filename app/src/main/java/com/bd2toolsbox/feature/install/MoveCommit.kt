@@ -1,5 +1,7 @@
 package com.bd2toolsbox.feature.install
 
+import android.util.Log
+
 import com.bd2toolsbox.core.storage.JournalTarget
 import com.bd2toolsbox.data.repository.ConvertedSubmitResult
 
@@ -56,13 +58,29 @@ class DirectMoveCommitHost(
     private val executor: InstallExecutor
 ) : MoveCommitHost {
     override suspend fun execute(request: MoveCommitRequest): MoveCommitResult {
-        val executed = executor.move(
-            id = com.bd2toolsbox.core.model.OperationId(request.id),
-            shared = java.io.File(request.sharedPath),
-            stagingRoot = java.io.File(request.stagingPath),
-            targets = request.targets,
-            restoredTargets = request.removals
-        )
-        return MoveCommitResult(request.id, executed.submission, executed.ledgerNotices, null)
+        return try {
+            val executed = executor.move(
+                id = com.bd2toolsbox.core.model.OperationId(request.id),
+                shared = java.io.File(request.sharedPath),
+                stagingRoot = java.io.File(request.stagingPath),
+                targets = request.targets,
+                restoredTargets = request.removals
+            )
+            MoveCommitResult(request.id, executed.submission, executed.ledgerNotices, null)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            // 取消不是失败：如实向上传，别把它变成一条「装入失败」的用户提示
+            throw cancelled
+        } catch (e: Exception) {
+            // [MoveCommitHost.execute] 的契约是「要么 submission 非空，要么 failure 非空」。
+            // `InstallExecutor.move` 对**提交前**的校验失败（源文件已改变、目标路径无效、
+            // 没有可提交目标等）是抛 `IOException` 的，不接就会让本实现直接违约 ——
+            // `InstallService` 那边一直是接住的，这里此前没有。T56 端到端验收发现。
+            Log.e(TAG, "直接提交执行失败", e)
+            MoveCommitResult(request.id, null, emptyList(), e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private companion object {
+        const val TAG = "DirectMoveCommitHost"
     }
 }

@@ -2479,6 +2479,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.*'
 
 - [ ] **T56 完成**
 
+**2026-10-13 部分完成。** 新增 `integration/ModWorkflowAcceptanceTest`（6 条）走**生产调用链**：`InstallExecutor.move` → `MoveInstallStaging` → `MoveInstallSubmitter` → `InstalledModRepository`（真实账本）+ 真实 `ShizukuFileService`，隔离在 `cacheDir/t56/`，账本/journal 先备份后还原。覆盖：全链路装入、同 bundle 多 MOD 叠加、跨 bundle、**复制边界故障**（失败目标保持旧内容、不记账、无 `.part`）、**内容校验边界故障**（冻结后改源 → 替换根本没发生）、卸载只动账本、装完不留恢复痕迹。实测 MuMu x86_64/API32 **6/6 PASS**、AVD API29（minSdk 边界）**6/6 PASS**。**修掉一处真实契约违反**：`DirectMoveCommitHost` 没接 `InstallExecutor.move` 的提交前校验 `IOException`，违反 `MoveCommitHost.execute`「要么 submission 非空要么 failure 非空」的文档契约（`InstallService` 一直有接，JVM 替身永远走不到）。**仍缺**：14 个功能域里其余 11 个的端到端、账本写失败/Binder/网络/磁盘写满的故障注入、取消与重试、arm64 真机。见 [T56 证据](../../refactor/evidence/T56.md)。
+
 **优先级：** P0　**前置：** T54、T55、T26、T09、T62
 
 **文件范围（实施工作区）：**
