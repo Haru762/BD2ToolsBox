@@ -29,8 +29,8 @@
         1920,
         1080
       ],
-      "bytes": 175653,
-      "sha256": "c6bd3bd8e4ecc48518e4386f3e4bf44a3d38baaa8c95d08455d6fb4c57b6a137"
+      "bytes": 175516,
+      "sha256": "1c0d38c9b224bafe6f5e0a26984014bcab61c0cb1413650e9f03a2c99234d98c"
     },
     {
       "file": "dark-default.png",
@@ -44,8 +44,8 @@
         1920,
         1080
       ],
-      "bytes": 174475,
-      "sha256": "ce46a580ea28c788a8fc4a7e70291158033dab1748cf24e871632a6b958de8b6"
+      "bytes": 174322,
+      "sha256": "e6c98e0807ec06e42b9cc4c5d1ead26ae8a53b0d059cb6f66c6be0e58a62f9e3"
     },
     {
       "file": "light-teal.png",
@@ -59,8 +59,8 @@
         1920,
         1080
       ],
-      "bytes": 176201,
-      "sha256": "df07b63b7585bbecd8dcb676b9840c7e136f280a96352cbfdc95d5cbb9d86db8"
+      "bytes": 176076,
+      "sha256": "c870231004d7a26e0247164f743af199a37af53fc8f715bf4c0608d772595dbc"
     },
     {
       "file": "dark-graphite.png",
@@ -74,8 +74,8 @@
         1920,
         1080
       ],
-      "bytes": 174516,
-      "sha256": "b3bcc18dcfc0cc27e6457462fc72d6ac32b84e947c11c87d05b2759f8b4ea769"
+      "bytes": 174367,
+      "sha256": "a49ca48749796cb3b31e20333791d089f4f8502d5e595e17556c6e8864dbf81a"
     },
     {
       "file": "light-font1.3.png",
@@ -89,8 +89,8 @@
         1920,
         1080
       ],
-      "bytes": 199346,
-      "sha256": "b7a14172e5065b4c53588b1c3a791ec0757745fb7541a3128aee877faa448074"
+      "bytes": 199205,
+      "sha256": "5e0f76fb47ed10c4bc1c95017bb08a593500fee8d86af3fb04b38e711944e86a"
     },
     {
       "file": "light-font2.0.png",
@@ -104,8 +104,8 @@
         1920,
         1080
       ],
-      "bytes": 240652,
-      "sha256": "2276e3a44382a0fed844457b63ef6af99300c40f2a855641848ea31f064490c3"
+      "bytes": 240485,
+      "sha256": "d90f8f1626c21ae7a4531b9ce9d99090fed85d3b632ddcf5899892ad7d1640e1"
     },
     {
       "file": "dark-font2.0.png",
@@ -119,8 +119,8 @@
         1920,
         1080
       ],
-      "bytes": 239206,
-      "sha256": "2e1042f092b701f1bdae06f6d3d295ee8e118160488f308e79be02a8f36c0e07"
+      "bytes": 238895,
+      "sha256": "4786f17238148420e29ea511f7a7974c13ab43a72840b252a003da671197f884"
     },
     {
       "file": "screen-redeem.png",
@@ -145,6 +145,17 @@
       "sha256": "0c1ff41f558c55b4ce4d49b1e4568feba6ae2cea5b14d73b24f47f8fe73bfa6f"
     },
     {
+      "file": "screen-reader.png",
+      "label": "阅读器正文（装备指南 进阶篇…）",
+      "appThemeMode": "LIGHT",
+      "colorPreset": "PURPLE",
+      "fontScale": "1.0",
+      "dimensionKey": "LIGHT|PURPLE|1.0|screen-reader",
+      "actualOrientation": "landscape",
+      "bytes": 1767587,
+      "sha256": "6f988f77207112592e58a85d4990970b7b3fab1428c477fd192ff0437fd4beee"
+    },
+    {
       "file": "screen-sheet-appearance-light.png",
       "label": "设置工作表·外观（浅色）",
       "appThemeMode": "LIGHT",
@@ -152,8 +163,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 218043,
-      "sha256": "36cb8b7e02a62b0c7448450d2626fba8cbc0a452c25503b48618ecf25de637b8"
+      "bytes": 206778,
+      "sha256": "71d71446742c47c4551c933d75ae253fec677e6bb995b8ced91c3ca34206910e"
     },
     {
       "file": "screen-sheet-appearance-dark.png",
@@ -163,8 +174,8 @@
       "fontScale": "1.0",
       "dimensionKey": "DARK|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 215713,
-      "sha256": "38aa2d085bb7dfa71537a6314a64ebf0068e9a915e99ceaf1af857db8599e5a8"
+      "bytes": 204334,
+      "sha256": "919ea0d6168dd8f91e6e43890df12a4fe92395651ef88c83b18757e621f076ba"
     },
     {
       "file": "screen-licenses.png",
@@ -174,8 +185,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|screen-licenses",
       "actualOrientation": "landscape",
-      "bytes": 106230,
-      "sha256": "d0c3b34268d475c2feaf19145e445058cfb0b4eef53de9f4057121ce4dca5853"
+      "bytes": 106382,
+      "sha256": "49952bf92b92ee64e2e52c8bbdcbc6dd206fd5781a727726e66c602391b876ef"
     },
     {
       "file": "wallpaper-none-light.png",
@@ -207,8 +218,8 @@
       "fontScale": "1.0",
       "dimensionKey": "DARK|PURPLE|1.0|main-system-night",
       "actualOrientation": "landscape",
-      "bytes": 140681,
-      "sha256": "2812214df14284ad672377f4ed03b1e107a96ebb4ee458484fc9f25ff88594ae"
+      "bytes": 140145,
+      "sha256": "4a8f9e5a2255d7eb5a19a6566518100e50104e5d037b47b9b98493cb29c7c780"
     },
     {
       "file": "system-night-no.png",
@@ -229,8 +240,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|task-scan-running",
       "actualOrientation": "landscape",
-      "bytes": 137764,
-      "sha256": "0b0f9416e52315cf00fcf2cad432c99f2508e6a0564b401ec5b1b7c10433eb9d"
+      "bytes": 137526,
+      "sha256": "44ac5cf2fda7f665fa40a71c2fff6cd947caf72af18e962f54df96cad356b521"
     }
   ]
 }

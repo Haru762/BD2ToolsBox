@@ -205,6 +205,31 @@ class UiDriver:
         time.sleep(4)
         return True
 
+    def tap_first_text_in(self, x_min: int, y_min: int) -> str | None:
+        """点「区域内最靠上靠左的那个有文字的节点」，返回它的文字。
+
+        列表项本身在 Compose 里不是 clickable 节点（clickable 在祖先上），所以不能靠
+        `clickable=true` 找。坐标也是**从当前控件树里算出来的**，不是写死的像素。
+        """
+        best = None
+        for n in self._cache:
+            label = n['text'] or n['desc']
+            if not label:
+                continue
+            m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', n['bounds'])
+            if not m:
+                continue
+            x1, y1, x2, y2 = (int(m.group(i)) for i in (1, 2, 3, 4))
+            if x1 < x_min or y1 < y_min:
+                continue
+            if best is None or (y1, x1) < (best[0], best[1]):
+                best = (y1, x1, x2, y2, label)
+        if best is None:
+            return None
+        y1, x1, x2, y2, label = best
+        shell(self.serial, 'input', 'tap', str((x1 + x2) // 2), str((y1 + y2) // 2))
+        return label
+
     def dismiss_index_prompt(self) -> None:
         """首次启动会有「需要建立文件索引」提示；不点掉它后面什么都点不到。"""
         self.dump()
@@ -450,6 +475,18 @@ def main() -> int:
         driver.tap('攻略')
         time.sleep(4)
         shoot('screen-guide', '攻略页', 'LIGHT', key='LIGHT|PURPLE|1.0|screen-guide')
+
+        # 点进第一篇文章，采阅读器正文（WebView 里的真实渲染）
+        driver.dump()
+        tapped = driver.tap_first_text_in(x_min=400, y_min=200)
+        if tapped:
+            time.sleep(6)
+            shoot('screen-reader', f'阅读器正文（{tapped[:14]}…）', 'LIGHT',
+                  key='LIGHT|PURPLE|1.0|screen-reader')
+            shell(serial, 'input', 'keyevent', 'KEYCODE_BACK')
+            time.sleep(3)
+        else:
+            index['limitations'].append('攻略列表里没找到可点的文章标题，阅读器未采。')
 
         # 设置工作表（含外观与关于）。
         # **先回 Mods 页**：设置入口只在那一页的顶栏上（实测：在攻略页上点不到）。
