@@ -4,7 +4,7 @@ $source = Join-Path $PSScriptRoot '../verification.ps1'
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw "PowerShell parse errors: $errors" }
-foreach ($name in @('Assert-Bd2InstrumentationResult', 'Invoke-Bd2SnapshotPhases', 'Get-Bd2CurrentReleaseArtifact')) {
+foreach ($name in @('Assert-Bd2InstrumentationResult', 'Invoke-Bd2SnapshotPhases', 'Get-Bd2MappingForAbi', 'Get-Bd2CurrentReleaseArtifact')) {
     $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     if (-not $node) { throw "ASSERT: missing implementation $name" }
     . ([scriptblock]::Create($node.Extent.Text))
@@ -113,18 +113,26 @@ try {
         param($BuildType, $Abi)
         Assert-Equal release $BuildType 'current release build type'
         Assert-Equal x86_64 $Abi 'current release ABI'
-        return (Join-Path $Root 'test-release.apk')
+        return (Join-Path $Root 'app/build/outputs/apk/x64/release/app-x64-release.apk')
     }
     function Get-Bd2Sha256 { param($Path); return ('a' * 64) }
     $artifact = Get-Bd2CurrentReleaseArtifact -Abi x86_64
     Assert-Equal ':app:assembleRelease,--console=plain' ($script:gradleArgs -join ',') 'build current release'
-    Assert-Equal 'app/build/outputs/apk/release/app-x86_64-release.apk' $artifact.relative 'not frozen baseline'
+    Assert-Equal 'app/build/outputs/apk/x64/release/app-x64-release.apk' $artifact.relative 'not frozen baseline'
     Assert-Equal ('a' * 64) $artifact.mappingSha256 'mapping evidence'; $passed++
     Set-Content -LiteralPath $mappingFile -Value '' -NoNewline
     $caught = $null
     try { Get-Bd2CurrentReleaseArtifact -Abi x86_64 | Out-Null } catch { $caught = $_ }
     if (-not $caught -or $caught.Exception.Message -notmatch 'R8 mapping') { throw 'ASSERT: empty R8 mapping accepted' }
     $passed++
+    foreach ($abi in @('x86_64', 'arm64-v8a')) {
+        $flavor = if ($abi -eq 'x86_64') { 'x64' } else { 'arm64' }
+        $flavorMapping = Join-Path $Root "app/build/outputs/mapping/${flavor}Release/mapping.txt"
+        New-Item -ItemType Directory -Path (Split-Path -Parent $flavorMapping) -Force | Out-Null
+        Set-Content -LiteralPath $flavorMapping -Value "$flavor mapping" -Encoding utf8
+        Assert-Equal $flavorMapping (Get-Bd2MappingForAbi -Abi $abi) 'mapping belongs to selected flavor'
+        $passed++
+    }
 
     # Exercise the real argument adapter against a local fake executable, never adb.
     $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-Bd2Instrumentation' }, $true)
