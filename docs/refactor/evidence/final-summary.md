@@ -10,8 +10,11 @@
 |---|---|
 | 代码质量门禁 | **全绿**（架构 0 违规、JVM 1472/0/0/0、Python 219/0/0/0、基线清单 16/16） |
 | 产物 | **两个 ABI 的 minified release 已构建**，签名与既有 0.2.16 一致（可覆盖升级） |
-| 设备矩阵 | **3/4 平台已实测**（x86_64/API32、x86_64/API29、x86_64/API36-16KB）；**arm64 真机本轮未跑** |
-| release smoke | x86_64 上 **10/10 PASS**；arm64 未跑 |
+| 设备矩阵 | **x86_64 四个 API 档全实测**（API 29 / 32 / 34 / 36-16KB），release smoke 各 **10/10**；**arm64 真机未跑** |
+| 设备用例（MuMu 最终门禁） | **18/18 PASS**（16 个类 + 两条进程死亡编排） |
+| release smoke | x86_64 四个 API 档各 **10/10 PASS**；arm64 未跑 |
+| 截图 | **17 张**真实 release 截图，程序化核对 PASS |
+| 对比度 | 7 预设 × 明暗 × 11 对 = **154 对全部达标** |
 | 未完成的验收项 | 见 §6。**不勾 T61 完成** |
 
 ## 2. 机器门禁（全部实测）
@@ -22,7 +25,7 @@
 | 基线清单核对 | `python tools/verify_manifests.py --root .` | **16/16** 冻结基线哈希全对（交付记录默认跳过，见下行） |
 | 交付记录核对 | `python tools/verify_manifests.py --root . --check-delivery` | **18/18**，与当前两个 ABI 的 release 产物一致 |
 | JVM 单测（两个 flavor） | `Test-Bd2UnitAll` | **tests=1472 failures=0 errors=0 skipped=0 → PASS** |
-| Python 测试 | `Test-Bd2Python -Pattern 'test_*.py'` | **discovered=234 executed=234 passed=234 failed=0 skipped=0 → PASS** |
+| Python 测试 | `Test-Bd2Python -Pattern 'test_*.py'` | **discovered=242 executed=242 passed=242 failed=0 skipped=0 → PASS**（19 个文件） |
 | 一键本地验证 | `& tools/verification.ps1 -Mode LocalAll` | **`LocalAll: PASS`，退出码 0**（含依赖解析 → JVM → Python → 两个 ABI release 构建 → 静态审计） |
 | UI 冷启动宿主测试 | `tools/tests/Test-UiColdStartHarness.ps1` | **19/19 PASS** |
 

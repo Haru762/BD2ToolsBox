@@ -482,12 +482,42 @@ class PlatformBehaviorTest {
             android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
             androidx.core.content.ContextCompat.RECEIVER_EXPORTED
         )
-        // 必然失败的本地地址：完成广播对成功与失败都会发，不依赖外网
-        val id = dm.enqueue(
-            DownloadManager.Request(Uri.parse("http://127.0.0.1:9/t15-none.apk"))
-                .setDestinationInExternalFilesDir(context, null, "updates/t15-none.apk")
-                // VISIBILITY_HIDDEN 需要 DOWNLOAD_WITHOUT_NOTIFICATION，生产也不用；保持默认
-        )
+        // 本地起一个**必定回 404** 的服务器，而不是拿一个「连接会被拒」的端口。
+        //
+        // 原来用的是 `http://127.0.0.1:9/`（端口没人监听）。那依赖「DM 对拒绝连接怎么处理」
+        // 这个不确定的前提：一旦明文策略允许连 127.0.0.1（`src/debug` 的
+        // network_security_config 就是这么配的，为了让下载原子性用例能真的打到本地服务器），
+        // DM 会真的去连、而不是被策略瞬间拦掉，结果 60 秒内等不到完成广播（实测）。
+        // 给一个真实的 404 响应，完成广播就会**确定地**发出来，不依赖拒连行为。
+        val server = java.net.ServerSocket(0)
+        val serverThread = kotlin.concurrent.thread(isDaemon = true) {
+            try {
+                server.accept().use { socket ->
+                    val input = socket.getInputStream()
+                    val buf = ByteArray(4096)
+                    while (input.available() == 0) Thread.sleep(10)
+                    input.read(buf)
+                    socket.getOutputStream().apply {
+                        write(
+                            ("HTTP/1.1 404 Not Found\r\n" +
+                                "Content-Length: 0\r\n" +
+                                "Connection: close\r\n\r\n").toByteArray(Charsets.US_ASCII)
+                        )
+                        flush()
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        val id = try {
+            dm.enqueue(
+                DownloadManager.Request(Uri.parse("http://127.0.0.1:${server.localPort}/t15-none.apk"))
+                    .setDestinationInExternalFilesDir(context, null, "updates/t15-none.apk")
+                    // VISIBILITY_HIDDEN 需要 DOWNLOAD_WITHOUT_NOTIFICATION，生产也不用；保持默认
+            )
+        } finally {
+            // 服务器要活到 DM 真的连上为止，不能立刻关
+        }
         try {
             assertTrue(
                 "60 秒内应收到 ACTION_DOWNLOAD_COMPLETE",
@@ -496,6 +526,8 @@ class PlatformBehaviorTest {
             assertEquals(id, gotId)
             assertFalse("失败的下载不能被当成成功", com.bd2toolsbox.data.repository.UpdateRepository(context).isDownloadSuccessful(id))
         } finally {
+            server.close()
+            serverThread.interrupt()
             context.unregisterReceiver(receiver)
             dm.remove(id)
         }
