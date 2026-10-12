@@ -62,19 +62,24 @@ import javax.inject.Singleton
  * 缩略图下载照抄 [AvatarRepository] 的三层结构（内存 → 磁盘 → 网络）。
  */
 @Singleton
-class GamekeeRepository @Inject constructor(@param:ApplicationContext private val appContext: android.content.Context) {
+class GamekeeRepository @Inject constructor(
+    @param:ApplicationContext private val appContext: android.content.Context,
+    /** T30：HTTP 层已拆到 [com.bd2toolsbox.data.remote.GamekeeApi]。 */
+    private val api: com.bd2toolsbox.data.remote.GamekeeApi,
+    /** T30：磁盘缓存的位置与读写已拆到 [com.bd2toolsbox.data.cache.GuideCacheStore]。 */
+    private val cache: com.bd2toolsbox.data.cache.GuideCacheStore
+) {
 
     companion object {
         private const val TAG = "GamekeeRepository"
 
         /** gamekee 给棕色尘埃2分区的固定 id / 别名（接口头与 CDN 路径都要用）。 */
-        private const val GAME_ID = "50118"
-        private const val GAME_ALIAS = "zsca2"
-
-        private const val API = "https://www.gamekee.com"
+        // T30：这三个常量与 HTTP 层一起搬到了 GamekeeApi，这里保留同名别名，
+        // 让本文件里的字符串拼接调用点一行都不用改。
+        private const val GAME_ID = com.bd2toolsbox.data.remote.GamekeeApi.GAME_ID
+        private const val GAME_ALIAS = com.bd2toolsbox.data.remote.GamekeeApi.GAME_ALIAS
+        private const val API = com.bd2toolsbox.data.remote.GamekeeApi.BASE_URL
         private const val CDN_CONTENT = "https://api-cdn.gamekee.com/wiki2.0/pro/$GAME_ID/content"
-
-        private const val UA = "Mozilla/5.0 (Linux; Android) BD2ToolsBox"
 
         /** 正文缓存头部的渲染器版本前缀。改渲染逻辑时同步递增；缓存里缺失即视为
          *  旧渲染，自动失效重拉（见 loadArticleDetail）。
@@ -115,12 +120,11 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
         }
     }
 
-    private val cacheDir: File
-        get() = File(appContext.externalCacheDir ?: appContext.cacheDir, "guides")
-
-    private val treeFile: File get() = File(cacheDir, "tree.json")
-    private val articleDir: File get() = File(cacheDir, "articles")
-    private val thumbDir: File get() = File(cacheDir, "thumbs")
+    // T30：路径与读写都在 GuideCacheStore；这里保留同名转发，调用点逐行不变。
+    private val cacheDir: File get() = cache.root
+    private val treeFile: File get() = cache.treeFile
+    private val articleDir: File get() = cache.articleDir
+    private val thumbDir: File get() = cache.thumbDir
 
     // ---------------------------------------------------------------- 分类树
 
@@ -165,16 +169,11 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
                 iconsBody?.let { Json.parseToJsonElement(it) }
             )
             treeCache = data
-            try {
-                cacheDir.mkdirs()
-                val tmp = File(cacheDir, "tree.json.part")
-                tmp.writeText(
-                    """{"entry":$treeBody,"dict":${dictBody ?: "null"},"icons":${iconsBody ?: "null"}}"""
-                )
-                tmp.renameTo(treeFile)
-            } catch (_: Exception) {
-                // 缓存写不进去不影响使用
-            }
+            // 缓存写不进去不影响使用（writeAtomic 内部吞掉异常）
+            cache.writeAtomic(
+                treeFile,
+                """{"entry":$treeBody,"dict":${dictBody ?: "null"},"icons":${iconsBody ?: "null"}}"""
+            )
             return@withContext data
         }
 
@@ -359,7 +358,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             // 每次打开都校验实时性（用户要求）：detail 接口很小，content_cdn 的
             // ?v= 参数是 gamekee 的内容版本号——与缓存记录一致就秒用缓存，
             // 不一致（官方改过文章）才重拉 CDN 正文重渲染。
-            val cached = File(articleDir, "${article.id}.html")
+            val cached = cache.articleFile(article.id)
             val cachedHtml = try {
                 if (cached.exists() && cached.length() > 0) cached.readText() else null
             } catch (e: Exception) {
@@ -442,13 +441,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             // 表情表只在真有评论时拉：评论里的 `_(… […])` 标记靠它换图
             val emojis = if (comments.isEmpty()) emptyMap() else loadEmojiMap()
             val html = renderArticleDocument(title, bodyHtml, article.comments, comments, contentVersion, emojis)
-            try {
-                articleDir.mkdirs()
-                val tmp = File(articleDir, "${article.id}.html.part")
-                tmp.writeText(html)
-                tmp.renameTo(cached)
-            } catch (_: Exception) {
-            }
+            cache.writeAtomic(cached, html)
             GuideDetail(article.copy(title = title), html, System.currentTimeMillis())
         }
 
@@ -460,7 +453,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
         thumbs[url]?.let { return it }
         return withContext(Dispatchers.IO) {
             val name = "${article.id}.img"
-            val file = File(thumbDir, name)
+            val file = cache.thumbFile(name)
             if (file.exists() && file.length() > 0) {
                 decodeScaled(file)?.let { thumbs[url] = it; return@withContext it }
                 file.delete()
@@ -493,7 +486,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
 
     // ---------------------------------------------------------------- 阵容组件 / 评论
 
-    private val battleDir: File get() = File(cacheDir, "battles")
+    private val battleDir: File get() = cache.battleDir
 
     /** v2 模板 ID 与 v3 阵容 ID 不属于同一命名空间。 */
     private data class BattleRef(val version: Int, val id: Long)
@@ -501,7 +494,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
     private val battleHtmlMemory = ConcurrentHashMap<BattleRef, String>()
 
     /** 表情表（[loadEmojiMap]）的落盘文件与内存副本。 */
-    private val emojiFile: File get() = File(cacheDir, "emoji.json")
+    private val emojiFile: File get() = cache.emojiFile
 
     @Volatile
     private var emojiMapMemory: Map<String, String>? = null
@@ -549,7 +542,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
     private suspend fun battleCardHtml(ref: BattleRef): String? = withContext(Dispatchers.IO) {
         battleHtmlMemory[ref]?.let { return@withContext it }
         val key = "v" + ref.version + "_" + ref.id
-        val cached = File(battleDir, "$key.html")
+        val cached = cache.battleFile(key)
         if (cached.exists() && cached.length() > 0) {
             try {
                 return@withContext cached.readText().also { battleHtmlMemory[ref] = it }
@@ -579,13 +572,7 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
             Log.w(TAG, "阵容解析失败: $ref", e)
             return@withContext null
         }
-        try {
-            battleDir.mkdirs()
-            val tmp = File(battleDir, "$key.html.part")
-            tmp.writeText(html)
-            tmp.renameTo(cached)
-        } catch (_: Exception) {
-        }
+        cache.writeAtomic(cached, html)
         battleHtmlMemory[ref] = html
         html
     }
@@ -719,14 +706,8 @@ class GamekeeRepository @Inject constructor(@param:ApplicationContext private va
         val body = httpGet("$API/v1/emojiGroup/queryList")
         val fresh = body?.let { parseEmojiMap(it) }
         if (fresh != null && fresh.isNotEmpty()) {
-            try {
-                cacheDir.mkdirs()
-                val tmp = File(cacheDir, "emoji.json.part")
-                tmp.writeText(body)
-                tmp.renameTo(emojiFile)
-            } catch (_: Exception) {
-                // 写不进缓存不影响这次使用
-            }
+            // 写不进缓存不影响这次使用（writeAtomic 内部吞掉异常）
+            cache.writeAtomic(emojiFile, body)
             emojiMapMemory = fresh
             return@withContext fresh
         }
@@ -1280,107 +1261,22 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
      * 基础 GET。gamekee 的wiki 接口要分区身份头 + XHR 头；CDN 只要 Referer。
      * 返回 body 字符串，失败（网络/非 200/拿回的是验证 HTML 而非 JSON）返回 null。
      */
-    private fun httpGet(url: String, referer: Boolean = false): String? {
-        var conn: HttpURLConnection? = null
-        return try {
-            conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15000
-                readTimeout = 20000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", UA)
-                if (referer) {
-                    setRequestProperty("Referer", "https://www.gamekee.com/")
-                } else {
-                    setRequestProperty("X-Requested-With", "XMLHttpRequest")
-                    setRequestProperty("game-id", GAME_ID)
-                    setRequestProperty("game-alias", GAME_ALIAS)
-                }
-            }
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) {
-                Log.w(TAG, "HTTP ${conn.responseCode}: $url")
-                return null
-            }
-            val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-            // CDN 偶尔会吐一个验证 HTML 页，按约定「content 必以 { 或 [ 开头」判真假
-            val trimmed = body.trimStart()
-            if (trimmed.startsWith("{") || trimmed.startsWith("[")) body else null
-        } catch (e: Exception) {
-            Log.w(TAG, "请求失败: $url (${e.message})")
-            null
-        } finally {
-            conn?.disconnect()
-        }
-    }
+    // HTTP 层见 [com.bd2toolsbox.data.remote.GamekeeApi]（T30 拆出）。
+    // 这里保留同名薄转发，调用点与拆分前逐行一致。
+    private fun httpGet(url: String, referer: Boolean = false): String? = api.getJson(url, referer)
 
-    /** POST + JSON body 版的 [httpGet]，给兑换码这类只收 POST 的接口用。 */
-    private fun httpPostJson(url: String, jsonBody: String): String? {
-        var conn: HttpURLConnection? = null
-        return try {
-            conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 15000
-                readTimeout = 20000
-                instanceFollowRedirects = true
-                doOutput = true
-                setRequestProperty("User-Agent", UA)
-                setRequestProperty("X-Requested-With", "XMLHttpRequest")
-                setRequestProperty("game-id", GAME_ID)
-                setRequestProperty("game-alias", GAME_ALIAS)
-                setRequestProperty("Content-Type", "application/json")
-            }
-            conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) {
-                Log.w(TAG, "HTTP ${conn.responseCode}: $url")
-                return null
-            }
-            val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-            val trimmed = body.trimStart()
-            if (trimmed.startsWith("{") || trimmed.startsWith("[")) body else null
-        } catch (e: Exception) {
-            Log.w(TAG, "请求失败: $url (${e.message})")
-            null
-        } finally {
-            conn?.disconnect()
-        }
-    }
+    private fun httpPostJson(url: String, jsonBody: String): String? = api.postJson(url, jsonBody)
 
-    private fun download(url: String, dest: File, referer: Boolean = false): Boolean {
-        var conn: HttpURLConnection? = null
-        return try {
-            dest.parentFile?.mkdirs()
-            conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15000
-                readTimeout = 20000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", UA)
-                // gamekee 的图片 CDN（cdnimg-v2）与正文 CDN 一样校验 Referer，
-                // 不带会回一个 567 状态页
-                if (referer) setRequestProperty("Referer", "https://www.gamekee.com/")
-            }
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) return false
-            conn.inputStream.use { input ->
-                dest.outputStream().use { out -> input.copyTo(out) }
-            }
-            dest.length() > 0
-        } catch (e: Exception) {
-            Log.w(TAG, "下载失败: $url (${e.message})")
-            false
-        } finally {
-            conn?.disconnect()
-        }
-    }
+    private fun download(url: String, dest: File, referer: Boolean = false): Boolean =
+        api.download(url, dest, referer)
 
     // ---------------------------------------------------------------- 缓存管理
 
     /** guides/ 缓存占用（字节）与文件数，给攻略页的清空入口显示。 */
-    fun usage(): Pair<Long, Int> {
-        val files = cacheDir.walkTopDown().filter { it.isFile }
-            .filterNot { it.name.endsWith(".part") }.toList()
-        return files.sumOf { it.length() } to files.size
-    }
+    fun usage(): Pair<Long, Int> = cache.usage()
 
     fun clearCache() {
-        cacheDir.deleteRecursively()
+        cache.clear()
         treeCache = null
         thumbs.clear()
         battleHtmlMemory.clear()

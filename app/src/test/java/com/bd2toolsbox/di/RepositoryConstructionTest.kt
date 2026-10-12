@@ -73,7 +73,14 @@ class RepositoryConstructionTest {
         assertNotNull(BundleBackupRepository(context, fakeDigester))
         val metadata = CharacterMetaRepository(context)
         assertNotNull(AvatarRepository(context, metadata))
-        assertNotNull(GamekeeRepository(context))
+        // T30：HTTP 层与磁盘缓存层已拆出，构造时一并给上。
+        assertNotNull(
+            GamekeeRepository(
+                context,
+                com.bd2toolsbox.data.remote.GamekeeApi(),
+                com.bd2toolsbox.data.cache.GuideCacheStore(context),
+            )
+        )
         assertNotNull(Bd2RedeemRepository(context))
     }
 
