@@ -17,13 +17,16 @@ import org.junit.runner.RunWith
 import java.io.File
 
 /**
- * 进程死亡后的安全收尾（T25）—— **设备侧只验证 journal 的落盘/读回与分类**。
+ * 进程死亡后的安全收尾（T25）。
  *
- * 真实「杀进程再启动」的循环不在本类里：instrumentation 无法杀掉自己的进程后继续执行。
- * 这里用应用真实 `filesDir` 上的 journal 文件构造一次「重启后的分类」，
- * 覆盖 JVM 单测无法覆盖的部分（真实序列化/R8/文件系统）。
+ * **进程内**的分类与归属校验：用应用真实 `filesDir` 上的 journal 构造三种落盘形态，
+ * 断言分类结果与清理路径归属校验。覆盖 JVM 单测碰不到的部分（真实序列化/R8/文件系统）。
  *
- * 只写应用私有目录，不碰游戏目录、MOD 源目录或备份；`finally` 里清干净。
+ * **真实「杀进程再启动」在 [JournalRestartPhaseTest]**：那三条 phase 必须由外部
+ * `am force-stop` 编排（`Test-Bd2JournalRecovery`），且要求 `-e bd2RunId`，
+ * 所以**不能**混进本类 —— 混进来会让本类整类跑不了（实测踩过）。
+ *
+ * 只写应用私有目录，不碰游戏目录、MOD 源目录或备份；`@After` 里清干净。
  */
 @RunWith(AndroidJUnit4::class)
 class ProcessDeathRecoveryTest {
@@ -36,12 +39,34 @@ class ProcessDeathRecoveryTest {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         repository = InstalledModRepository(context)
         journalFile = repository.journalFile()
-        // 每个用例从干净状态开始：只清自己的 journal，不动账本与其它文件。
-        OperationJournalStore(journalFile).clear()
     }
+
+    /**
+     * 真实杀进程的 phase 用例必须让日志**活到下一个进程**。
+     *
+     * `@After` 默认清日志（进程内用例之间要互不干扰），但写阶段写完就清的话，
+     * 下一个进程读到的永远是 0 条 —— 那是**假的验证**。实测踩过两次：
+     * 先是 `@Before` 清、后是 `@After` 清，两次都表现为「重启后读到 0 条」。
+     * 所以 phase 用例显式把它置真，只有 `cleanupJournalPhase` 不置。
+     */
+    private var keepJournalAfterTest = false
 
     @After
     fun tearDown() {
+        if (!keepJournalAfterTest) {
+            OperationJournalStore(journalFile).clear()
+        }
+    }
+
+    /**
+     * 进程内用例的「从干净状态开始」。
+     *
+     * **刻意不放在 `@Before`**：真实杀进程的三个 phase 是**跨进程**的 ——
+     * 写阶段留下的日志必须活到读阶段。如果 `@Before` 无条件 clear，读阶段会把
+     * 上一阶段写的日志先擦掉，然后断言「重启后读到 0 条」——那是一个**假的通过**，
+     * 或者像本轮一样直接失败。实测踩过。
+     */
+    private fun resetJournal() {
         OperationJournalStore(journalFile).clear()
     }
 
@@ -57,8 +82,13 @@ class ProcessDeathRecoveryTest {
 
     private fun recovery() = OperationRecovery(repository)
 
+    private companion object {
+        const val TAG = "BD2_JOURNAL_PROBE"
+    }
+
     @Test
     fun intentOnlyIsClassifiedAsInterrupted() {
+        resetJournal()
         append("t25-op-1", JournalStage.TARGET_REPLACING)
         val d = recovery().classify().single()
         assertTrue("只落写前意图应判中断", d is RecoveryDisposition.Interrupted)
@@ -66,6 +96,7 @@ class ProcessDeathRecoveryTest {
 
     @Test
     fun confirmedReplaceIsClassifiedAsNeedsReconciliation() {
+        resetJournal()
         append("t25-op-2", JournalStage.TARGET_REPLACED)
         val d = recovery().classify().single()
         assertTrue("已确认替换应判待核对", d is RecoveryDisposition.NeedsReconciliation)
@@ -73,6 +104,7 @@ class ProcessDeathRecoveryTest {
 
     @Test
     fun ledgerCommitAfterReplaceIsClassifiedAsCommitted() {
+        resetJournal()
         append("t25-op-3", JournalStage.TARGET_REPLACED)
         append("t25-op-3", JournalStage.LEDGER_COMMITTED)
         val d = recovery().classify().single()
@@ -81,6 +113,7 @@ class ProcessDeathRecoveryTest {
 
     @Test
     fun cleanupPathOutsideAppOwnedRootsIsRejected() {
+        resetJournal()
         val cache = context.cacheDir
         val external = context.getExternalFilesDir(null) ?: cache
         assertTrue(OperationRecovery.isCleanupPathAllowed(File(cache, "t25/tmp"), listOf(cache, external)))

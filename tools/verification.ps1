@@ -1245,6 +1245,98 @@ function Assert-Bd2ApkContract {
     return $steps
 }
 
+function Test-Bd2JournalRecovery {
+    <#
+      .SYNOPSIS
+        T25：真实「杀进程再启动」的恢复验收（设备）。
+
+      .DESCRIPTION
+        `ProcessDeathRecoveryTest` 里那三条 `*Phase` 由这里编排：
+
+          1. `writeInterruptedJournalPhase` —— 写下「已确认替换、账本未提交」的日志；
+          2. **`am force-stop`** —— 真的杀掉进程；
+          3. `verifyAfterRealRestartPhase` —— 新进程从磁盘读回那条日志并分类；
+          4. `am force-stop` + `cleanupJournalPhase` —— 清干净。
+
+        **判据是 PID 必须不同**：写日志的进程与读日志的进程是两个进程。
+        少了这条，就只是「同一个进程里自己写自己读」，证明不了重启恢复。
+        与 `Invoke-Bd2SnapshotPhases` 同一手法与同一判据。
+
+        只动应用私有目录里的 journal，不碰账本、游戏目录或备份。
+    #>
+    param([Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi)
+    $device = Get-Bd2Device -Abi $Abi
+    $identity = Assert-Bd2DeviceOnline -Device $device
+    $serial = $identity.serial
+    $runId = 'journal-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+    $runDir = New-Bd2RunDirectory ('journal-recovery-' + $Abi)
+    $summary = [ordered]@{
+        runId = Split-Path -Leaf $runDir
+        git = Get-Bd2GitState
+        abi = $Abi
+        serial = $serial
+        journalRunId = $runId
+        pids = [ordered]@{}
+        steps = @()
+        result = 'FAIL'
+    }
+    $pids = @{}
+    $failure = $null
+    $runPhase = {
+        param($phase, $method)
+        $probe = Invoke-Bd2Instrumentation -Serial $serial `
+            -TestClass 'com.bd2toolsbox.core.operations.JournalRestartPhaseTest' `
+            -Method $method -Arguments @{ bd2RunId = $runId }
+        [IO.File]::WriteAllText((Join-Path $runDir ("journal-$phase.txt")), $probe.output, (New-Object Text.UTF8Encoding($false)))
+        $null = Assert-Bd2InstrumentationResult -Result $probe -Label "JournalRestartPhaseTest#$method"
+        $pattern = 'BD2_JOURNAL_PROBE phase=' + $phase + ' runId=' + [regex]::Escape($runId) + ' pid=([1-9][0-9]*)'
+        $marker = [regex]::Match($probe.output, $pattern)
+        if (-not $marker.Success) { throw "缺少 journal $phase 标记（runId=$runId）" }
+        $pids[$phase] = [int]$marker.Groups[1].Value
+        $summary.steps += "journal-$phase"
+    }
+    try {
+        # 只装这两个包；不碰设备上其它应用
+        Invoke-Bd2Gradle (":app:assemble$($(if ($Abi -eq 'arm64-v8a') { 'Arm64' } else { 'X64' }))Debug") `
+            (":app:assemble$($(if ($Abi -eq 'arm64-v8a') { 'Arm64' } else { 'X64' }))DebugAndroidTest") --console=plain
+        $appApk = Get-Bd2ApkForAbi -BuildType 'debug' -Abi $Abi
+        $testApk = Get-Bd2InstrumentationApk -Abi $Abi
+        foreach ($apk in @($appApk, $testApk)) {
+            $install = (& $Bd2Adb -s $serial install -r -t $apk) -join ' '
+            if ($LASTEXITCODE -ne 0 -or $install -notmatch 'Success') { throw "安装失败：$apk -> $install" }
+        }
+        $summary.steps += 'install-debug-apks'
+        Start-Sleep -Seconds 5
+
+        & $runPhase 'write' 'writeInterruptedJournalPhase'
+        & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
+        Start-Sleep -Seconds 3
+        & $runPhase 'verify' 'verifyAfterRealRestartPhase'
+        if ($pids.write -eq $pids.verify) {
+            throw "重启后 PID 未变（$($pids.write)）—— 「杀进程再启动」没有被证明"
+        }
+        $summary.pids = $pids
+    } catch {
+        $failure = $_
+    } finally {
+        try {
+            & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
+            Start-Sleep -Seconds 2
+            & $runPhase 'cleanup' 'cleanupJournalPhase'
+        } catch {
+            if ($null -eq $failure) { $failure = $_ } else { Write-Warning ("journal cleanup 也失败：" + $_.Exception.Message) }
+        }
+        Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
+    }
+    if ($null -ne $failure) { throw $failure }
+    $summary.result = 'PASS'
+    Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
+    Write-Host ("JournalRecovery [{0}] {1} -> PASS (write pid {2} -> verify pid {3})" -f `
+        $Abi, $serial, $summary.pids.write, $summary.pids.verify)
+    Write-Host ("  report: {0}" -f (Join-Path $runDir 'summary.json'))
+    return $summary
+}
+
 function Test-Bd2ReleaseSmoke {
     <#
       .SYNOPSIS

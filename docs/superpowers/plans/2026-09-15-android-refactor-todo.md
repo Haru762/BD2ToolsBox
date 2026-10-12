@@ -1176,6 +1176,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.integration.PrepackCacheIntegrationTest
 
 - [ ] **T25 完成**
 
+**2026-10-12 补：真实「杀进程再启动」已验证。** 新增 `JournalRestartPhaseTest`（三条 phase，由 `Test-Bd2JournalRecovery` 编排：写日志 → `am force-stop` → 新进程读回分类 → 清理），判据是 **PID 必须不同**。实测 `JournalRecovery [x86_64] -> PASS (write pid 10952 -> verify pid 10994)`；进程内 `ProcessDeathRecoveryTest` **4/4**、`RecoveryBannerTest` **6/6**。实现中踩到两个「假的验证」并修掉：`@Before`/`@After` 都清日志 → verify 永远读到 0 条；三条 phase 混在进程内类里会让那个类整类跑不了。**仍缺**：`Bd2Application` 启动接线、横幅的「一键核对并修复记录」入口、真实游戏目录上的中断恢复、arm64 真机。见 [T25 证据](../../refactor/evidence/T25.md)。
+
 **2026-10-11 接线完成。** `recoveryDispositions` 接出 `RecoveryBanner`（四态翻人话、`Committed` 不打扰用户、中断/待核对/未知各给下一步）。`RecoveryBannerTest` **6/6 PASS**（MuMu）。仍不勾 DONE：真实杀进程再启动未验证、arm64 未重跑、无独立审查。见 [接线批次](../../refactor/evidence/wiring-2026-10-11.md)。
 
 **2026-10-11 状态：IMPLEMENTED_NOT_VERIFIED（部分）。** 新增 `core/operations/OperationRecovery`（四态分类：中断/待核对/已提交/未知 + 清理路径归属校验），启动检查补分类 StateFlow；定向 JVM 11/0/0/0、全量 JVM 593/0/0/0。**真实杀进程再启动未验证、`Bd2Application` 未接入、UI 未消费**，设备验收 NOT_RUN、无独立审查，不勾 DONE。见 [T25 证据](../../refactor/evidence/T25.md)。

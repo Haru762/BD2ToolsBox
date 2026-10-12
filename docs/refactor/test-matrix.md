@@ -179,11 +179,13 @@ T56 要求覆盖 14 类场景，并「在复制/校验/备份/账本/Binder/网�
 | 备份门禁 | `BackupFailureSummaryTest` 5（设备）、`TryUseBackupTrustGateTest` 2（设备） |
 | Binder/连接 | `ScanExecutorTest`（未连接 vs 读取失败、占用释放）、`ShizukuFileServiceListingTest` 5（设备） |
 | 网络 | `GuideRequestRaceTest` 14（请求代次）、`CdkViewModelTest#repositoryFailureIsSurfacedNotSwallowed` |
-| 进程死亡 | `ProcessDeathRecoveryTest` 4（设备）、`LedgerRecoveryStartupTest` 4（设备）、`OperationRecoveryTest`（JVM） |
+| 进程死亡 | `ProcessDeathRecoveryTest` 4（设备，进程内分类）、**`JournalRestartPhaseTest` + `Test-Bd2JournalRecovery`（真实 `am force-stop` 后新进程读回，PID 必须不同）**、`LedgerRecoveryStartupTest` 4（设备）、`OperationRecoveryTest`（JVM） |
 | 磁盘/权限 | `GameFileCommitTest` 13（设备，含 API 29 的卷不兑现权限的前提判定） |
 
 **没有**覆盖的边界：磁盘写满、真实网络中断（只做了「仓储抛异常」这一层）、
 真实 Binder 断连（需要 Shizuku 授权）。
+
+（「提交中途进程被杀」已在 2026-10-12 补上：见上面「进程死亡」那一行。）
 
 ### 4.2.2 与 T56 验收条的对照
 
