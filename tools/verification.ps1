@@ -1337,6 +1337,103 @@ function Test-Bd2JournalRecovery {
     return $summary
 }
 
+function Test-Bd2IsolatedRecovery {
+    <#
+      .SYNOPSIS
+        T25：在**隔离数据**上真的跑一次「装到一半被杀 → 重启 → 核对」（设备）。
+
+      .DESCRIPTION
+        与 `Test-Bd2JournalRecovery` 的区别：那个只动应用私有目录里的 journal，
+        证明「重启后能读回并分类」；这里**真的替换一个文件**（走生产
+        `ShizukuFileService.copyFile` → `AtomicFileWriter` 的原子替换），
+        再让进程被杀，新进程核对「磁盘上到底是什么」。
+
+        三阶段（`IsolatedCommitRecoveryPhaseTest`）：
+
+          1. `stageInterruptedCommitPhase` —— 隔离目录里真实替换文件 + 写
+             `TARGET_REPLACED` 日志，**不写账本**（那个窗口）；
+          2. **`am force-stop`**；
+          3. `verifyIsolatedRecoveryAfterRestartPhase` —— 新进程断言：分类是待核对、
+             `TargetContentAudit` 是 `AllMatched`（文件确实换了）、账本里没有记录、
+             staging 文件还在（没被自动清理）、隔离目录里没有 `.part` 残留；
+          4. `force-stop` + `cleanupIsolatedRecoveryPhase` —— 清日志 + 删隔离目录。
+
+        **全程只用 `context.cacheDir` 下的临时目录**，不碰真实游戏目录、MOD 源目录
+        或备份。判据同样包含 **PID 必须不同**。
+    #>
+    param([Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi)
+    $device = Get-Bd2Device -Abi $Abi
+    $identity = Assert-Bd2DeviceOnline -Device $device
+    $serial = $identity.serial
+    $runId = 'isolated-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+    $runDir = New-Bd2RunDirectory ('isolated-recovery-' + $Abi)
+    $summary = [ordered]@{
+        runId = Split-Path -Leaf $runDir
+        git = Get-Bd2GitState
+        abi = $Abi
+        serial = $serial
+        isolatedRunId = $runId
+        pids = [ordered]@{}
+        steps = @()
+        scope = 'isolated-cache-dir-real-commit'
+        result = 'FAIL'
+    }
+    $pids = @{}
+    $failure = $null
+    $runPhase = {
+        param($phase, $method)
+        $probe = Invoke-Bd2Instrumentation -Serial $serial `
+            -TestClass 'com.bd2toolsbox.core.operations.IsolatedCommitRecoveryPhaseTest' `
+            -Method $method -Arguments @{ bd2RunId = $runId }
+        [IO.File]::WriteAllText((Join-Path $runDir ("isolated-$phase.txt")), $probe.output, (New-Object Text.UTF8Encoding($false)))
+        $null = Assert-Bd2InstrumentationResult -Result $probe -Label "IsolatedCommitRecoveryPhaseTest#$method"
+        $pattern = 'BD2_ISOLATED_PROBE phase=' + $phase + ' runId=' + [regex]::Escape($runId) + ' pid=([1-9][0-9]*)'
+        $marker = [regex]::Match($probe.output, $pattern)
+        if (-not $marker.Success) { throw "缺少 isolated $phase 标记（runId=$runId）" }
+        $pids[$phase] = [int]$marker.Groups[1].Value
+        $summary.steps += "isolated-$phase"
+    }
+    try {
+        $flavor = if ($Abi -eq 'arm64-v8a') { 'Arm64' } else { 'X64' }
+        Invoke-Bd2Gradle (":app:assemble${flavor}Debug") (":app:assemble${flavor}DebugAndroidTest") --console=plain
+        $appApk = Get-Bd2ApkForAbi -BuildType 'debug' -Abi $Abi
+        $testApk = Get-Bd2InstrumentationApk -Abi $Abi
+        foreach ($apk in @($appApk, $testApk)) {
+            $install = (& $Bd2Adb -s $serial install -r -t $apk) -join ' '
+            if ($LASTEXITCODE -ne 0 -or $install -notmatch 'Success') { throw "安装失败：$apk -> $install" }
+        }
+        $summary.steps += 'install-debug-apks'
+        Start-Sleep -Seconds 5
+
+        & $runPhase 'stage' 'stageInterruptedCommitPhase'
+        & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
+        Start-Sleep -Seconds 3
+        & $runPhase 'verify' 'verifyIsolatedRecoveryAfterRestartPhase'
+        if ($pids.stage -eq $pids.verify) {
+            throw "重启后 PID 未变（$($pids.stage)）—— 「杀进程再启动」没有被证明"
+        }
+        $summary.pids = $pids
+    } catch {
+        $failure = $_
+    } finally {
+        try {
+            & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
+            Start-Sleep -Seconds 2
+            & $runPhase 'cleanup' 'cleanupIsolatedRecoveryPhase'
+        } catch {
+            if ($null -eq $failure) { $failure = $_ } else { Write-Warning ("isolated cleanup 也失败：" + $_.Exception.Message) }
+        }
+        Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
+    }
+    if ($null -ne $failure) { throw $failure }
+    $summary.result = 'PASS'
+    Write-Bd2Json -Value $summary -Path (Join-Path $runDir 'summary.json')
+    Write-Host ("IsolatedRecovery [{0}] {1} -> PASS (stage pid {2} -> verify pid {3})" -f `
+        $Abi, $serial, $summary.pids.stage, $summary.pids.verify)
+    Write-Host ("  report: {0}" -f (Join-Path $runDir 'summary.json'))
+    return $summary
+}
+
 function Test-Bd2ReleaseSmoke {
     <#
       .SYNOPSIS
