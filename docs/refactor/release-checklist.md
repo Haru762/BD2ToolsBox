@@ -31,7 +31,11 @@
 ## 2. 机器门禁（必须全绿，且记录命令与退出码）
 
 - [ ] 架构检查：`python tools/check_architecture.py --root . --quiet` → 退出码 0。
-- [ ] 基线清单核对：`python tools/verify_manifests.py --root .` → 16 条哈希全对。
+- [ ] 基线清单核对：`python tools/verify_manifests.py --root .` → 冻结基线全对（当前 16 条）。
+- [ ] **交付记录核对**：`python tools/verify_manifests.py --root . --check-delivery` → 交付记录与当前
+      两个 ABI 的 release 产物一致。**这一步必须在最后一次构建之后做** —— 改了任何代码都会
+      让记录过期。本地 `LocalAll` 刻意**不**核它（不然每次改代码都报同一个失败，
+      会把人训练成忽略这个检查）；发版前必须自己补上。
 - [ ] JVM 单测（两个 flavor）：`Test-Bd2UnitAll` → 0 失败 / 0 错误 / 0 跳过。
 - [ ] Python 测试：`Test-Bd2Python -Pattern 'test_*.py'` → 0 失败 / 0 跳过。
 - [ ] 一键本地验证：`& tools/verification.ps1 -Mode LocalAll` → 退出码 0。
@@ -78,6 +82,8 @@
       逐项对应必需矩阵。
 - [ ] `docs/refactor/artifact-manifest.json` 的 `t61Delivery` 记录了最终产物的路径、
       字节数、SHA-256、`versionCode`/`versionName`、签名指纹、mapping 与符号表位置。
+      **它是交付记录、不是冻结基线**：改代码重建后必须重新登记，并用
+      `--check-delivery` 核一次。
 - [ ] 原始历史基线与优化前基线**仍完整可追溯**（`t03Freeze`、`t48Freeze` 未被覆盖）。
 - [ ] fixture、环境与工作区交接清单可复核（谁在哪台机器上跑过什么）。
 - [ ] 唯一新版 TODO 与证据索引的最后状态已更新；**旧版复选框不重新激活**。

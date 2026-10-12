@@ -3,6 +3,11 @@
 
 核对器坏了会**静默地**说「PASS」—— 那比没有核对器更糟。这里断言的是判定逻辑本身：
 单色图、黑屏、明暗颠倒都必须被抓出来。
+
+写成 `unittest.TestCase` 而不是 pytest 风格函数：本仓库的 Python 门禁
+（`tools/run_python_tests.py` + `Test-Bd2Python`）是 **unittest runner**，
+pytest 风格的函数它**一条都收不到** —— 那样的测试等于没进门禁（实测踩过：
+`LocalAll` 逐个文件调用时 `discovered=0`）。
 """
 import importlib.util
 import io
@@ -11,6 +16,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import unittest
 
 from PIL import Image
 
@@ -46,7 +52,6 @@ def _write_shot(path, kind):
     for y in range(0, 200):
         for x in range(0, 1080):
             px[x, y] = bar
-    # 多行「文字」：长度不一，让网格内亮度有真实起伏
     y = 260
     for row in range(26):
         width = 300 + ((row * 137) % 640)
@@ -54,7 +59,6 @@ def _write_shot(path, kind):
             for xx in range(60, 60 + width):
                 px[xx, yy] = fg
         y += 62
-    # 一个按钮
     for yy in range(1700, 1800):
         for xx in range(60, 460):
             px[xx, yy] = accent
@@ -90,57 +94,73 @@ def _report(res):
     return json.loads(res.stdout.decode('utf-8'))
 
 
-def test_light_and_dark_pass():
-    d = _make_dir([('a.png', 'light', 'LIGHT'), ('b.png', 'dark', 'DARK')])
-    res = _run(d)
-    assert res.returncode == 0, res.stderr.decode('utf-8', 'replace')
-    report = _report(res)
-    assert report['result'] == 'PASS'
-    assert report['problems'] == []
+class VerifyUiScreenshotsTest(unittest.TestCase):
+
+    def test_light_and_dark_pass(self):
+        d = _make_dir([('a.png', 'light', 'LIGHT'), ('b.png', 'dark', 'DARK')])
+        res = _run(d)
+        self.assertEqual(res.returncode, 0, res.stderr.decode('utf-8', 'replace'))
+        report = _report(res)
+        self.assertEqual(report['result'], 'PASS')
+        self.assertEqual(report['problems'], [])
+
+    def test_flat_single_colour_image_is_rejected(self):
+        d = _make_dir([('a.png', 'light', 'LIGHT'), ('b.png', 'flat', 'DARK')])
+        res = _run(d)
+        self.assertEqual(res.returncode, 1)
+        problems = _report(res)['problems']
+        self.assertTrue(any('平的' in p or '单色' in p for p in problems), problems)
+
+    def test_inverted_light_dark_is_rejected(self):
+        """浅色比深色还暗 —— 说明明暗切换根本没生效，必须报错。"""
+        d = _make_dir([('a.png', 'dark', 'LIGHT'), ('b.png', 'light', 'DARK')])
+        res = _run(d)
+        self.assertEqual(res.returncode, 1)
+        problems = _report(res)['problems']
+        self.assertTrue(any('明暗切换没生效' in p for p in problems), problems)
+
+    def test_missing_dark_shot_is_rejected(self):
+        d = _make_dir([('a.png', 'light', 'LIGHT'), ('b.png', 'light', 'LIGHT')])
+        res = _run(d)
+        self.assertEqual(res.returncode, 1)
+        problems = _report(res)['problems']
+        self.assertTrue(any('缺少浅色或深色' in p for p in problems), problems)
+
+    def test_tiny_resolution_is_rejected(self):
+        tmp = tempfile.mkdtemp(prefix='t58-shots-')
+        Image.new('RGB', (100, 100), (250, 250, 250)).save(os.path.join(tmp, 'a.png'))
+        Image.new('RGB', (100, 100), (10, 10, 10)).save(os.path.join(tmp, 'b.png'))
+        with io.open(os.path.join(tmp, 'index.json'), 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(json.dumps({'shots': [
+                {'file': 'a.png', 'label': 'a', 'appThemeMode': 'LIGHT', 'fontScale': '1.0'},
+                {'file': 'b.png', 'label': 'b', 'appThemeMode': 'DARK', 'fontScale': '1.0'},
+            ]}, ensure_ascii=False))
+        res = _run(tmp)
+        self.assertEqual(res.returncode, 1)
+        problems = _report(res)['problems']
+        self.assertTrue(any('分辨率异常' in p for p in problems), problems)
+
+    def test_missing_index_is_rejected(self):
+        tmp = tempfile.mkdtemp(prefix='t58-shots-')
+        res = _run(tmp)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn(b'index.json', res.stderr)
+
+    def test_missing_metadata_field_is_reported(self):
+        """索引缺字段必须被记成问题，不能默默用默认值掩盖。"""
+        tmp = tempfile.mkdtemp(prefix='t58-shots-')
+        _write_shot(os.path.join(tmp, 'a.png'), 'light')
+        _write_shot(os.path.join(tmp, 'b.png'), 'dark')
+        with io.open(os.path.join(tmp, 'index.json'), 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(json.dumps({'shots': [
+                {'file': 'a.png', 'appThemeMode': 'LIGHT'},
+                {'file': 'b.png', 'appThemeMode': 'DARK'},
+            ]}, ensure_ascii=False))
+        res = _run(tmp)
+        self.assertEqual(res.returncode, 1)
+        problems = _report(res)['problems']
+        self.assertTrue(any('缺少' in p and '字段' in p for p in problems), problems)
 
 
-def test_flat_single_colour_image_is_rejected():
-    d = _make_dir([('a.png', 'light', 'LIGHT'), ('b.png', 'flat', 'DARK')])
-    res = _run(d)
-    assert res.returncode == 1
-    problems = _report(res)['problems']
-    assert any('平的' in p or '单色' in p for p in problems), problems
-
-
-def test_inverted_light_dark_is_rejected():
-    """浅色比深色还暗 —— 说明明暗切换根本没生效，必须报错。"""
-    d = _make_dir([('a.png', 'dark', 'LIGHT'), ('b.png', 'light', 'DARK')])
-    res = _run(d)
-    assert res.returncode == 1
-    problems = _report(res)['problems']
-    assert any('明暗切换没生效' in p for p in problems), problems
-
-
-def test_missing_dark_shot_is_rejected():
-    d = _make_dir([('a.png', 'light', 'LIGHT'), ('b.png', 'light', 'LIGHT')])
-    res = _run(d)
-    assert res.returncode == 1
-    problems = _report(res)['problems']
-    assert any('缺少浅色或深色' in p for p in problems), problems
-
-
-def test_tiny_resolution_is_rejected():
-    tmp = tempfile.mkdtemp(prefix='t58-shots-')
-    Image.new('RGB', (100, 100), (250, 250, 250)).save(os.path.join(tmp, 'a.png'))
-    Image.new('RGB', (100, 100), (10, 10, 10)).save(os.path.join(tmp, 'b.png'))
-    with io.open(os.path.join(tmp, 'index.json'), 'w', encoding='utf-8', newline='\n') as fh:
-        fh.write(json.dumps({'shots': [
-            {'file': 'a.png', 'label': 'a', 'appThemeMode': 'LIGHT'},
-            {'file': 'b.png', 'label': 'b', 'appThemeMode': 'DARK'},
-        ]}, ensure_ascii=False))
-    res = _run(tmp)
-    assert res.returncode == 1
-    problems = _report(res)['problems']
-    assert any('分辨率异常' in p for p in problems), problems
-
-
-def test_missing_index_is_rejected():
-    tmp = tempfile.mkdtemp(prefix='t58-shots-')
-    res = _run(tmp)
-    assert res.returncode != 0
-    assert b'index.json' in res.stderr
+if __name__ == '__main__':
+    unittest.main()

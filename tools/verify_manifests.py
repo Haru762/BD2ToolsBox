@@ -10,8 +10,12 @@
     （不是失败 —— 换一台机器本来就该缺；但必须说出来，不能假装核过了）。
 
 用法：
-  python tools/verify_manifests.py --root <repo> [--json out.json] [--quiet]
+  python tools/verify_manifests.py --root <repo> [--json out.json] [--quiet] [--check-delivery]
 退出码：0 = 所有**存在**的条目哈希都对上；1 = 有哈希不符；2 = 用法/IO 错误。
+
+`--check-delivery`：一并核对交付记录（`t61Delivery` 等）。本地验证默认跳过 ——
+交付记录记的是当前构建的产物哈希，改代码重建后它**理应**过期，每次本地验证都报一次
+同样的失败会把人训练成忽略这个检查。发版前必须用 `--check-delivery` 核一次。
 """
 from __future__ import annotations
 
@@ -27,6 +31,16 @@ MANIFESTS = (
     'docs/refactor/fixture-manifest.json',
     'docs/refactor/artifact-manifest.json',
 )
+
+# 顶层子树里的**交付记录**（不是冻结基线）。
+#
+# 为什么默认不核：这些条目记的是「当前这次构建的产物哈希」。一旦改了代码并重建，
+# 它们**理应**过期 —— 那时该做的是发版前重新登记，而不是让每次本地验证都报一次
+# 同样的失败（那会把人训练成忽略这个检查）。用 `--check-delivery` 显式核对，
+# 发版核对清单里有这一步。
+#
+# 被跳过的子树会写进报告的 `skippedDelivery`，不静默藏起来。
+DELIVERY_TRAILS = ('t61Delivery',)
 
 
 def sha256(path: str) -> str:
@@ -74,10 +88,11 @@ def resolve(root: str, entry: dict, local_dir: Optional[str]) -> Optional[str]:
     return os.path.join(root, candidate.replace('/', os.sep))
 
 
-def verify(root: str) -> Dict:
+def verify(root: str, check_delivery: bool = False) -> Dict:
     checked: List[Dict] = []
     missing: List[Dict] = []
     mismatched: List[Dict] = []
+    skipped_delivery: List[str] = []
     for manifest in MANIFESTS:
         full = os.path.join(root, manifest.replace('/', os.sep))
         if not os.path.isfile(full):
@@ -86,6 +101,9 @@ def verify(root: str) -> Dict:
         with io.open(full, encoding='utf-8') as fh:
             data = json.load(fh)
         for trail, entry, local_dir in iter_entries(data, [manifest]):
+            if not check_delivery and len(trail) > 1 and trail[1] in DELIVERY_TRAILS:
+                skipped_delivery.append('/'.join(trail))
+                continue
             path = resolve(root, entry, local_dir)
             if path is None:
                 continue
@@ -119,10 +137,13 @@ def verify(root: str) -> Dict:
         'checked': checked,
         'mismatched': mismatched,
         'missing': missing,
+        'skippedDelivery': sorted(set(skipped_delivery)),
+        'deliveryChecked': check_delivery,
         'summary': {
             'checked': len(checked),
             'mismatched': len(mismatched),
             'missing': len(missing),
+            'skippedDelivery': len(set(skipped_delivery)),
         },
     }
 
@@ -132,10 +153,13 @@ def main(argv=None) -> int:
     parser.add_argument('--root', default='.')
     parser.add_argument('--json', default=None)
     parser.add_argument('--quiet', action='store_true')
+    parser.add_argument(
+        '--check-delivery', action='store_true',
+        help='一并核对交付记录（t61Delivery 等）。本地验证默认跳过，发版前必须核对。')
     args = parser.parse_args(argv)
 
     try:
-        report = verify(os.path.abspath(args.root))
+        report = verify(os.path.abspath(args.root), check_delivery=args.check_delivery)
     except OSError as exc:
         sys.stderr.write('ERROR: %s\n' % exc)
         return 2
@@ -148,9 +172,13 @@ def main(argv=None) -> int:
         sys.stdout.write(text)
     summary = report['summary']
     sys.stderr.write(
-        'manifests: checked=%d mismatched=%d missing=%d\n'
-        % (summary['checked'], summary['mismatched'], summary['missing'])
+        'manifests: checked=%d mismatched=%d missing=%d skippedDelivery=%d\n'
+        % (summary['checked'], summary['mismatched'], summary['missing'],
+           summary['skippedDelivery'])
     )
+    if summary['skippedDelivery'] and not args.quiet:
+        sys.stderr.write(
+            '  （交付记录未核对；发版前请加 --check-delivery，见 release-checklist.md）\n')
     for record in report['mismatched']:
         sys.stderr.write('  MISMATCH %s: %s\n' % (record['path'], record['reason']))
     return 1 if report['mismatched'] else 0

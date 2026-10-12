@@ -19,10 +19,11 @@
 | 检查 | 命令 | 结果 |
 |---|---|---|
 | 架构规则 R1–R7 | `python tools/check_architecture.py --root . --quiet` | 退出码 **0**（0 违规） |
-| 基线清单核对 | `python tools/verify_manifests.py --root .` | **16/16** 哈希全对 |
+| 基线清单核对 | `python tools/verify_manifests.py --root .` | **16/16** 冻结基线哈希全对（交付记录默认跳过，见下行） |
+| 交付记录核对 | `python tools/verify_manifests.py --root . --check-delivery` | **18/18**，与当前两个 ABI 的 release 产物一致 |
 | JVM 单测（两个 flavor） | `Test-Bd2UnitAll` | **tests=1472 failures=0 errors=0 skipped=0 → PASS** |
-| Python 测试 | `Test-Bd2Python -Pattern 'test_*.py'` | **discovered=219 executed=219 passed=219 failed=0 skipped=0 → PASS** |
-| 一键本地验证 | `& tools/verification.ps1 -Mode LocalAll` | 退出码 **0**（此前实测；本轮改动只碰测试与工具，未重跑全量） |
+| Python 测试 | `Test-Bd2Python -Pattern 'test_*.py'` | **discovered=234 executed=234 passed=234 failed=0 skipped=0 → PASS** |
+| 一键本地验证 | `& tools/verification.ps1 -Mode LocalAll` | **`LocalAll: PASS`，退出码 0**（含依赖解析 → JVM → Python → 两个 ABI release 构建 → 静态审计） |
 | UI 冷启动宿主测试 | `tools/tests/Test-UiColdStartHarness.ps1` | **19/19 PASS** |
 
 ## 3. 交付产物

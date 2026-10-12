@@ -710,7 +710,7 @@
         "recordedAt": "2026-10-13",
         "recordedByTask": "T61",
         "status": "PREPARED_NOT_RELEASED",
-        "statusNote": "产物已构建并记录；**未**发布、未合并、未推送。对外版本号刻意保持 0.2.16 / 17 —— 发版号必须按渠道当前最大值决定，不能用本次开发用的 17 盲推。",
+        "statusNote": "产物已构建并记录；**未**发布、未合并、未推送。对外版本号刻意保持 0.2.16 / 17 —— 发版号必须按渠道当前最大值决定，不能用本次开发用的 17 盲推。本记录是「当前构建的产物哈希」，改代码重建后**理应**过期：本地验证默认跳过它（verify_manifests.py 的 --check-delivery 才核），发版前必须重新登记并核对一次。",
         "versionName": "0.2.16",
         "versionCode": 17,
         "packageName": "com.bd2toolsbox",
@@ -722,26 +722,26 @@
             "arm64-v8a": {
                 "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
                 "bytes": 22693914,
-                "sha256": "0d9c89f83554b94e6a1284a642f62a95c94ea40b038b129b64d0bc52b34e9dc6",
+                "sha256": "7b3714d104a3f971a28cf58a57e8d7441ef47b2b652555864552a48db3ab78bc",
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
                 "mappingBytes": 44592671,
-                "mappingSha256": "b884f8c399f9794f41af7529ac6df122029026414fb6404e49cf4ba23e59b604"
+                "mappingSha256": "bb08c9244089bdaeab18ba0d050dc5d00903e54167764004e7fe16685a28e7bd"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
                 "bytes": 22865999,
-                "sha256": "d70ab6a15c13d6c26807921c34c549f9449586e83bdaed8c5c3e2384758a12ff",
+                "sha256": "21c875aa0081185f67faef6451768b1562b9eda61c61ea80c5d08513482db22d",
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
                 "mappingBytes": 44592588,
-                "mappingSha256": "74fd6d2c7b53c43d18c65864897d90f0215e2f2c20c1a01da00bae5945602500"
+                "mappingSha256": "1d053448d28b7c37cf5d33e2c8ff0b7a47f74319478686d184f89293ed0526ea"
             }
         },
         "baselineForSizeComparison": "t48Freeze",
@@ -749,7 +749,7 @@
             "arm64-v8a": {
                 "before": 35146618,
                 "after": 22693914,
-                "percent": -35.42
+                "percent": -35.43
             }
         },
         "verification": {
@@ -765,13 +765,13 @@
                 ]
             },
             "pythonTests": {
-                "discovered": 219,
-                "executed": 219,
-                "passed": 219,
+                "discovered": 234,
+                "executed": 234,
+                "passed": 234,
                 "failed": 0,
                 "skipped": 0
             },
-            "manifestHashesVerified": "16/16",
+            "manifestHashesVerified": "16/16 frozen baselines + 18/18 with --check-delivery",
             "releaseSmoke": {
                 "x86_64": "10/10 PASS",
                 "arm64-v8a": "NOT_RUN"
@@ -781,7 +781,8 @@
                 "x86_64@API29": "PASS",
                 "x86_64@API36-16KB": "PASS",
                 "arm64-v8a@API36-real-device": "NOT_RUN"
-            }
+            },
+            "localAll": "PASS (exit 0)"
         },
         "summaryEvidence": "docs/refactor/evidence/final-summary.md",
         "releaseChecklist": "docs/refactor/release-checklist.md"

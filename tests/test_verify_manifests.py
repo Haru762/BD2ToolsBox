@@ -134,6 +134,57 @@ class VerifyManifestsTest(unittest.TestCase):
         self.assertGreaterEqual(report["summary"]["checked"], 12)
         self.assertEqual([], report["mismatched"])
 
+    # ---- T61：交付记录与冻结基线分开对待 ----
+
+    def _delivery_manifest(self, sha):
+        self._manifest("artifact-manifest", {
+            "t61Delivery": {
+                "artifacts": {
+                    "x86_64": {"path": "app/build/outputs/apk/x64/release/app.apk", "sha256": sha},
+                }
+            }
+        })
+
+    def test_delivery_records_are_skipped_by_default(self):
+        """交付记录记的是「当前构建」的哈希，改代码重建后理应过期；
+        本地验证默认不该因为它失败（那会把人训练成忽略这个检查）。"""
+        self._write("app/build/outputs/apk/x64/release/app.apk", b"built-later")
+        self._delivery_manifest("f" * 64)  # 故意过期
+        report = vm.verify(self.tmp)
+        self.assertEqual([], report["mismatched"])
+        self.assertFalse(report["deliveryChecked"])
+        self.assertEqual(1, report["summary"]["skippedDelivery"])
+        self.assertEqual(0, vm.main(["--root", self.tmp, "--quiet"]))
+
+    def test_delivery_records_are_checked_when_asked(self):
+        """发版前显式核对时必须能抓到过期的交付记录。"""
+        self._write("app/build/outputs/apk/x64/release/app.apk", b"built-later")
+        self._delivery_manifest("f" * 64)
+        report = vm.verify(self.tmp, check_delivery=True)
+        self.assertTrue(report["deliveryChecked"])
+        self.assertEqual(1, len(report["mismatched"]))
+        self.assertEqual(0, report["summary"]["skippedDelivery"])
+        self.assertEqual(1, vm.main(["--root", self.tmp, "--quiet", "--check-delivery"]))
+
+    def test_delivery_records_pass_when_fresh(self):
+        self._write("app/build/outputs/apk/x64/release/app.apk", b"built-later")
+        self._delivery_manifest(
+            self._sha("app/build/outputs/apk/x64/release/app.apk"))
+        report = vm.verify(self.tmp, check_delivery=True)
+        self.assertEqual([], report["mismatched"])
+        self.assertEqual(1, report["summary"]["checked"])
+
+    def test_real_repository_delivery_record_matches_current_build(self):
+        """本仓交付记录必须与当前两个 ABI 的 release 产物一致。
+
+        与 `test_real_repository_baselines_are_intact` 的区别：那条核冻结基线，
+        这条核交付记录 —— 发版前必须两者都绿。
+        """
+        report = vm.verify(REPO_ROOT, check_delivery=True)
+        self.assertTrue(report["deliveryChecked"])
+        self.assertEqual([], report["mismatched"])
+        self.assertGreaterEqual(report["summary"]["checked"], 18)
+
 
 if __name__ == "__main__":
     unittest.main()
