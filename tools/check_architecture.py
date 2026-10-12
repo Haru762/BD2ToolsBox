@@ -38,7 +38,10 @@ import sys
 
 SRC_REL = os.path.join("app", "src", "main", "java", "com", "bd2toolsbox")
 
-IMPORT_RE = re.compile(r"^\s*import\s+([A-Za-z0-9_.]+)\s*$", re.MULTILINE)
+IMPORT_RE = re.compile(
+    r"^[ \t]*import[ \t]+([A-Za-z0-9_.]+(?:\*)?)"
+    r"(?:[ \t]+as[ \t]+[A-Za-z_][A-Za-z0-9_]*)?"
+    r"[ \t]*;?[ \t]*(?://[^\r\n]*)?\r?$", re.MULTILINE)
 
 BUSINESS_PREFIXES = (
     "java.io.",
@@ -130,11 +133,12 @@ def check(root):
             for imp in imports:
                 if imp.startswith("androidx.compose."):
                     add("R5", imp)
-            ctor = re.search(r"class\s+(\w+ViewModel)\s*@Inject\s*constructor\s*\((.*?)\)\s*\{",
-                             text, re.DOTALL)
-            if ctor:
-                for param in re.findall(r"\b(\w+ViewModel)\b", ctor.group(2)):
-                    add("R6", "%s injects %s" % (ctor.group(1), param))
+        # R6 follows the constructor, including ViewModels migrated into feature/.
+        ctor = re.search(r"class\s+(\w+ViewModel)\s*@Inject\s*constructor\s*\((.*?)\)\s*\{",
+                         text, re.DOTALL)
+        if ctor:
+            for param in re.findall(r"\b(\w+ViewModel)\b", ctor.group(2)):
+                add("R6", "%s injects %s" % (ctor.group(1), param))
         if rel.startswith("ui/screens/") or rel.startswith("ui/components/"):
             for imp in imports:
                 if imp.startswith(BUSINESS_PREFIXES):

@@ -60,6 +60,18 @@ class CheckArchitectureTest(unittest.TestCase):
         rules, _ = self.rules()
         self.assertIn("R1", rules)
 
+    def test_import_variants_cannot_hide_a_forbidden_dependency(self):
+        for statement in (
+                "import com.bd2toolsbox.ui.screens.S as Screen",
+                "import com.bd2toolsbox.ui.screens.*",
+                "import com.bd2toolsbox.ui.screens.S;",
+                "import com.bd2toolsbox.ui.screens.S // UI dependency"):
+            with self.subTest(statement=statement):
+                write(self.tmp, "core/x/A.kt",
+                      "package com.bd2toolsbox.core.x\n%s\nclass A\n" % statement)
+                rules, report = self.rules()
+                self.assertIn("R1", rules, report["violations"])
+
     def test_r1_core_must_not_import_feature(self):
         write(self.tmp, "core/x/A.kt",
               "package com.bd2toolsbox.core.x\nimport com.bd2toolsbox.feature.mods.F\nclass A\n")
@@ -113,6 +125,21 @@ class CheckArchitectureTest(unittest.TestCase):
         self.assertIn("R6", rules)
         self.assertTrue(any("MainViewModel injects OtherViewModel" in v["detail"]
                             for v in report["violations"]))
+
+    def test_r6_applies_to_feature_viewmodels(self):
+        write(self.tmp, "feature/update/UpdateViewModel.kt",
+              "package com.bd2toolsbox.feature.update\n"
+              "import androidx.lifecycle.ViewModel\n"
+              "import javax.inject.Inject\n"
+              "class OtherViewModel : ViewModel()\n"
+              "class UpdateViewModel @Inject constructor(\n"
+              "    private val other: OtherViewModel,\n"
+              ") : ViewModel() {}\n")
+        _, report = self.rules()
+        self.assertEqual(
+            [{"rule": "R6", "file": "feature/update/UpdateViewModel.kt",
+              "detail": "UpdateViewModel injects OtherViewModel", "reason": ""}],
+            report["violations"])
 
     def test_r7_ui_must_not_execute_business(self):
         for imp in ("java.io.File", "java.net.URL", "okhttp3.OkHttpClient",
