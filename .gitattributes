@@ -1,3 +1,6 @@
 # This exact patch is SHA-256 pinned in tools/native/texture2ddecoder-source.json.
 # Keep its bytes stable when core.autocrlf is enabled on Windows.
 tools/native/texture2ddecoder-c-linkage.patch text eol=lf
+
+# fixture-manifest.json pins these checkout bytes, including line endings.
+app/src/test/resources/fixtures/wiki/wiki-v2-detail-2238.json text eol=lf

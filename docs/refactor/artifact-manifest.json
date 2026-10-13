@@ -776,20 +776,20 @@
                 "skipped": 0,
                 "files": 19
             },
-            "manifestHashesVerified": "frozen baselines 16/16; delivery records 18/18 with --check-delivery",
+            "manifestHashesVerified": "frozen baselines 16/16; delivery records 20/20 (2 APKs + 2 mappings) with --check-delivery",
             "releaseSmoke": {
                 "x86_64@API29": "10/10 PASS",
                 "x86_64@API32": "10/10 PASS",
                 "x86_64@API34": "10/10 PASS",
                 "x86_64@API36-16KB": "10/10 PASS",
-                "arm64-v8a": "NOT_RUN"
+                "arm64-v8a": "9/10 PASS (performance-scenarios single-run baseline recorded; see device-arm64-2026-10-13.md)"
             },
             "deviceMatrix": {
                 "x86_64@API29": "PASS",
                 "x86_64@API32": "PASS",
                 "x86_64@API34": "PASS",
                 "x86_64@API36-16KB": "PASS",
-                "arm64-v8a@API36-real-device": "NOT_RUN"
+                "arm64-v8a@API36-real-device": "PARTIAL_PASS (8 non-Compose classes PASS incl. AstcRoundTripTest 4/4; 12 Compose classes blocked by MIUI Permission Denied Activity)"
             },
             "localAll": "PASS (exit 0)",
             "deviceSuiteOnMuMu": "23/23 PASS (21 classes + 2 process-death orchestrations)",

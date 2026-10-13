@@ -60,6 +60,13 @@ def iter_entries(node, trail, local_dir=None):
         here = node.get('localDir') if isinstance(node.get('localDir'), str) else local_dir
         if isinstance(node.get('sha256'), str) or isinstance(node.get('contentSha256'), str):
             yield trail, node, here
+        if isinstance(node.get('mapping'), str) and isinstance(node.get('mappingFileSha256'), str):
+            yield trail + ['mapping'], {
+                'path': node['mapping'],
+                'sha256': node['mappingFileSha256'],
+                'bytes': node.get('mappingBytes'),
+                'deliveryRequired': True,
+            }, here
         for key, value in node.items():
             yield from iter_entries(value, trail + [str(key)], here)
     elif isinstance(node, list):
@@ -119,11 +126,11 @@ def verify(root: str, check_delivery: bool = False) -> Dict:
             }
             if not os.path.isfile(path):
                 record['reason'] = 'not present locally'
-                # 交付记录（带 contentSha256）**缺失就是失败**：它记的是「要交付的那两个包」，
+                # 交付记录（带 contentSha256 或 deliveryRequired）**缺失就是失败**：它记的是「要交付的那两个包及对应 mapping」，
                 # 文件不在就没法证明可追溯。而本地保全产物（fixture 等）缺失是预期的
                 # （换一台机器本来就该缺），所以只记进 missing 不算失败。
-                if isinstance(entry.get('contentSha256'), str):
-                    record['hashKind'] = 'apkContent'
+                if isinstance(entry.get('contentSha256'), str) or entry.get('deliveryRequired'):
+                    record['hashKind'] = 'apkContent' if isinstance(entry.get('contentSha256'), str) else 'file'
                     mismatched.append(record)
                 else:
                     missing.append(record)
@@ -139,7 +146,7 @@ def verify(root: str, check_delivery: bool = False) -> Dict:
                 actual = sha256(path)
             record['actual'] = actual
             size = os.path.getsize(path)
-            if record['hashKind'] == 'file' and record['bytes'] is not None and int(record['bytes']) != size:
+            if record['bytes'] is not None and int(record['bytes']) != size:
                 record['reason'] = 'byte size mismatch (expected %s, actual %s)' % (
                     record['bytes'], size)
                 mismatched.append(record)

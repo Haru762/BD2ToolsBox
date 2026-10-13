@@ -202,6 +202,27 @@ class VerifyManifestsTest(unittest.TestCase):
         self.assertEqual([], report["missing"])
         self.assertEqual(1, vm.main(["--root", self.tmp, "--quiet", "--check-delivery"]))
 
+    def test_delivery_mapping_mismatch_or_missing_is_caught(self):
+        """t61Delivery 中的 mapping 文件缺失或哈希不符也必须判失败。"""
+        self._write("app/build/outputs/apk/x64/release/app.apk", b"built-later")
+        self._manifest("artifact-manifest", {
+            "t61Delivery": {
+                "artifacts": {
+                    "x86_64": {
+                        "path": "app/build/outputs/apk/x64/release/app.apk",
+                        "bytes": 11,
+                        "sha256": self._sha("app/build/outputs/apk/x64/release/app.apk"),
+                        "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
+                        "mappingBytes": 5,
+                        "mappingFileSha256": "0" * 64,
+                    },
+                }
+            }
+        })
+        report = vm.verify(self.tmp, check_delivery=True)
+        self.assertEqual(1, len(report["mismatched"]))
+        self.assertEqual("app/build/outputs/mapping/x64Release/mapping.txt", report["mismatched"][0]["path"])
+
     def test_missing_local_only_artifact_is_not_a_failure(self):
         """本地保全产物缺失是预期的（换一台机器本来就该缺），只记 missing。"""
         self._manifest("artifact-manifest", {

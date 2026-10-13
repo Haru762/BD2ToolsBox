@@ -8,11 +8,11 @@
 
 | 维度 | 结论 |
 |---|---|
-| 代码质量门禁 | **全绿**（架构 0 违规、JVM 1472/0/0/0、Python 219/0/0/0、基线清单 16/16） |
+| 代码质量门禁 | **全绿**（架构 0 违规、JVM 1472/0/0/0、Python 245/0/0/0、基线清单 16/16、交付记录 20/20） |
 | 产物 | **两个 ABI 的 minified release 已构建**，签名与既有 0.2.16 一致（可覆盖升级） |
-| 设备矩阵 | **x86_64 四个 API 档全实测**（API 29 / 32 / 34 / 36-16KB），release smoke 各 **10/10**；**arm64 真机未跑** |
-| 设备用例（MuMu 最终门禁） | **19/19 PASS**（17 个类 + 两条进程死亡编排） |
-| release smoke | x86_64 四个 API 档各 **10/10 PASS**；arm64 未跑 |
+| 设备矩阵 | **x86_64 四个 API 档全实测**（API 29 / 32 / 34 / 36-16KB），release smoke 各 **10/10**；**arm64 真机已实测**（release smoke **9/10** + 8 个非 Compose 设备类 PASS，含 ASTC 真机往返；12 个 Compose 类受 MIUI 限制未跑） |
+| 设备用例（MuMu 最终门禁） | **23/23 PASS**（21 个类 + 两条进程死亡编排） |
+| release smoke | x86_64 四个 API 档各 **10/10 PASS**；arm64 真机 **9/10 PASS**（见 `device-arm64-2026-10-13.md`） |
 | 截图 | **18 张**真实 release 截图，程序化核对 PASS |
 | 滚动帧率 | **490 帧 / 0 janky（0%）** |
 | ASTC 编解码 | 编码中位数 86.9 ms、解码 9.5 ms（512×512，设备） |
@@ -25,9 +25,9 @@
 |---|---|---|
 | 架构规则 R1–R7 | `python tools/check_architecture.py --root . --quiet` | 退出码 **0**（0 违规） |
 | 基线清单核对 | `python tools/verify_manifests.py --root .` | **16/16** 冻结基线哈希全对（交付记录默认跳过，见下行） |
-| 交付记录核对 | `python tools/verify_manifests.py --root . --check-delivery` | **18/18**，与当前两个 ABI 的 release 产物一致 |
+| 交付记录核对 | `python tools/verify_manifests.py --root . --check-delivery` | **20/20**，与当前两个 ABI 的 release 产物及 mapping 一致 |
 | JVM 单测（两个 flavor） | `Test-Bd2UnitAll` | **tests=1472 failures=0 errors=0 skipped=0 → PASS** |
-| Python 测试 | `Test-Bd2Python -Pattern 'test_*.py'` | **discovered=244 executed=244 passed=244 failed=0 skipped=0 → PASS**（19 个文件） |
+| Python 测试 | `Test-Bd2Python -Pattern 'test_*.py'` | **discovered=245 executed=245 passed=245 failed=0 skipped=0 → PASS**（20 个文件） |
 | 一键本地验证 | `& tools/verification.ps1 -Mode LocalAll` | **`LocalAll: PASS`，退出码 0**（含依赖解析 → JVM → Python → 两个 ABI release 构建 → 静态审计） |
 | UI 冷启动宿主测试 | `tools/tests/Test-UiColdStartHarness.ps1` | **19/19 PASS** |
 
@@ -35,15 +35,15 @@
 
 两个 ABI 的单 flavor minified release（**无 universal**，见 T49）：
 
-| ABI | 路径 | 字节数 | SHA-256 | 签名证书 SHA-256 |
+| ABI | 路径 | 字节数 | contentSha256 / fileSha256 | 签名证书 SHA-256 |
 |---|---|---|---|---|
-| arm64-v8a | `app/build/outputs/apk/arm64/release/app-arm64-release.apk` | 22,693,914 | `0d9c89f83554b94e6a1284a642f62a95c94ea40b038b129b64d0bc52b34e9dc6` | `892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1` |
-| x86_64 | `app/build/outputs/apk/x64/release/app-x64-release.apk` | 22,865,999 | `d70ab6a15c13d6c26807921c34c549f9449586e83bdaed8c5c3e2384758a12ff` | 同上 |
+| arm64-v8a | `app/build/outputs/apk/arm64/release/app-arm64-release.apk` | 22,709,930 | `9236a96d2bb58cad…` / `3cbf2bd2be1be2df…` | `892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1` |
+| x86_64 | `app/build/outputs/apk/x64/release/app-x64-release.apk` | 22,882,015 | `937c0f3765a5b46e…` / `9d800cb066102921…` | 同上 |
 
 - 身份：`versionCode=17`、`versionName=0.2.16`（与冻结基线一致，见 §5）。
 - 签名指纹与设备上既装 0.2.16 **相同** → 用户**可直接覆盖升级、无需清数据**。
 - R8 mapping：`app/build/outputs/mapping/{arm64Release,x64Release}/mapping.txt`
-  （44,592,671 / 44,592,588 字节，SHA-256 `b884f8c3…` / `74fd6d2c…`）。
+  （44,906,000 / 44,905,928 字节，SHA-256 `2513f585…` / `7c0791f6…`）。
 - native 符号与 16 KB 对齐：见 `docs/refactor/evidence/native-strip.md`、`abi-packaging.md`。
 - 许可清单：`THIRD-PARTY-NOTICES.md`、`docs/refactor/license-inventory.md`。
 
@@ -52,19 +52,19 @@
 | 阶段 | arm64 字节数 | 相对基线 |
 |---|---|---|
 | 冻结基线（优化前） | 35,146,618 | — |
-| 本轮交付 | 22,693,914 | **−35.42%** |
+| 本轮交付 | 22,709,930 | **−35.39%** |
 
-（T54 记录的是 −35.52%；本轮因 T56 的 `MoveCommit` 修复与恢复横幅入口增加了 32,768 字节。
-两份数字都对，只是时点不同。）
+（T54 记录的是 −35.52%；本轮因 T56/T29/T33/T34 的功能修复与拆分略有增减，两份数字都对，只是时点不同。）
 
 ## 4. 设备矩阵
 
 | 平台 | 版本/页大小 | 结果 |
 |---|---|---|
-| MuMu 模拟器 `127.0.0.1:16384` | x86_64 / API 32 / 4 KB | 设备用例全过；release smoke **10/10 PASS** |
-| AVD `bd2-x64-api29` | x86_64 / API 29（= minSdk）/ 4 KB | 设备用例全过；`ModWorkflowAcceptanceTest` **6/6** |
-| AVD `bd2-x64-api36-16k` | x86_64 / API 36 / **16 KB** | `PlatformBehaviorTest` **13/13**（含真实 `System.loadLibrary`） |
-| **真机 Xiaomi 2509FPN0BC** | **arm64-v8a / API 36 / 4 KB** | **本轮未跑**（见 §6） |
+| MuMu 模拟器 `127.0.0.1:16384` | x86_64 / API 32 / 4 KB | 设备用例 **23/23 PASS**；release smoke **10/10 PASS** |
+| AVD `bd2-x64-api29` | x86_64 / API 29（= minSdk）/ 4 KB | 设备用例全过；release smoke **10/10 PASS** |
+| AVD `bd2-x64-api34` | x86_64 / API 34 / 4 KB | 设备用例全过；release smoke **10/10 PASS** |
+| AVD `bd2-x64-api36-16k` | x86_64 / API 36 / **16 KB** | `PlatformBehaviorTest` **13/13**；release smoke **10/10 PASS** |
+| **真机 Xiaomi 2509FPN0BC** | **arm64-v8a / API 36 / 4 KB** | release smoke **9/10 PASS**；8 个非 Compose 设备类 PASS（含 `AstcRoundTripTest` 4/4）；12 个 Compose 类受 MIUI 拦截 Activity 未运行（见 `device-arm64-2026-10-13.md`） |
 
 ## 5. 版本号：**刻意不改**
 

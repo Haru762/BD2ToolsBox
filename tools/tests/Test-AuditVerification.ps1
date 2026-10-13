@@ -56,7 +56,8 @@ try {
     @{fixtures=@(@{id='a';usedBy=@('app/src/test/java/test/A.kt');relativePath='fixture.txt';sha256=$hash;requiredness='g0-required'},@{id='b';usedBy=@('app/src/test/java/test/B.kt');relativePath='fixture.txt';sha256=$hash;requiredness='g0-required'})} | ConvertTo-Json -Depth 6 | Set-Content $Bd2FixtureManifest -Encoding UTF8
     function Assert-Bd2Environment {}
     function Get-Bd2GitState { return @{head='isolated-test';dirty=$false} }
-    function Get-Bd2UnitTestTasks { return @{tasks=@(':app:testDebugUnitTest');variant='test'} }
+    $script:unitTasks = @(':app:testDebugUnitTest')
+    function Get-Bd2UnitTestTasks { return @{tasks=$script:unitTasks;variant='test'} }
     function New-Bd2RunDirectory { param($Label); $script:run=Join-Path $temp ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory $script:run | Out-Null; return $script:run }
     function Get-Bd2UnitResultsDir { param($Task); return $results }
     function Move-Bd2UnitResultsToRecycleBin { param($ResultsDir) }
@@ -65,7 +66,7 @@ try {
     function Invoke-Bd2GradleRaw {
         $script:Bd2LastExitCode = 0
         foreach ($class in @('test.A','test.B')) {
-            $cases = "<testcase name='works'/>"
+            $cases = "<testcase name='$($args[0])'/>"
             $skipped = 0
             if ($script:xmlMode -eq 'empty-cases') { $cases = '' }
             if ($script:xmlMode -eq 'hidden-skip') { $cases = "<testcase name='works'><skipped/></testcase>" }
@@ -77,6 +78,21 @@ try {
         Test-Bd2Unit -TestClass 'test.*'
         $report = Get-Content (Join-Path $script:run 'summary.json') -Raw | ConvertFrom-Json
         if ($report.result -ne 'PASS' -or $report.counts.tests -ne 2 -or @($report.fixtures).Count -ne 2) { throw 'Wildcard lost tests or fixtures' }
+    }
+    Check 'both ABI reports retain their own XML evidence' {
+        $script:unitTasks = @(':app:testArm64DebugUnitTest', ':app:testX64DebugUnitTest')
+        try {
+            Test-Bd2Unit -TestClass 'test.*'
+            $files = @(Get-ChildItem -LiteralPath $script:run -Recurse -Filter 'TEST-*.xml' -File)
+            if ($files.Count -ne 4) { throw "Expected four archived XML files, got $($files.Count)" }
+            foreach ($task in $script:unitTasks) {
+                foreach ($class in @('test.A', 'test.B')) {
+                    $path = Join-Path (Join-Path $script:run $task.Split(':')[-1]) "TEST-$class.xml"
+                    $xml = [xml](Get-Content -LiteralPath $path -Raw)
+                    if ($xml.testsuite.testcase.name -ne $task) { throw 'Another ABI overwrote the archived testcase' }
+                }
+            }
+        } finally { $script:unitTasks = @(':app:testDebugUnitTest') }
     }
     Check 'unmatched selector fails' { MustThrow { Test-Bd2Unit -TestClass 'absent.*' } }
     Check 'AllowSkip cannot waive selected JVM tests' {

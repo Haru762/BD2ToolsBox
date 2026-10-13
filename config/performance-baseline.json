@@ -242,7 +242,17 @@
                                      143721,
                                      144739,
                                      144738
-                                 ]
+                                 ],
+                      "coldStartRunMedians":  [
+                                                  1294
+                                              ],
+                      "warmStartRunMedians":  [
+                                                  69
+                                              ],
+                      "pssRunMedians":  [
+                                            144738
+                                        ],
+                      "runs":  1
                   },
     "x86_64@34":  {
                       "capturedAt":  "2026-10-13T06:19:30.3174678+08:00",
@@ -270,7 +280,17 @@
                                      532429,
                                      249688,
                                      250235
-                                 ]
+                                 ],
+                      "coldStartRunMedians":  [
+                                                  1049
+                                              ],
+                      "warmStartRunMedians":  [
+                                                  126
+                                              ],
+                      "pssRunMedians":  [
+                                            250235
+                                        ],
+                      "runs":  1
                   },
     "_note":  "Keyed by \u0027\u003cabi\u003e@\u003capi\u003e\u0027. The x86_64@36 entry was removed because it was captured before the warm-start sampling bug was fixed (it recorded TotalTime=0 samples, which means \u0027never launched\u0027, not \u0027fast\u0027). It will be re-registered on the next run.",
     "arm64-v8a@36":  {
@@ -299,6 +319,19 @@
                                         600173,
                                         364927,
                                         364859
-                                    ]
+                                    ],
+                         "coldStartRunMedians":  [
+                                                     198,
+                                                     198
+                                                 ],
+                         "warmStartRunMedians":  [
+                                                     46,
+                                                     56
+                                                 ],
+                         "pssRunMedians":  [
+                                               364927,
+                                               269102
+                                           ],
+                         "runs":  2
                      }
 }

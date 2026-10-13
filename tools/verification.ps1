@@ -149,9 +149,11 @@ function Install-Bd2Apk {
                 & $Bd2Adb -s $Serial push $Apk $remote 2>&1 | Out-Null
                 if ($LASTEXITCODE -eq 0) {
                     $su = ((& $Bd2Adb -s $Serial shell "su -c 'pm install -r -t $remote'" 2>&1) -join ' ')
+                    $suExit = $LASTEXITCODE
+                    & $Bd2Adb -s $Serial shell "rm -f $remote" 2>&1 | Out-Null
                     & $Bd2Adb -s $Serial shell "su -c 'rm -f $remote'" 2>&1 | Out-Null
-                    if ($su -match 'Success') { return "via su: $su" }
-                    $last = "$last / su 回退也失败: $su"
+                    if ($suExit -eq 0 -and $su -match 'Success') { return "via su: $su" }
+                    $last = "$last / su 回退也失败: $su (exit $suExit)"
                 }
             }
             Start-Sleep -Seconds 2
@@ -443,10 +445,12 @@ function Test-Bd2Unit {
             failedTests = $summary.failedTests
             skippedTests = $summary.skippedTests
         }
+        $taskArchive = Join-Path $runDir ($task.Split(':')[-1])
+        New-Item -ItemType Directory -Path $taskArchive | Out-Null
         foreach ($file in $summary.xmlFiles) {
             $entry.xmlFiles += $file
             $entry.xmlSha256 += (Get-Bd2Sha256 -Path $file)
-            Copy-Item -LiteralPath $file -Destination (Join-Path $runDir (Split-Path -Leaf $file)) -Force
+            [IO.File]::Copy($file, (Join-Path $taskArchive (Split-Path -Leaf $file)), $false)
         }
 
         if ($summary.xmlFiles.Count -eq 0) {
@@ -1149,7 +1153,8 @@ function Get-Bd2CurrentReleaseArtifact {
     param([Parameter(Mandatory=$true)][ValidateSet('arm64-v8a', 'x86_64')][string]$Abi)
     # Do not use the frozen 0.2.16 APK for a test of new production Store code.
     # Normal release signing remains mandatory; this helper never fabricates credentials.
-    Invoke-Bd2Gradle :app:assembleRelease --console=plain
+    $flavor = if ($Abi -eq 'arm64-v8a') { 'Arm64' } else { 'X64' }
+    Invoke-Bd2Gradle ":app:assemble${flavor}Release" --console=plain
     $path = Get-Bd2ApkForAbi -BuildType release -Abi $Abi
     $mapping = Get-Bd2MappingForAbi -Abi $Abi
     $relative = $path.Substring($Root.Length).TrimStart('\', '/').Replace('\', '/')
@@ -1880,22 +1885,23 @@ function Test-Bd2ReleaseSmoke {
                     return [Math]::Max($tenPercent, $runSpread)
                 }
                 $checks = @(
-                    @{ name = '冷启动中位数'; now = $coldMedian; was = [int]$entry.coldStartMedianMs; raw = $entry.coldStartRaw; runs = $entry.coldStartRunMedians },
-                    @{ name = '暖启动中位数'; now = $warmMedian; was = [int]$entry.warmStartMedianMs; raw = $entry.warmStartRaw; runs = $entry.warmStartRunMedians },
-                    @{ name = 'PSS 中位数';   now = $pssMedian;  was = [int]$entry.pssMedianKb;      raw = $entry.pssRaw;      runs = $entry.pssRunMedians }
+                    @{ name = '冷启动中位数'; prop = 'coldStartRunMedians'; now = $coldMedian; was = [int]$entry.coldStartMedianMs; raw = $entry.coldStartRaw; runs = $entry.coldStartRunMedians },
+                    @{ name = '暖启动中位数'; prop = 'warmStartRunMedians'; now = $warmMedian; was = [int]$entry.warmStartMedianMs; raw = $entry.warmStartRaw; runs = $entry.warmStartRunMedians },
+                    @{ name = 'PSS 中位数';   prop = 'pssRunMedians';       now = $pssMedian;  was = [int]$entry.pssMedianKb;      raw = $entry.pssRaw;      runs = $entry.pssRunMedians }
                 )
+                $baselineUpdated = $false
                 foreach ($c in $checks) {
                     if ($c.was -le 0) { continue }
-                    # 基线只有**一轮**数据时不做门禁。
-                    #
-                    # 容忍度取的是「轮间中位数全距」，而单轮样本的这个值必然是 0 ——
-                    # 于是容忍度塌成 10%，把正常的抖动判成回退。实测踩过：
-                    # arm64 真机的基线是单轮的，暖启动 46 -> 56（+21.7%）被判成回退，
-                    # 而这一轮的原始样本是 [56,55,64,56,46]，紧得看不出任何退化。
-                    # 单轮数据本来就撑不起「中位数会怎么动」这个判断，所以只记录不判定。
+                    # 基线只有**一轮**数据时不做门禁，但**必须**把本轮中位数追加进
+                    # `*RunMedians` —— 否则第 2、第 3 轮进来永远看到 Count < 2，性能门禁
+                    # 会在这个平台上被永久旁路。
                     if (-not $c.runs -or @($c.runs).Count -lt 2) {
-                        Write-Host ("    {0}: {1} -> {2}；基线只有 1 轮数据，轮间波动未知 —— 只记录，不做门禁" -f `
+                        Write-Host ("    {0}: {1} -> {2}；基线不足 2 轮数据，本轮追加登记轮间中位数 —— 本轮不做门禁，下一轮起启用" -f `
                             $c.name, $c.was, $c.now)
+                        $existingRuns = if ($c.runs) { @($c.runs | ForEach-Object { [int]$_ }) } else { @($c.was) }
+                        $updatedRuns = @($existingRuns + @([int]$c.now))
+                        $entry | Add-Member -NotePropertyName $c.prop -NotePropertyValue $updatedRuns -Force
+                        $baselineUpdated = $true
                         continue
                     }
                     $delta = ($c.now - $c.was) / $c.was
@@ -1908,8 +1914,17 @@ function Test-Bd2ReleaseSmoke {
                             $c.name, $delta, $c.was, $c.now, $allowance)
                     }
                 }
+                if ($baselineUpdated) {
+                    $newRunCount = @($entry.coldStartRunMedians).Count
+                    $entry | Add-Member -NotePropertyName 'runs' -NotePropertyValue $newRunCount -Force
+                    $record = [ordered]@{}
+                    foreach ($p in $baseline.PSObject.Properties) { $record[$p.Name] = $p.Value }
+                    $record[$key] = $entry
+                    Write-Bd2Json -Value $record -Path $baselinePath
+                    $summary.steps += 'performance-baseline-runs-updated'
+                }
             } else {
-                Write-Host ("    基线 $key 不存在：本次结果登记为基线，不做门禁")
+                Write-Host ("    基线 $key 不存在：本次结果登记为基线（第 1 轮），不做门禁")
                 $record = [ordered]@{}
                 if ($null -ne $baseline) {
                     foreach ($p in $baseline.PSObject.Properties) { $record[$p.Name] = $p.Value }
@@ -1925,6 +1940,10 @@ function Test-Bd2ReleaseSmoke {
                     coldStartRaw = $cold
                     warmStartRaw = $warm
                     pssRaw = $pssSamples
+                    coldStartRunMedians = @($coldMedian)
+                    warmStartRunMedians = @($warmMedian)
+                    pssRunMedians = @($pssMedian)
+                    runs = 1
                 }
                 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $baselinePath) | Out-Null
                 Write-Bd2Json -Value $record -Path $baselinePath

@@ -4,7 +4,7 @@ $source = Join-Path $PSScriptRoot '../verification.ps1'
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw "PowerShell parse errors: $errors" }
-foreach ($name in @('Assert-Bd2InstrumentationResult', 'Invoke-Bd2SnapshotPhases', 'Get-Bd2MappingForAbi', 'Get-Bd2CurrentReleaseArtifact')) {
+foreach ($name in @('Assert-Bd2InstrumentationResult', 'Invoke-Bd2SnapshotPhases', 'Get-Bd2MappingForAbi', 'Get-Bd2CurrentReleaseArtifact', 'Get-Bd2ReleaseSmokeCase')) {
     $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     if (-not $node) { throw "ASSERT: missing implementation $name" }
     . ([scriptblock]::Create($node.Extent.Text))
@@ -104,7 +104,7 @@ try {
     $passed++
     # Current-code smoke must build release and retain an R8 mapping, never select the frozen APK.
     $Root = $temp
-    $mappingDir = Join-Path $Root 'app/build/outputs/mapping/release'
+    $mappingDir = Join-Path $Root 'app/build/outputs/mapping/x64Release'
     New-Item -ItemType Directory -Path $mappingDir -Force | Out-Null
     $mappingFile = Join-Path $mappingDir 'mapping.txt'
     Set-Content -LiteralPath $mappingFile -Value 'test mapping only' -Encoding utf8
@@ -117,7 +117,7 @@ try {
     }
     function Get-Bd2Sha256 { param($Path); return ('a' * 64) }
     $artifact = Get-Bd2CurrentReleaseArtifact -Abi x86_64
-    Assert-Equal ':app:assembleRelease,--console=plain' ($script:gradleArgs -join ',') 'build current release'
+    Assert-Equal ':app:assembleX64Release,--console=plain' ($script:gradleArgs -join ',') 'build only the requested ABI'
     Assert-Equal 'app/build/outputs/apk/x64/release/app-x64-release.apk' $artifact.relative 'not frozen baseline'
     Assert-Equal ('a' * 64) $artifact.mappingSha256 'mapping evidence'; $passed++
     Set-Content -LiteralPath $mappingFile -Value '' -NoNewline
