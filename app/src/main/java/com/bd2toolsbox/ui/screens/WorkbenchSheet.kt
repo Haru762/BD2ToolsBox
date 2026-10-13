@@ -21,7 +21,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -72,25 +72,25 @@ fun WorkbenchSheet(
     onReplayOnboarding: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val quality by viewModel.selectedQuality.collectAsState()
-    val useAstc by viewModel.useAstc.collectAsState()
-    val backupOn by viewModel.backupOriginals.collectAsState()
-    val backupUsage by viewModel.backupUsage.collectAsState()
-    val dynamicColor by viewModel.dynamicColor.collectAsState()
-    val appTheme by viewModel.appTheme.collectAsState()
-    val themeMode by viewModel.themeMode.collectAsState()
-    val wallpaperUri by viewModel.wallpaperUri.collectAsState()
-    val wallpaperScrim by viewModel.wallpaperScrim.collectAsState()
-    val hiddenCount by viewModel.hiddenCount.collectAsState()
-    val previewCache by viewModel.previewCacheUsage.collectAsState()
-    val spineRuntime by viewModel.spineRuntimeUsage.collectAsState()
-    val prepackProgress by viewModel.prepackProgress.collectAsState()
+    val quality by viewModel.selectedQuality.collectAsStateWithLifecycle()
+    val useAstc by viewModel.useAstc.collectAsStateWithLifecycle()
+    val backupOn by viewModel.backupOriginals.collectAsStateWithLifecycle()
+    val backupUsage by viewModel.backupUsage.collectAsStateWithLifecycle()
+    val dynamicColor by viewModel.dynamicColor.collectAsStateWithLifecycle()
+    val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val wallpaperUri by viewModel.wallpaperUri.collectAsStateWithLifecycle()
+    val wallpaperScrim by viewModel.wallpaperScrim.collectAsStateWithLifecycle()
+    val hiddenCount by viewModel.hiddenCount.collectAsStateWithLifecycle()
+    val previewCache by viewModel.previewCacheUsage.collectAsStateWithLifecycle()
+    val spineRuntime by viewModel.spineRuntimeUsage.collectAsStateWithLifecycle()
+    val prepackProgress by viewModel.prepackProgress.collectAsStateWithLifecycle()
 
     val dynamicSupported = true
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val updateChecking by updateViewModel.updateChecking.collectAsState()
+    val updateChecking by updateViewModel.updateChecking.collectAsStateWithLifecycle()
     // 版本从 PackageManager 读，不写死在代码里 —— 发版只改 build.gradle 的
     // versionName/versionCode，这里跟着变（项目没开 BuildConfig，也不值得为
     // 一行字去开）。

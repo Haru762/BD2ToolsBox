@@ -1,6 +1,7 @@
 package com.bd2toolsbox.ui.screens
 
 import android.widget.Toast
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -56,7 +57,7 @@ fun CdkScreen(viewModel: CdkViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    val state by viewModel.ui.collectAsState()
+    val state by viewModel.ui.collectAsStateWithLifecycle()
 
     // T31：屏幕不再自己建仓储/持状态，全部读 viewModel.ui；T45：结果按账号维度展示。
     var newAccount by remember { mutableStateOf("") }

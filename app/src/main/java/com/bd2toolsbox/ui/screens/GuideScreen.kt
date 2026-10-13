@@ -6,6 +6,7 @@ import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.graphics.graphicsLayer
@@ -78,20 +79,20 @@ fun GuideScreen(viewModel: GuideViewModel) {
     val context = LocalContext.current
     LaunchedEffect(Unit) { viewModel.initialize() }
 
-    val tree by viewModel.tree.collectAsState()
-    val treeLoading by viewModel.treeLoading.collectAsState()
-    val treeError by viewModel.treeError.collectAsState()
-    val selectedNode by viewModel.selectedNode.collectAsState()
-    val selectedName by viewModel.selectedName.collectAsState()
-    val articles by viewModel.articles.collectAsState()
-    val listLoading by viewModel.listLoading.collectAsState()
-    val loadingMore by viewModel.loadingMore.collectAsState()
-    val endReached by viewModel.endReached.collectAsState()
-    val listError by viewModel.listError.collectAsState()
-    val searchActive by viewModel.searchActive.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val cacheUsage by viewModel.cacheUsage.collectAsState()
-    val detail by viewModel.detail.collectAsState()
+    val tree by viewModel.tree.collectAsStateWithLifecycle()
+    val treeLoading by viewModel.treeLoading.collectAsStateWithLifecycle()
+    val treeError by viewModel.treeError.collectAsStateWithLifecycle()
+    val selectedNode by viewModel.selectedNode.collectAsStateWithLifecycle()
+    val selectedName by viewModel.selectedName.collectAsStateWithLifecycle()
+    val articles by viewModel.articles.collectAsStateWithLifecycle()
+    val listLoading by viewModel.listLoading.collectAsStateWithLifecycle()
+    val loadingMore by viewModel.loadingMore.collectAsStateWithLifecycle()
+    val endReached by viewModel.endReached.collectAsStateWithLifecycle()
+    val listError by viewModel.listError.collectAsStateWithLifecycle()
+    val searchActive by viewModel.searchActive.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val cacheUsage by viewModel.cacheUsage.collectAsStateWithLifecycle()
+    val detail by viewModel.detail.collectAsStateWithLifecycle()
 
     // 下拉刷新：重拉分类树（树每次进入也会自动拉新，这是即时的手动入口）
     // M3 1.3 起「是否在刷新」由调用方持有（旧 state.isRefreshing/endRefresh 已移除）：
