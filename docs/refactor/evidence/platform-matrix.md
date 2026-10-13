@@ -13,14 +13,16 @@
 | AVD `bd2-x64-api36-16k` | x86_64 | 36 | **16 KB** | `emulator-5556` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
 | AVD `bd2-x64-api34` | x86_64 | **34** | 4 KB | `emulator-5558` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
 | AVD `bd2-x64-api29` | x86_64 | **29**（= minSdk） | 4 KB | `emulator-5554` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
-| 真机 Xiaomi 2509FPN0BC | **arm64-v8a** | 36 | 4 KB | `f7f409ac` | **未跑** | 未跑（本轮） | 未跑（本轮） | 未跑（本轮） |
+| 真机 Xiaomi 2509FPN0BC | **arm64-v8a** | 36 | 4 KB | `f7f409ac` | **4/4 PASS** | 13/13（x86_64）／真机上该机跑不了（见下） | **PASS** | **9/10** |
 
 - **16 KB 页**那一格是 `getconf PAGE_SIZE` 实测的 16384，不是声明的；
   `PlatformBehaviorTest` 里含真实 `System.loadLibrary` 与打包 JNI 库的 16 KB 对齐断言。
 - API 29 是 minSdk，覆盖「最老的受支持系统」这一端；API 34 是计划点名的另一档。
   **API 29 / 32 / 34 / 36 四档都实测过**，其中 36 是 16 KB 页。
-- **arm64 真机整行未跑**：本轮结束时该设备未连接（USB 已拔、无线调试未开）。
-  已备好一条命令的验收脚本 `local/device/arm64_acceptance.ps1`。
+- **arm64 真机**：**已跑**（2026-10-13，设备中途多次掉线）。release smoke **9/10**、
+  设备类 8 个 PASS、ASTC 真机往返 4/4。细节见
+  [device-arm64-2026-10-13.md](device-arm64-2026-10-13.md)。
+  **12 个 Compose 类在 MIUI 上跑不了**（拒绝 instrumentation 起 Activity，会整轮卡死）。
 
 ## 2. 本轮新增到矩阵里的那一项：ASTC 真实往返
 
@@ -93,6 +95,9 @@ PSS 中位数 **136,598 KB**。
   release smoke 已在 MuMu（API 32）与 16 KB AVD（API 36）上跑满 10 个。
 - ~~API 34 缺~~ → **已补**（`bd2-x64-api34`，3 个类全过）。
 - **arm64 的 API 34 AVD**（`bd2-arm64-api34`）未用：它在 x86_64 主机上是全指令转译，
-  耗时长且不代表真实 arm64；arm64 一律以真机为准。
+  耗时长且不代表真实 arm64；arm64 一律以真机为准（已跑，见上）。
+- **arm64 上的 16 KB 页**：真机是 4 KB，未验。
+- **arm64 的性能门禁目前不做判定**：该平台的基线只有 1 轮，轮间波动未知（见
+  [device-arm64-2026-10-13.md](device-arm64-2026-10-13.md) §2.1）。
 - **真实设备的首次安装、权限拒绝、后台/旋转/杀进程、未知来源安装**等系统路径。
 - **网络受限/离线**场景。
