@@ -727,11 +727,11 @@
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
-                "mappingBytes": 44593745,
-                "contentSha256": "d023b22be540116ff0051ea6ea25e25d418435d8420159f85ee69365ef40aaf3",
-                "fileSha256": "3334b81d78267971115a33c612ca4f55bb1eb8197a96f1e8fd7c278aaa512709",
+                "mappingBytes": 44594245,
+                "contentSha256": "565f13677efe9187f64dbed8c17a226b02eda1e8231fcef0a94a33da6f4e8840",
+                "fileSha256": "5ad2b74014658452cb8cd1b9e359156b35c6952a4af063b3a1d186ee8072d40c",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "8847ccf4de88908f042c342d0f1b051abe828840a253ee33ef98e976101803d9"
+                "mappingFileSha256": "c6a624a24b54e1c136a244c4eccd0ef39c4d731e1fd412f60972b970e82cb1d4"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
@@ -741,11 +741,11 @@
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
-                "mappingBytes": 44593673,
-                "contentSha256": "0dc529b07c3031b716bb509ba7276ca3ad03f5f095738273324ba6dce3919e12",
-                "fileSha256": "0fb8eaa9980ba911db8091554f374da850d040df93841ca986bc51a38c0758b8",
+                "mappingBytes": 44594173,
+                "contentSha256": "712e6861124b037bb0990635f9ee6ac18137b1134b98469588db99cae3df0214",
+                "fileSha256": "4e0506912d5e6179976fab787a047df7af3a0c3ffca52ca536a45da7d461cb81",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "e46d67b219521dbd4f1a56587b78ede19a9e7883c72b3ca528eddc461f605154"
+                "mappingFileSha256": "0b78d3fb0398d2dbb33ec02424462053dee1fc98ccff218b7cd7e967e3183acd"
             }
         },
         "baselineForSizeComparison": "t48Freeze",
@@ -792,9 +792,30 @@
                 "arm64-v8a@API36-real-device": "NOT_RUN"
             },
             "localAll": "PASS (exit 0)",
-            "deviceSuiteOnMuMu": "18/18 PASS (16 classes + 2 process-death orchestrations)",
+            "deviceSuiteOnMuMu": "19/19 PASS (17 classes + 2 process-death orchestrations)",
             "uiScreenshots": "18 (verified: not monochrome, grid stddev >= 2.0, light brighter than dark)",
-            "wcagContrastPairs": "154/154 pass (7 presets x light/dark x 11 pairs, WCAG 2.1 formula)"
+            "wcagContrastPairs": "154/154 pass (7 presets x light/dark x 11 pairs, WCAG 2.1 formula)",
+            "deviceClassesCovered": [
+                "integration.ModWorkflowAcceptanceTest",
+                "core.operations.ProcessDeathRecoveryTest",
+                "platform.PlatformBehaviorTest",
+                "core.engine.AstcRoundTripTest",
+                "ui.RecoveryBannerTest",
+                "data.remote.GamekeeDownloadAtomicityTest",
+                "data.repository.LogExportAcceptanceTest",
+                "ui.ComponentContractTest",
+                "ui.ModActionsTest",
+                "ui.TaskPanelLifecycleTest",
+                "ui.DestructiveActionConfirmationTest",
+                "ui.CdkResultPresentationTest",
+                "ui.AccessibilityTest(AdaptiveAccessibilityTest)",
+                "ui.InsetsAdaptationTest",
+                "ui.WallpaperReadabilityTest",
+                "ui.WebContentThemeTest",
+                "ui.ThemeModeResolutionTest",
+                "Test-Bd2JournalRecovery",
+                "Test-Bd2IsolatedRecovery"
+            ]
         },
         "summaryEvidence": "docs/refactor/evidence/final-summary.md",
         "releaseChecklist": "docs/refactor/release-checklist.md"
