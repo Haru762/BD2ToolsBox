@@ -9,6 +9,7 @@ import com.bd2toolsbox.data.repository.UpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,7 +113,15 @@ class UpdateViewModel @Inject constructor(
                     withContext(io) { repository.downloadedApkFile()?.name }
                 return@launch
             }
-            val started = withContext(io) { repository.startApkDownload(release) }
+            val started = try {
+                withContext(io) { repository.startApkDownload(release) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "下载更新失败", e)
+                toast("下载更新失败：${e.message ?: "未知原因"}")
+                return@launch
+            }
             if (started != null) {
                 toast("已开始下载 ${started.name}，进度见通知栏")
                 // 轮询兜底：广播接收器在部分 ROM 上不可靠（NOT_EXPORTED 改

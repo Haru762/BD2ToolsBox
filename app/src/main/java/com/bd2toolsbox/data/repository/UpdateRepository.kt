@@ -54,8 +54,10 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
         /** GitHub 要求带 UA，缺了会被拒；内容无所谓，报上自己是谁即可。 */
         private const val UA = "Mozilla/5.0 (Linux; Android) BD2ToolsBox"
 
-        /** 下载 id 的 prefs 键。 */
+        /** 下载 id 与期望文件元信息的 prefs 键。 */
         private const val KEY_DL_ID = "download_id"
+        private const val KEY_DL_EXPECTED_BYTES = "download_expected_bytes"
+        private const val KEY_DL_FILE_NAME = "download_file_name"
 
         /**
          * 版本号比较，a 比 b 新返回正数。
@@ -234,23 +236,55 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
             .setMimeType("application/vnd.android.package-archive")
             .setDestinationInExternalFilesDir(appContext, null, "updates/" + asset.name)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-        dlPrefs().edit().putLong(KEY_DL_ID, dm.enqueue(req)).apply()
+        dlPrefs().edit()
+            .putLong(KEY_DL_ID, dm.enqueue(req))
+            .putLong(KEY_DL_EXPECTED_BYTES, asset.bytes)
+            .putString(KEY_DL_FILE_NAME, asset.name)
+            .apply()
         return asset
     }
 
-    /** release 该下的那个包是否已经下好（文件在且非空）。 */
+    /**
+     * release 该下的那个包是否已经完整下好。
+     *
+     * 严禁只判 `f.length() > 0`：DownloadManager 直接在目标路径边下边写，
+     * 断网留下的半截文件或正在下载中的文件都有 `length() > 0`。
+     * 必须同时确认：无进行中下载、字节数与 release 元数据一致（若已知）、
+     * 且若有 DownloadManager 记录则状态为 STATUS_SUCCESSFUL。
+     */
     fun isApkDownloaded(release: Release): Boolean {
+        if (hasActiveDownload()) return false
         val asset = pickApkAsset(release) ?: return false
         val f = File(updateDir(), asset.name)
-        return f.isFile && f.length() > 0
+        if (!f.isFile || f.length() <= 0) return false
+        if (asset.bytes > 0 && f.length() != asset.bytes) return false
+        val id = currentDownloadId()
+        if (id != -1L && !isDownloadSuccessful(id)) return false
+        return true
     }
 
-    /** 下载完成后的 APK 文件；没有或空文件返回 null。 */
-    fun downloadedApkFile(): File? =
-        updateDir().listFiles()?.firstOrNull { it.isFile && it.length() > 0 }
+    /** 下载完成后的完整 APK 文件；下载未完成、空文件或字节数不符均返回 null。 */
+    fun downloadedApkFile(): File? {
+        if (hasActiveDownload()) return null
+        val prefs = dlPrefs()
+        val expectedBytes = prefs.getLong(KEY_DL_EXPECTED_BYTES, -1L)
+        val expectedName = prefs.getString(KEY_DL_FILE_NAME, null)
+        val candidate = if (!expectedName.isNullOrBlank()) {
+            File(updateDir(), expectedName).takeIf { it.isFile }
+        } else {
+            updateDir().listFiles()?.firstOrNull { it.isFile && it.length() > 0 }
+        } ?: return null
+        if (candidate.length() <= 0) return null
+        if (expectedBytes > 0 && candidate.length() != expectedBytes) return null
+        return candidate
+    }
 
     internal fun updateDir(): File =
         File(appContext.getExternalFilesDir(null), "updates").apply { mkdirs() }
+
+    internal var supportedAbisProvider: () -> List<String> = {
+        Build.SUPPORTED_ABIS?.toList().orEmpty()
+    }
 
     /**
      * 这个 release 里该给本机下哪个包：与本机已装包同架构优先（按
@@ -262,7 +296,7 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
         // 不回退 universal、不退回错误架构。选择规则见 ApkSelector。
         return com.bd2toolsbox.feature.update.ApkSelector.select(
             release.apkAssets,
-            Build.SUPPORTED_ABIS.toList()
+            supportedAbisProvider()
         )
     }
 

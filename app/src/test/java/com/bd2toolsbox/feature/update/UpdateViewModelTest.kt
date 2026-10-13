@@ -8,6 +8,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -16,8 +17,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -37,6 +40,7 @@ class UpdateViewModelTest {
     private lateinit var prefs: SharedPreferences
     private lateinit var editor: SharedPreferences.Editor
     private var stored: String? = null
+    private val messages = mutableListOf<String>()
 
     @Before
     fun setup() {
@@ -45,7 +49,11 @@ class UpdateViewModelTest {
         // Toast 在 JVM 单测里是未实现的桩：本类只在失败/提示路径上用它，
         // 断言的是状态而不是弹了几次 toast，所以整体 stub 掉。
         mockkStatic(android.widget.Toast::class)
-        every { android.widget.Toast.makeText(any(), any<String>(), any<Int>()) } returns mockk(relaxed = true)
+        messages.clear()
+        every { android.widget.Toast.makeText(any(), any<String>(), any<Int>()) } answers {
+            messages += secondArg<String>()
+            mockk(relaxed = true)
+        }
         every { android.util.Log.w(any<String>(), any<String>()) } returns 0
         every { android.util.Log.w(any<String>(), any<String>(), any<Throwable>()) } returns 0
         every { android.util.Log.i(any<String>(), any<String>()) } returns 0
@@ -158,6 +166,74 @@ class UpdateViewModelTest {
             vm.updateApkReady.value
         )
         io.mockk.coVerify(exactly = 0) { repo.startApkDownload(any()) }
+    }
+
+    @Test
+    fun downloadManagerFailureIsReportedWithoutCrashingOrOfferingAnApk() = runTest(dispatcher) {
+        val repo = repo()
+        coEvery { repo.isApkDownloaded(any()) } returns false
+        coEvery { repo.startApkDownload(any()) } throws SecurityException("DownloadManager unavailable")
+        val vm = UpdateViewModel(context, repo, dispatcher)
+
+        vm.downloadUpdate(release("0.2.17"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(vm.updateApkReady.value)
+        assertTrue("平台拒绝下载时必须提示失败而不是让 ViewModel 协程崩溃",
+            messages.any { it.contains("下载更新失败") })
+    }
+
+    @Test
+    fun cancelledDownloadDoesNotReportAPlatformFailure() = runTest(dispatcher) {
+        val repo = repo()
+        coEvery { repo.isApkDownloaded(any()) } returns false
+        coEvery { repo.startApkDownload(any()) } throws CancellationException("ViewModel cleared")
+        val vm = UpdateViewModel(context, repo, dispatcher)
+
+        vm.downloadUpdate(release("0.2.17"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(vm.updateApkReady.value)
+        assertTrue("协程取消不是下载失败，不应打扰用户", messages.isEmpty())
+    }
+
+    @Test
+    fun truncatedOrInProgressApkIsNotTreatedAsAlreadyDownloaded() {
+        val tempDir = java.nio.file.Files.createTempDirectory("bd2-update-test").toFile()
+        try {
+            val realCtx = mockk<Context>(relaxed = true)
+            val dlPrefs = mockk<SharedPreferences>(relaxed = true)
+            every { realCtx.getExternalFilesDir(null) } returns tempDir
+            every { realCtx.getSharedPreferences("update_download", Context.MODE_PRIVATE) } returns dlPrefs
+            every { dlPrefs.getLong("download_id", -1L) } returns -1L
+            every { dlPrefs.getLong("download_expected_bytes", -1L) } returns 1000L
+            every { dlPrefs.getString("download_file_name", null) } returns "app-arm64-v8a-release.apk"
+
+            val updates = java.io.File(tempDir, "updates").apply { mkdirs() }
+            val partial = java.io.File(updates, "app-arm64-v8a-release.apk")
+            partial.writeBytes(ByteArray(300)) // 1000 字节只下了 300 字节
+
+            val realRepo = UpdateRepository(realCtx).apply {
+                supportedAbisProvider = { listOf("arm64-v8a") }
+            }
+            val rel = UpdateRepository.Release(
+                version = "0.2.17",
+                notes = "",
+                htmlUrl = "https://example.invalid",
+                apkAssets = listOf(
+                    UpdateRepository.ApkAsset("app-arm64-v8a-release.apk", "https://example.invalid/a.apk", 1000L),
+                    UpdateRepository.ApkAsset("app-x86_64-release.apk", "https://example.invalid/x.apk", 1000L)
+                )
+            )
+            assertFalse("半截 APK 不得被判为已下载完成", realRepo.isApkDownloaded(rel))
+            assertNull("半截 APK 不得由 downloadedApkFile 返回给安装器", realRepo.downloadedApkFile())
+
+            partial.writeBytes(ByteArray(1000))
+            assertTrue("完整字节数的 APK 应被判为已下载完成", realRepo.isApkDownloaded(rel))
+            assertNotNull("完整字节数的 APK 才可返回给安装器", realRepo.downloadedApkFile())
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 
     @Test
