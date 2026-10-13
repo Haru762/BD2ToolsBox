@@ -61,20 +61,32 @@ object LogExporter {
      */
     fun exportToDownloads(context: Context, content: File): Uri? {
         val name = "BD2ToolsBox日志_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.txt"
+        var uri: Uri? = null
         return try {
             val values = android.content.ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, name)
                 put(MediaStore.Downloads.MIME_TYPE, "text/plain")
             }
-            val uri = context.contentResolver.insert(
+            uri = context.contentResolver.insert(
                 MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: return null
-            context.contentResolver.openOutputStream(uri)?.use { os: OutputStream ->
+            // 先插入再写是 MediaStore 的固定用法，但**写不成就必须把那一行删掉**。
+            //
+            // 以前是 `openOutputStream(uri)?.use { ... }`：流为 null 时 `?.use` 被跳过，
+            // 然后照样 `return uri` —— 用户在 Download 里看到一个 0 字节的空日志，
+            // 而 App 报的是「已保存」。写一半抛异常时那一行也不会被删，同样留个空壳。
+            val written = context.contentResolver.openOutputStream(uri)?.use { os ->
                 content.inputStream().use { it.copyTo(os) }
+                true
+            } ?: false
+            if (!written) {
+                throw java.io.IOException("打不开输出流")
             }
             uri
         } catch (e: Exception) {
             Log.w(TAG, "导出到 Download 失败", e)
+            // 把刚才插进去的那一行收回，不给用户留空壳
+            uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
             null
         }
     }
