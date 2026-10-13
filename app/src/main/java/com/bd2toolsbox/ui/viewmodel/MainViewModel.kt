@@ -830,13 +830,19 @@ class MainViewModel @Inject constructor(
     /** 当前备份集合的指纹（确认后执行前复核用，T44）。 */
     fun backupFingerprint(): String = backupRepository.fingerprint()
 
+    /** 是否仍有尚未收尾的转换/装入任务在跑（已完成待关闭弹窗的列表不算活跃任务）。 */
+    private fun hasActiveInstallTask(): Boolean =
+        moveInProgress || _installJobs.value.any {
+            it.status !is JobStatus.Finished && it.status !is JobStatus.Failed
+        }
+
     /**
      * 活跃任务与清空互斥（T44）：有任务在用时不允许清空。
      *
      * 返回阻塞原因，null 表示可以清。
      */
     fun backupPurgeBlocker(): String? {
-        val busy = installJobs.value.isNotEmpty() ||
+        val busy = hasActiveInstallTask() ||
             prepackProgress.value != null ||
             ShizukuManager.scanRunning
         return if (busy) BackupPurge.blockedByActiveTask("安装/扫描/预解包") else null
@@ -1141,13 +1147,7 @@ class MainViewModel @Inject constructor(
      * 与活跃任务互斥：预解包正在往这个目录里写，边写边删会把在途产物弄坏。
      */
     fun clearPreviewCache() {
-        if (!true) return
         previewCacheBlocker()?.let { reason ->
-            _previewPurgeResult.value = PurgeOutcome(
-                attempted = 0, deleted = 0, failed = 0,
-                remainingCount = previewCacheRepository.count(),
-                remainingBytes = previewCacheRepository.totalBytes()
-            )
             notifyLedgerNotice(reason)
             return
         }
@@ -1173,7 +1173,7 @@ class MainViewModel @Inject constructor(
      * 它们正在往这个目录里写。
      */
     fun previewCacheBlocker(): String? {
-        val busy = installJobs.value.isNotEmpty() ||
+        val busy = hasActiveInstallTask() ||
             prepackProgress.value != null ||
             previewState.value is PreviewState.Preparing
         return if (busy) "有任务正在进行（装入/预解包/预览），先等它收尾再清缓存。" else null
@@ -1389,11 +1389,12 @@ class MainViewModel @Inject constructor(
                 )
                 // 进度：服务通过通知栏自己推，这里只把同一份进度映射到界面状态。
                 // VM 已销毁时 launch 静默不生效，可接受（通知栏才是主通道）。
+                scanProgress.value = ScanRunProgress(0, checkResult.needsScanCount, "", "")
                 val progressJob = viewModelScope.launch(Dispatchers.Main) {
                     scanProgress.collect { p ->
                         _bundleScanState.value = BundleScanState.Scanning(
                             currentIndex = p.currentIndex,
-                            totalCount = p.total,
+                            totalCount = if (p.total > 0) p.total else checkResult.needsScanCount,
                             currentBundle = p.bundleName,
                             progressMessage = p.message
                         )
@@ -1767,6 +1768,10 @@ class MainViewModel @Inject constructor(
                         }
                     }
                 }
+                // updateJobStatus 通过 installScope.launch(Dispatchers.Main) 异步排队；
+                // 先在 Main 上排一帧确保最后一个 Finished 已送达 installJobs.collect 并完成
+                // summarizeResults -> moveFilesToGame 的连接交接，再进 finally 释放本阶段占用。
+                withContext(Dispatchers.Main) {}
             } finally {
                 InstallService.stop(svcCtx)
                 ShizukuManager.releaseConnection(installConnectionToken)
@@ -3301,6 +3306,7 @@ class MainViewModel @Inject constructor(
 
             moveInProgress = true
             if (!silent) _moveState.value = MoveState.Moving
+            val moveConnectionToken = ShizukuManager.acquireConnection()
             try {
                 // T22：**提交执行搬进 InstallService**。以前这里直接调 executor，
                 // 协程挂在 viewModelScope 上 —— 用户退出界面时 onCleared 会取消它，
@@ -3374,6 +3380,7 @@ class MainViewModel @Inject constructor(
                 notifyLedgerNotice(message)
             } finally {
                 moveInProgress = false
+                ShizukuManager.releaseConnection(moveConnectionToken)
             }
         }
     }
@@ -5178,9 +5185,17 @@ class MainViewModel @Inject constructor(
         var atlas: String? = null
         val pngs = mutableListOf<String>()
         fun onExtracted(fileName: String, dest: File) {
-            if (fileName.endsWith(".skel") || fileName.endsWith(".json")) skel = dest.absolutePath
-            else if (fileName.endsWith(".atlas")) atlas = dest.absolutePath
-            else if (fileName.endsWith(".png")) pngs.add(dest.absolutePath)
+            when {
+                fileName.endsWith(".skel", ignoreCase = true) -> skel = dest.absolutePath
+                fileName.endsWith(".json", ignoreCase = true) -> {
+                    // .skel 优先于 .json：避免包内的非骨骼元数据 json 把已找到的 .skel 覆盖掉
+                    if (skel == null || !skel!!.endsWith(".skel", ignoreCase = true)) {
+                        skel = dest.absolutePath
+                    }
+                }
+                fileName.endsWith(".atlas", ignoreCase = true) -> atlas = dest.absolutePath
+                fileName.endsWith(".png", ignoreCase = true) -> pngs.add(dest.absolutePath)
+            }
         }
 
         val previewExts = setOf(".skel", ".json", ".atlas", ".png")
@@ -5188,7 +5203,7 @@ class MainViewModel @Inject constructor(
             DocumentFile.fromTreeUri(context, modInfo.uri)?.listFiles()?.forEach { file ->
                 val fileName = file.name ?: ""
                 if (!shouldIgnoreModEntry(fileName) &&
-                    previewExts.any { fileName.endsWith(it) }) {
+                    previewExts.any { fileName.endsWith(it, ignoreCase = true) }) {
                     val dest = File(tempDir, fileName)
                     context.contentResolver.openInputStream(file.uri)?.use { input ->
                         dest.outputStream().use { input.copyTo(it) }
@@ -5201,9 +5216,13 @@ class MainViewModel @Inject constructor(
                 ZipInputStream(fis).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
-                        val fileName = entry.name.substringAfterLast('/')
-                        if (!entry.isDirectory && !shouldIgnoreModEntry(fileName) &&
-                            previewExts.any { fileName.endsWith(it) }) {
+                        val fileName = entry.name.replace('\\', '/').substringAfterLast('/')
+                        if (!entry.isDirectory &&
+                            fileName.isNotBlank() &&
+                            fileName != "." &&
+                            fileName != ".." &&
+                            !shouldIgnoreModEntry(fileName) &&
+                            previewExts.any { fileName.endsWith(it, ignoreCase = true) }) {
                             val dest = File(tempDir, fileName)
                             dest.outputStream().use { zis.copyTo(it) }
                             onExtracted(fileName, dest)
@@ -5271,10 +5290,6 @@ class MainViewModel @Inject constructor(
      * 核对并修复安装记录：只读拷出游戏 __data、按冻结 SHA 补账，不重新安装。
      */
     fun reconcilePendingInstalls() {
-        if (!true) {
-            notifyLedgerNotice("装入记录仓储未初始化，无法核对。")
-            return
-        }
         // T19：核对全程需要 ShizukuManager.copyGameDataForRecovery（真正的 Binder 调用），
         // 自己持有一份占用，不依赖 MainActivity 的 token 是否还在。
         val recoveryConnectionToken = ShizukuManager.acquireConnection()
@@ -5285,47 +5300,51 @@ class MainViewModel @Inject constructor(
                     val ctx = appContext ?: return@withContext RecoveryApplyResult.NotApplied(
                         OperationError(OperationErrorKind.INVALID_INPUT, "没有可用的 Context，无法核对。")
                     )
-                    installedModRepository.recoverContent { targets ->
-                        val destRoot = File(ctx.externalCacheDir ?: ctx.cacheDir, "recovery-obs")
-                        destRoot.mkdirs()
-                        targets.map { ref ->
-                            val target = ref.target
-                            val destFile = try {
-                                RecoveryObservationLayout.destFile(
-                                    destRoot = destRoot,
-                                    operationId = ref.operationId,
-                                    bundleName = target.bundleName,
-                                    hashDir = target.hashDir
-                                )
-                            } catch (e: IllegalArgumentException) {
-                                return@map TargetObservation.ReadFailed(
-                                    operationId = ref.operationId,
-                                    bundleName = target.bundleName,
-                                    hashDir = target.hashDir,
-                                    reason = "Path validation failed: " + e.message
-                                )
-                            }
-                            destFile.parentFile?.mkdirs()
-                            val copied = try {
-                                ShizukuManager.copyGameDataForRecovery(
-                                    target.bundleName, target.hashDir, destFile.absolutePath
-                                )
-                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                throw cancelled
-                            } catch (e: Exception) {
-                                false
-                            }
-                            if (!copied) {
-                                TargetObservation.ReadFailed(
-                                    operationId = ref.operationId,
-                                    bundleName = target.bundleName,
-                                    hashDir = target.hashDir,
-                                    reason = "copyGameDataForRecovery failed"
-                                )
-                            } else {
-                                TargetObservations.observeFile(ref.operationId, target.bundleName, target.hashDir, destFile)
+                    val destRoot = File(ctx.externalCacheDir ?: ctx.cacheDir, "recovery-obs")
+                    try {
+                        installedModRepository.recoverContent { targets ->
+                            destRoot.mkdirs()
+                            targets.map { ref ->
+                                val target = ref.target
+                                val destFile = try {
+                                    RecoveryObservationLayout.destFile(
+                                        destRoot = destRoot,
+                                        operationId = ref.operationId,
+                                        bundleName = target.bundleName,
+                                        hashDir = target.hashDir
+                                    )
+                                } catch (e: IllegalArgumentException) {
+                                    return@map TargetObservation.ReadFailed(
+                                        operationId = ref.operationId,
+                                        bundleName = target.bundleName,
+                                        hashDir = target.hashDir,
+                                        reason = "Path validation failed: " + e.message
+                                    )
+                                }
+                                destFile.parentFile?.mkdirs()
+                                val copied = try {
+                                    ShizukuManager.copyGameDataForRecovery(
+                                        target.bundleName, target.hashDir, destFile.absolutePath
+                                    )
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (e: Exception) {
+                                    false
+                                }
+                                if (!copied) {
+                                    TargetObservation.ReadFailed(
+                                        operationId = ref.operationId,
+                                        bundleName = target.bundleName,
+                                        hashDir = target.hashDir,
+                                        reason = "copyGameDataForRecovery failed"
+                                    )
+                                } else {
+                                    TargetObservations.observeFile(ref.operationId, target.bundleName, target.hashDir, destFile)
+                                }
                             }
                         }
+                    } finally {
+                        runCatching { destRoot.deleteRecursively() }
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
@@ -5336,7 +5355,14 @@ class MainViewModel @Inject constructor(
                 }
             }
             when (result) {
-                is RecoveryApplyResult.Applied -> notifyLedgerNotice("已根据目标内容补齐安装记录。")
+                is RecoveryApplyResult.Applied -> {
+                    _recoveryVerdict.value = runCatching { installedModRepository.checkRecovery() }
+                        .getOrDefault(OperationJournalStore.RecoveryVerdict.Consistent)
+                    _recoveryDispositions.value = runCatching { OperationRecovery(installedModRepository).classify() }
+                        .getOrDefault(emptyList())
+                    runCatching { refreshInstallStates() }
+                    notifyLedgerNotice("已根据目标内容补齐安装记录。")
+                }
                 is RecoveryApplyResult.NotApplied -> notifyLedgerNotice(result.error.message)
             }
             } finally {

@@ -154,6 +154,12 @@ class PreviewWorkflowTest {
         )
         assertFalse("全清干净时不该提示需要处理", CachePurge.needsAttention(ok))
         assertTrue(CachePurge.needsAttention(allFailed))
+
+        val strayBytesOnly = PurgeOutcome(
+            attempted = 1, deleted = 1, failed = 0, remainingCount = 0, remainingBytes = 4096
+        )
+        assertTrue("remainingCount 为 0 但仍有残留字节时也必须提示", CachePurge.needsAttention(strayBytesOnly))
+        assertFalse("仍有残留字节时不能报已清理", CachePurge.resultText(strayBytesOnly, "4 KB", "预览缓存").contains("已清理"))
     }
 
     // ---------------------------------------------------------------- 槽位不串用

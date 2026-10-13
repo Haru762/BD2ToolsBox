@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,10 +65,19 @@ class ScanService : Service() {
         override suspend fun run(
             request: ScanRunRequest,
             onProgress: (ScanRunProgress) -> Unit
-        ): ScanRun? {
+        ): ScanRun? = kotlinx.coroutines.coroutineScope {
             clearRunResult()
-            if (!run(context, request)) return null
-            return scanRunResult.first { it != null }
+            if (!run(context, request)) return@coroutineScope null
+            val progressJob = launch {
+                scanProgress.collect { p ->
+                    if (p != null) onProgress(p)
+                }
+            }
+            try {
+                scanRunResult.first { it != null }
+            } finally {
+                progressJob.cancel()
+            }
         }
     }
 
@@ -129,8 +139,12 @@ class ScanService : Service() {
         private val _runResult = MutableStateFlow<ScanRun?>(null)
         val scanRunResult: StateFlow<ScanRun?> = _runResult.asStateFlow()
 
+        private val _scanProgress = MutableStateFlow<ScanRunProgress?>(null)
+        val scanProgress: StateFlow<ScanRunProgress?> = _scanProgress.asStateFlow()
+
         fun clearRunResult() {
             _runResult.value = null
+            _scanProgress.value = null
         }
 
         /**
@@ -279,6 +293,7 @@ class ScanService : Service() {
                 cacheDir = request.cacheDir,
                 checkResult = request.checkResult
             ) { index, totalCount, name, message ->
+                _scanProgress.value = ScanRunProgress(index, totalCount, name, message)
                 // 通知栏：主进度通道，界面死活无关
                 update(this, index, totalCount, name, message)
             }
@@ -300,6 +315,7 @@ class ScanService : Service() {
         // 无差别 cancel 会把它一并删掉（测试抓到的时序）。摘要要留着给用户看，
         // 下次 START 用同 id 覆盖它。
         if (!summaryPosted) stopForegroundCompat()
+        scope.cancel()
         super.onDestroy()
     }
 

@@ -130,13 +130,37 @@ object LogExporter {
     }
 
     private fun runLogcat(command: Array<String>): String {
-        val process = Runtime.getRuntime().exec(command)
+        val process = ProcessBuilder(*command)
+            .redirectErrorStream(true)
+            .start()
+        val buffer = StringBuilder()
+        val readerThread = Thread {
+            runCatching {
+                process.inputStream.bufferedReader().use { reader ->
+                    val chars = CharArray(4096)
+                    while (true) {
+                        val n = reader.read(chars)
+                        if (n < 0) break
+                        synchronized(buffer) { buffer.append(chars, 0, n) }
+                    }
+                }
+            }
+        }.apply {
+            isDaemon = true
+            name = "bd2-logcat-reader"
+            start()
+        }
         return try {
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            val finished = process.waitFor(LOGCAT_TIMEOUT_MS,
-                java.util.concurrent.TimeUnit.MILLISECONDS)
+            val finished = process.waitFor(
+                LOGCAT_TIMEOUT_MS,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+            )
             if (!finished) {
-                process.destroy()
+                process.destroyForcibly()
+            }
+            readerThread.join(1_000L)
+            val output = synchronized(buffer) { buffer.toString() }
+            if (!finished) {
                 output + "\n（logcat 超时被截断）"
             } else {
                 output

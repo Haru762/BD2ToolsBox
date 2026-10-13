@@ -349,9 +349,9 @@ class AvatarRepository @Inject constructor(
 
     private fun download(url: String, dest: File): Outcome {
         var conn: HttpURLConnection? = null
-        // 先写 .part 再改名：中途断网留下的半个文件若直接叫最终名，
-        // 下次会被当成有效缓存，然后永远解码失败。
-        val part = File(dest.parentFile, dest.name + ".part")
+        // 先写独立 .part 再改名：中途断网留下的半个文件若直接叫最终名，
+        // 下次会被当成有效缓存，然后永远解码失败；带唯一后缀避免同 key 并发下载互踩。
+        val part = File(dest.parentFile, "${dest.name}.${java.util.UUID.randomUUID()}.part")
         return try {
             dest.parentFile?.mkdirs()
             conn = (URL(url).openConnection() as HttpURLConnection).apply {

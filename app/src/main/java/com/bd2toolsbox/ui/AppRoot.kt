@@ -57,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -220,11 +221,11 @@ fun AppRoot(
                 // 「按角色」是新的默认视图：用户关心的是某个角色有没有 mod，
                 // 而不是它处在哪个加工阶段。「全部」保留原来的平铺列表 ——
                 // 批量多选转换要用它，认不出角色的 mod 也只能在那里看到。
-                var byCharacter by remember { mutableStateOf(true) }
+                var byCharacter by rememberSaveable { mutableStateOf(true) }
                 // 左右滑切换视图的累积位移
                 var viewSwipeAccum by remember { mutableFloatStateOf(0f) }
-                var openedCharacter by remember { mutableStateOf<String?>(null) }
-                var characterFilter by remember { mutableStateOf(CharacterFilter.ALL) }
+                var openedCharacter by rememberSaveable { mutableStateOf<String?>(null) }
+                var characterFilter by rememberSaveable { mutableStateOf(CharacterFilter.ALL) }
 
                 val modSourceUri by viewModel.modSourceDirectoryUri.collectAsStateWithLifecycle()
                 val modSourceDirs by viewModel.modSourceDirs.collectAsStateWithLifecycle()
@@ -233,8 +234,8 @@ fun AppRoot(
                 // 内容区顶部的重开横幅（Scaffold 的 content lambda 里）要看得见它们。
                 val prepackProgress by viewModel.prepackProgress.collectAsStateWithLifecycle()
                 val previewState by viewModel.previewState.collectAsStateWithLifecycle()
-                var prepackHidden by remember { mutableStateOf(false) }
-                var previewHidden by remember { mutableStateOf(false) }
+                var prepackHidden by rememberSaveable { mutableStateOf(false) }
+                var previewHidden by rememberSaveable { mutableStateOf(false) }
 
                 Scaffold(
                     // T40：根容器透明，壁纸背景层在下面；页头等无底色区域能看到壁纸，
@@ -601,14 +602,16 @@ fun AppRoot(
                 }
 
                 val recovery by viewModel.recoveryDispositions.collectAsStateWithLifecycle()
-                            var recoveryDismissed by remember { mutableStateOf(false) }
+                            var recoveryDismissed by rememberSaveable { mutableStateOf(false) }
                             if (!recoveryDismissed) {
                                 RecoveryBanner(
                                     dispositions = recovery,
                                     onDismiss = { recoveryDismissed = true },
                                     // T25：正文一直让用户去用「核对并修复记录」，此前却没有入口。
+                                    // 不在点击瞬间把 recoveryDismissed 置 true：修复成功后
+                                    // recoveryDispositions 清空横幅会自然消失；若因未启动 Shizuku
+                                    // 等原因失败，保留横幅以便用户启动 Shizuku 后再次点击。
                                     onReconcile = {
-                                        recoveryDismissed = true
                                         viewModel.reconcilePendingInstalls()
                                     }
                                 )
@@ -750,7 +753,12 @@ fun AppRoot(
                             nav.closeSettings()
                             viewModel.replayOnboarding()
                         },
-                        onDismiss = { nav.closeSettings() }
+                        onDismiss = { nav.closeSettings() },
+                        onManageBackups = {
+                            nav.closeSettings()
+                            viewModel.refreshBackupUsage()
+                            showBackupManage = true
+                        },
                     )
                 }
 

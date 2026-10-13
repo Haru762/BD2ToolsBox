@@ -132,12 +132,13 @@ class SpineRuntimeRepository @Inject constructor(@ApplicationContext private val
             if (entry.deleteRecursively()) deleted++ else failed++
         }
         val remaining = dir?.listFiles()?.toList() ?: emptyList()
+        val remainingBytes = dir?.walkBottomUp()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
         return PurgeOutcome(
             attempted = entries.size,
             deleted = deleted,
             failed = failed,
             remainingCount = remaining.size,
-            remainingBytes = usage()
+            remainingBytes = remainingBytes
         )
     }
 }

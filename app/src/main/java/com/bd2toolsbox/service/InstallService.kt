@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -200,7 +201,11 @@ class InstallService : Service() {
                     foregroundStarted = true
                     startForeground(NOTIFICATION_ID, buildNotification(0, total, "正在装入…"))
                 }
-                worker?.cancel()
+                if (worker?.isActive == true) {
+                    Log.w(TAG, "已有提交任务在执行，拒绝并发取消正在写入的提交")
+                    _runResult.value = MoveCommitResult(request.id, null, emptyList(), "已有装入提交正在进行，请稍后重试")
+                    return START_NOT_STICKY
+                }
                 worker = scope.launch { executeRun(request) }
             }
 
@@ -236,6 +241,12 @@ class InstallService : Service() {
             }
 
             ACTION_STOP -> {
+                if (worker?.isActive == true) {
+                    // 转换阶段结束发来的 ACTION_STOP 可能晚于自动触发的 ACTION_RUN 到达；
+                    // 此时提交协程正在跑，不能中途撤掉前台服务，由 executeRun 跑完后自行收场。
+                    Log.i(TAG, "提交任务仍在运行，忽略转换阶段的 ACTION_STOP")
+                    return START_NOT_STICKY
+                }
                 Log.i(TAG, "前台服务收尾")
                 foregroundStarted = false
                 lastDone = 0
@@ -283,6 +294,7 @@ class InstallService : Service() {
     override fun onDestroy() {
         foregroundStarted = false
         stopForegroundCompat()
+        scope.cancel()
         super.onDestroy()
     }
 

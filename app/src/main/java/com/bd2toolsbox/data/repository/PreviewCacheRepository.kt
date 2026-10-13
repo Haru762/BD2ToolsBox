@@ -207,16 +207,38 @@ class PreviewCacheRepository(private val context: Context) {
      * 不是从「应该删了多少」推出来的。
      */
     fun clearAll(): PurgeOutcome {
-        val entries = root().listFiles()?.toList() ?: emptyList()
+        val topEntries = root().listFiles()?.toList() ?: emptyList()
+        val targets = mutableListOf<File>()
+        val emptyBundleDirs = mutableListOf<File>()
+        for (top in topEntries) {
+            if (top.isDirectory) {
+                val children = top.listFiles()?.toList().orEmpty()
+                if (children.isEmpty()) {
+                    emptyBundleDirs += top
+                } else {
+                    targets += children
+                }
+            } else {
+                targets += top
+            }
+        }
         var deleted = 0
         var failed = 0
-        for (entry in entries) {
+        for (target in targets) {
             // deleteRecursively() 返回 false 表示**至少有一个**没删掉；
             // 它不会告诉我们少了几个，所以「删掉的条数」是下界 —— 剩余量由重新测量给出。
-            if (entry.deleteRecursively()) deleted++ else failed++
+            if (target.deleteRecursively()) deleted++ else failed++
+        }
+        for (bundleDir in topEntries) {
+            if (bundleDir.isDirectory && bundleDir.listFiles().isNullOrEmpty()) {
+                bundleDir.delete()
+            }
+        }
+        for (emptyDir in emptyBundleDirs) {
+            if (emptyDir.exists()) emptyDir.delete()
         }
         return PurgeOutcome(
-            attempted = entries.size,
+            attempted = targets.size,
             deleted = deleted,
             failed = failed,
             remainingCount = count(),

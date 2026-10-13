@@ -72,7 +72,8 @@ fun WorkbenchSheet(
     onPrepack: () -> Unit,
     onPickWallpaper: () -> Unit,
     onReplayOnboarding: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onManageBackups: () -> Unit = { viewModel.clearBackups() },
 ) {
     val quality by viewModel.selectedQuality.collectAsStateWithLifecycle()
     val useAstc by viewModel.useAstc.collectAsStateWithLifecycle()
@@ -88,7 +89,7 @@ fun WorkbenchSheet(
     val spineRuntime by viewModel.spineRuntimeUsage.collectAsStateWithLifecycle()
     val prepackProgress by viewModel.prepackProgress.collectAsStateWithLifecycle()
 
-    val dynamicSupported = true
+    val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -158,7 +159,7 @@ fun WorkbenchSheet(
                     trailing = {
                         if (backupUsage.second > 0) {
                             TextButton(
-                                onClick = { viewModel.clearBackups() },
+                                onClick = onManageBackups,
                                 colors = ButtonDefaults.textButtonColors(
                                     contentColor = MaterialTheme.colorScheme.error
                                 )

@@ -17,10 +17,10 @@ object CachePurge {
      * @param what 这个缓存叫什么（「预览缓存」「渲染组件」），用于拼句子。
      */
     fun resultText(outcome: PurgeOutcome, humanBytes: String, what: String): String = when {
-        outcome.attempted == 0 && outcome.remainingCount == 0 ->
+        outcome.attempted == 0 && outcome.remainingCount == 0 && outcome.remainingBytes <= 0L ->
             "没有需要清理的$what。"
 
-        outcome.failed == 0 && outcome.remainingCount == 0 ->
+        outcome.failed == 0 && outcome.remainingCount == 0 && outcome.remainingBytes <= 0L ->
             "已清理$what（${outcome.deleted} 项）。"
 
         // 全失败：**必须**把实际占用说出来，不能显示成 0
@@ -28,12 +28,15 @@ object CachePurge {
             "${what}清理失败：${outcome.attempted} 项均未删除，仍占用 $humanBytes。" +
                 "请检查存储权限后重试。"
 
+        outcome.remainingCount == 0 && outcome.remainingBytes > 0L ->
+            "部分成功：已删除 ${outcome.deleted} 项，但仍有残留文件占用 $humanBytes。"
+
         else ->
-            "部分成功：已清理 ${outcome.deleted} 项，${outcome.failed} 项未删除，" +
+            "部分成功：已删除 ${outcome.deleted} 项，${outcome.failed} 项未删除，" +
                 "仍剩 ${outcome.remainingCount} 项（$humanBytes）。"
     }
 
     /** 清理是否算「完成了」——界面据此决定要不要让用户点「知道了」。 */
     fun needsAttention(outcome: PurgeOutcome): Boolean =
-        outcome.failed > 0 || outcome.remainingCount > 0
+        outcome.failed > 0 || outcome.remainingCount > 0 || outcome.remainingBytes > 0L
 }

@@ -420,4 +420,64 @@ class MoveInstallWiringTest {
         assertNull(repo.beginRecovery())
         repo.releaseRecovery()
     }
+
+    @Test fun moveFilesToGameHoldsShizukuConnectionAcrossCommitAndRefresh() = runTest(dispatcher) {
+        val heldTokens = mutableSetOf<Any>()
+        var heldDuringCopy = false
+        var heldDuringRefresh = false
+        every { ShizukuManager.acquireConnection() } answers {
+            Any().also { heldTokens.add(it) }
+        }
+        every { ShizukuManager.releaseConnection(any()) } answers {
+            heldTokens.remove(firstArg())
+        }
+        beforeCopy = {
+            heldDuringCopy = heldTokens.isNotEmpty()
+        }
+        coEvery { ShizukuManager.listGameBundles() } coAnswers {
+            heldDuringRefresh = heldTokens.isNotEmpty()
+            null
+        }
+        vm.moveFilesToGame()
+        joinMove()
+        assertTrue(vm.moveState.value is MoveState.Success)
+        assertTrue("提交期间必须持有 ShizukuManager 连接占用", heldDuringCopy)
+        assertTrue("提交后刷新状态期间仍须持有 ShizukuManager 连接占用", heldDuringRefresh)
+        assertTrue("moveFilesToGame 结束后必须释放连接占用", heldTokens.isEmpty())
+    }
+
+    @Test fun reconciliationCleansUpObservationDirAndClearsPendingRecoveryState() = runTest(dispatcher) {
+        plantPendingRecovery()
+        coEvery { ShizukuManager.copyGameDataForRecovery(any(), any(), any()) } coAnswers {
+            val destination = File(thirdArg<String>())
+            requireNotNull(destination.parentFile).mkdirs()
+            destination.writeText("approved")
+            true
+        }
+        vm.reconcilePendingInstalls()
+        joinMove()
+        assertEquals(
+            OperationJournalStore.RecoveryVerdict.Consistent,
+            vm.recoveryVerdict.value
+        )
+        assertTrue(vm.recoveryDispositions.value.isEmpty())
+        assertFalse(
+            "核对结束后必须清理 recovery-obs 观测副本目录",
+            File(cache, "recovery-obs").exists()
+        )
+    }
+
+    @Test fun finishedInstallJobsDoNotBlockPurgeAndBlockedPreviewPurgeDoesNotFakeZeroDeleteFailure() = runTest(dispatcher) {
+        // 已完成的 job 不应阻塞备份/预览缓存清理
+        jobs().value = listOf(job("selected"))
+        assertNull("已完成的 job 不应被当成进行中任务阻塞备份清理", vm.backupPurgeBlocker())
+        assertNull("已完成的 job 不应被当成进行中任务阻塞预览缓存清理", vm.previewCacheBlocker())
+
+        // 进行中的 job 阻塞清理时，只弹提示，不往 previewPurgeResult 写伪造的 "0 项未删除"
+        jobs().value = listOf(job("selected").copy(status = JobStatus.Installing("处理中")))
+        assertNotNull(vm.previewCacheBlocker())
+        vm.clearPreviewCache()
+        assertNull("被活跃任务拦截时不得污染 previewPurgeResult", vm.previewPurgeResult.value)
+        assertNotNull("被活跃任务拦截时应通知原因", vm.ledgerResetNotice.value)
+    }
 }
