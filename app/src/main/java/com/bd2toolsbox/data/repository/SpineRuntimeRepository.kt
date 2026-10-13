@@ -1,5 +1,6 @@
 package com.bd2toolsbox.data.repository
 
+import com.bd2toolsbox.core.model.PurgeOutcome
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -115,7 +116,28 @@ class SpineRuntimeRepository @Inject constructor(@ApplicationContext private val
     /** 占用字节数，给设置页显示。没下过就是 0。 */
     fun usage(): Long = if (file.exists()) file.length() else 0L
 
-    fun clear() {
-        file.parentFile?.listFiles()?.forEach { it.delete() }
+    /**
+     * 清掉运行时组件（T29）。
+     *
+     * **返回真实结果**：旧实现是 `forEach { it.delete() }`，返回值被丢掉 ——
+     * 删不掉（文件被占、权限）时调用方照样把用量显示成 0。
+     * 与 [PreviewCacheRepository.clearAll] 同一类问题。
+     */
+    fun clear(): PurgeOutcome {
+        val dir = file.parentFile
+        val entries = dir?.listFiles()?.toList() ?: emptyList()
+        var deleted = 0
+        var failed = 0
+        for (entry in entries) {
+            if (entry.deleteRecursively()) deleted++ else failed++
+        }
+        val remaining = dir?.listFiles()?.toList() ?: emptyList()
+        return PurgeOutcome(
+            attempted = entries.size,
+            deleted = deleted,
+            failed = failed,
+            remainingCount = remaining.size,
+            remainingBytes = usage()
+        )
     }
 }

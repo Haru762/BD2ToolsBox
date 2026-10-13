@@ -1129,12 +1129,54 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 清空预览缓存（T29）。
+     *
+     * 与旧实现的区别（真实缺陷，不是风格）：
+     * - 旧版 `clearAll()` 返回 `Unit`，删完**无条件**把用量置 `0L to 0` ——
+     *   删除失败时界面上显示「已清空」，实际一个字节没删；
+     * - 新版拿 `PurgeOutcome`，并**重新测量**剩余量（来自实际磁盘，
+     *   不是从「应该删了多少」推出来的），由界面如实展示。
+     *
+     * 与活跃任务互斥：预解包正在往这个目录里写，边写边删会把在途产物弄坏。
+     */
     fun clearPreviewCache() {
         if (!true) return
-        viewModelScope.launch(Dispatchers.IO) {
-            previewCacheRepository.clearAll()
-            _previewCacheUsage.value = 0L to 0
+        previewCacheBlocker()?.let { reason ->
+            _previewPurgeResult.value = PurgeOutcome(
+                attempted = 0, deleted = 0, failed = 0,
+                remainingCount = previewCacheRepository.count(),
+                remainingBytes = previewCacheRepository.totalBytes()
+            )
+            notifyLedgerNotice(reason)
+            return
         }
+        viewModelScope.launch(Dispatchers.IO) {
+            val outcome = previewCacheRepository.clearAll()
+            _previewCacheUsage.value = outcome.remainingBytes to outcome.remainingCount
+            _previewPurgeResult.value = outcome
+        }
+    }
+
+    /** 上一次清空预览缓存的真实结果；null 表示本次会话还没清过。 */
+    private val _previewPurgeResult = MutableStateFlow<PurgeOutcome?>(null)
+    val previewPurgeResult: StateFlow<PurgeOutcome?> = _previewPurgeResult.asStateFlow()
+
+    fun clearPreviewPurgeResult() {
+        _previewPurgeResult.value = null
+    }
+
+    /**
+     * 预览缓存清理与活跃任务互斥（T29）。
+     *
+     * 返回阻塞原因，null 表示可以清。预解包/预览正在跑时不能清 ——
+     * 它们正在往这个目录里写。
+     */
+    fun previewCacheBlocker(): String? {
+        val busy = installJobs.value.isNotEmpty() ||
+            prepackProgress.value != null ||
+            previewState.value is PreviewState.Preparing
+        return if (busy) "有任务正在进行（装入/预解包/预览），先等它收尾再清缓存。" else null
     }
 
     /**
@@ -1153,11 +1195,26 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 清掉 Spine 运行时组件（T29）。
+     *
+     * 与旧实现一样要**如实反馈**：`clear()` 现在返回 `PurgeOutcome`，
+     * 用量来自重新测量而不是「删过了就当 0」。
+     */
     fun clearSpineRuntime() {
         viewModelScope.launch(Dispatchers.IO) {
-            spineRuntimeRepository.clear()
-            _spineRuntimeUsage.value = 0L
+            val outcome = spineRuntimeRepository.clear()
+            _spineRuntimeUsage.value = outcome.remainingBytes
+            _spinePurgeResult.value = outcome
         }
+    }
+
+    /** 上一次清理 Spine 运行时的真实结果；null 表示本次会话还没清过。 */
+    private val _spinePurgeResult = MutableStateFlow<PurgeOutcome?>(null)
+    val spinePurgeResult: StateFlow<PurgeOutcome?> = _spinePurgeResult.asStateFlow()
+
+    fun clearSpinePurgeResult() {
+        _spinePurgeResult.value = null
     }
 
     /**

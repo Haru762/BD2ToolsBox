@@ -125,4 +125,5 @@
 - T08：x86_64 单目标 converted `200114` 与 move `200548` 均为 PASS，且都已回滚到原游戏文件。更早两次 converted 失败保留。主机门禁脚本 18 项通过，不能代替设备证据。
 - T10：x86_64 真实 minified 列表「扫描→保存→冷启动→快照恢复」通过，并有移走快照后为空的对照。只证明两条未解析 PC 夹具的列表持久化。arm64 未跑。
 - T12：没有新的 arm64 证据，保持 IN_PROGRESS，不推进 T13。
+| T29 缓存清理（2026-10-13） | **修掉与 T44 同类的缺陷**：`PreviewCacheRepository.clearAll()` 与 `SpineRuntimeRepository.clear()` 原来返回 `Unit`，调用方删完**无条件把用量置 0** —— 删除失败时界面显示「已清空」而磁盘没少。现在返回 `PurgeOutcome` 并**重新测量**剩余量；新增 `core/model/CachePurge.kt` 文案（零删除时绝不出现「已清理」且必须说出实际占用）；`WorkbenchSheet` 如实展示。另加 `previewCacheBlocker()`：装入/预解包/预览在跑时拒绝清理。`PreviewWorkflowTest` **9/9 PASS**。**未做** `PreviewViewModel`/`ToolsViewModel` 拆分。见 [T29.md](T29.md)。 |
 | T34 图片缓存上限（2026-10-13） | 新增 `core/images/BoundedImageCache.kt`（按**字节**计预算的 LRU）。替换三处**无上限**缓存：`GamekeeRepository.thumbs`（8 MB）、`battleHtmlMemory`（4 MB）、`AvatarRepository.decoded`（8 MB）；`failed` 加上限 512 并补并发保护。`ImagePipelineTest` **10/10 PASS**。**没有引入 Coil 3（登记偏离）**：与 T48–T54 的减包目标冲突（Coil 会带回 okhttp，而这个 App 目前零第三方 HTTP 客户端），而要修的东西（无上限解码图 map）用 ~130 行 LRU 就解决了。见 [T34.md](T34.md)。 |

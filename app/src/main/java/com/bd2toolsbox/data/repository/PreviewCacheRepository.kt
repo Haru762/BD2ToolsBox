@@ -1,6 +1,7 @@
 package com.bd2toolsbox.data.repository
 
 import android.content.Context
+import com.bd2toolsbox.core.model.PurgeOutcome
 import java.io.File
 
 /**
@@ -48,6 +49,9 @@ class PreviewCacheRepository(private val context: Context) {
     }
 
     private fun root(): File = File(context.getExternalFilesDir(null), DIR_NAME)
+
+    /** 仅测试用：拿到缓存根目录（ 里恢复只读目录要用）。 */
+    internal fun rootForTest(): File = root()
 
     /** size=0/-1（拿不到产物大小的异常场景）退回无后缀路径，不参与分槽。 */
     private fun slotName(hashDir: String, srcSize: Long): String =
@@ -189,7 +193,34 @@ class PreviewCacheRepository(private val context: Context) {
         return readSrcSize(dir) == srcSize
     }
 
-    fun clearAll() {
-        root().deleteRecursively()
+    /**
+     * 清空预览缓存（T29）。
+     *
+     * **返回真实结果**，不再是一把 `deleteRecursively()` 就完事。
+     *
+     * 旧实现的缺陷与 T44 修过的备份清空完全同类：`clearAll()` 返回 `Unit`，
+     * 调用方删完**无条件**把用量置 0 —— 删除失败（权限、文件被占、外部存储卸载）
+     * 时界面上显示「已清空」，实际一个字节没删。计划明确要求
+     * 「清缓存失败准确反馈，不能把未成功删除的空间直接显示为0」。
+     *
+     * 逐顶层条目删并统计，最后**重新测量**剩余量：剩余量来自实际磁盘，
+     * 不是从「应该删了多少」推出来的。
+     */
+    fun clearAll(): PurgeOutcome {
+        val entries = root().listFiles()?.toList() ?: emptyList()
+        var deleted = 0
+        var failed = 0
+        for (entry in entries) {
+            // deleteRecursively() 返回 false 表示**至少有一个**没删掉；
+            // 它不会告诉我们少了几个，所以「删掉的条数」是下界 —— 剩余量由重新测量给出。
+            if (entry.deleteRecursively()) deleted++ else failed++
+        }
+        return PurgeOutcome(
+            attempted = entries.size,
+            deleted = deleted,
+            failed = failed,
+            remainingCount = count(),
+            remainingBytes = totalBytes()
+        )
     }
 }

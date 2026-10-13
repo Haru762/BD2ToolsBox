@@ -1,5 +1,7 @@
 package com.bd2toolsbox.ui.screens
 
+import com.bd2toolsbox.core.model.CachePurge
+import androidx.compose.foundation.layout.Row
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -185,6 +187,9 @@ fun WorkbenchSheet(
                         }
                     }
                 )
+                // T29：清空结果如实展示。失败/部分成功时**必须**把实际占用说出来 ——
+                // 旧实现删完无条件把用量置 0，删失败时界面显示「已清空」而磁盘上还在。
+                val previewPurge by viewModel.previewPurgeResult.collectAsStateWithLifecycle()
                 WorkbenchRow(
                     title = "已缓存 ${previewCache.second} 个",
                     subtitle = "占用 ${formatBytes(previewCache.first)}" +
@@ -200,6 +205,28 @@ fun WorkbenchSheet(
                         }
                     }
                 )
+                previewPurge?.let { outcome ->
+                    if (CachePurge.needsAttention(outcome)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                CachePurge.resultText(
+                                    outcome,
+                                    formatBytes(outcome.remainingBytes),
+                                    "预览缓存"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { viewModel.clearPreviewPurgeResult() }) {
+                                Text("知道了")
+                            }
+                        }
+                    }
+                }
                 // 渲染组件单独列一行：它不在安装包里（许可不允许），是首次预览时下载的。
                 // 只显示状态不提供清空 —— 下载是原子的（.part + 改名），最终文件不可能
                 // 是半截的，坏了重下这个场景不存在；清空只会让下次预览白白重下一次。
