@@ -721,39 +721,39 @@
         "artifacts": {
             "arm64-v8a": {
                 "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
-                "bytes": 22693546,
+                "bytes": 22709930,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
-                "mappingBytes": 44594245,
-                "contentSha256": "565f13677efe9187f64dbed8c17a226b02eda1e8231fcef0a94a33da6f4e8840",
-                "fileSha256": "5ad2b74014658452cb8cd1b9e359156b35c6952a4af063b3a1d186ee8072d40c",
+                "mappingBytes": 44906000,
+                "contentSha256": "9236a96d2bb58caddf30f0c38c2810ce6690cab4b5acca2f3f4ab52c508bb2c7",
+                "fileSha256": "3cbf2bd2be1be2df6519bbee8ee82eec936d928217a0e91779f41f8dc2acce1e",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "c6a624a24b54e1c136a244c4eccd0ef39c4d731e1fd412f60972b970e82cb1d4"
+                "mappingFileSha256": "2513f585b8a9343e303b7c95fdaa88276bd6a17bd8fe9955f1ef3c87d2e52693"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-                "bytes": 22865631,
+                "bytes": 22882015,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
-                "mappingBytes": 44594173,
-                "contentSha256": "712e6861124b037bb0990635f9ee6ac18137b1134b98469588db99cae3df0214",
-                "fileSha256": "4e0506912d5e6179976fab787a047df7af3a0c3ffca52ca536a45da7d461cb81",
+                "mappingBytes": 44905928,
+                "contentSha256": "937c0f3765a5b46e81736cbf6a9d27c3257861fcabf7dbf5efe6d7046698a165",
+                "fileSha256": "9d800cb06610292185ca596ed572160fbf7b2038796cf5bdbd7d0c377de0c26d",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "0b78d3fb0398d2dbb33ec02424462053dee1fc98ccff218b7cd7e967e3183acd"
+                "mappingFileSha256": "7c0791f62de7796816d97aa604f22b555b4c8f8964a1f6dab3db66ff546cf37b"
             }
         },
         "baselineForSizeComparison": "t48Freeze",
         "sizeDelta": {
             "arm64-v8a": {
                 "before": 35146618,
-                "after": 22693546,
-                "percent": -35.43
+                "after": 22709930,
+                "percent": -35.39
             }
         },
         "verification": {
@@ -792,7 +792,7 @@
                 "arm64-v8a@API36-real-device": "NOT_RUN"
             },
             "localAll": "PASS (exit 0)",
-            "deviceSuiteOnMuMu": "19/19 PASS (17 classes + 2 process-death orchestrations)",
+            "deviceSuiteOnMuMu": "23/23 PASS (21 classes + 2 process-death orchestrations)",
             "uiScreenshots": "18 (verified: not monochrome, grid stddev >= 2.0, light brighter than dark)",
             "wcagContrastPairs": "154/154 pass (7 presets x light/dark x 11 pairs, WCAG 2.1 formula)",
             "deviceClassesCovered": [

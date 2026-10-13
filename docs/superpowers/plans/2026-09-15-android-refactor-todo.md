@@ -1216,6 +1216,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.core.operations.ProcessDeathRecoveryT
 
 - [ ] **T26 完成**
 
+**2026-10-13 补：后台宿主的状态、通知归属与资源释放。** 新增 `core/operations/OperationHostLifecycleTest`（设备，**6/6 PASS**）：三个宿主通知 id 互不相同且可同时在场、界面重建式的重复 start 不重置进度、停一个不动另一个的通知、取消预解包不留常驻通知、`start()` 返回 false 时不留通知、宿主在跑时协调器拒绝同目标任务。刻意**不经过任何 Activity** 观察状态 —— 拿不到 Activity 还读得到，才说明状态没挂在界面上；用**系统通知**当观测点（系统持有的事实），排除「我自己的变量说它还在」这种自证。**仍缺**：旋转/息屏/退后台/Activity 真正结束的交互走查（MuMu 固定横屏）、系统终止后重建、Binder 断连（需 T19 真实 Shizuku 授权）、arm64。见 [T26 证据](../../refactor/evidence/T26.md)。
+
 **优先级：** P0　**前置：** T25、T15
 
 **文件范围（实施工作区）：**
@@ -1331,6 +1333,8 @@ Test-Bd2Unit -TestClass 'com.bd2toolsbox.feature.mods.ModLibraryViewModelTest'
 ### T29 — 拆出预览、工具流程和缓存管理
 
 - [ ] **T29 完成**
+
+**2026-10-13 补：修掉「清缓存失败却显示成 0」。** 与 T44 修过的备份清空**完全同类**：`PreviewCacheRepository.clearAll()` 与 `SpineRuntimeRepository.clear()` 原来返回 `Unit`，调用方删完**无条件把用量置 0** —— 删除失败（权限/文件被占/外部存储卸载）时界面显示「已清空」，磁盘上一个字节没少。现在返回 `PurgeOutcome`（复用 T44 的）并**重新测量**剩余量；新增 `core/model/CachePurge.kt` 文案（零删除时绝不出现「已清理」且必须说出实际占用）；`WorkbenchSheet` 如实展示。另加 `previewCacheBlocker()`：装入/预解包/预览在跑时拒绝清理（预解包正在往这个目录里写）。`PreviewWorkflowTest` **9/9 PASS**。**未做**计划文件范围点名的 `PreviewViewModel`/`ToolsViewModel` 拆分，以及 WebView 释放的交互走查。见 [T29 证据](../../refactor/evidence/T29.md)。
 
 **优先级：** P1　**前置：** T24、T27
 
@@ -1492,6 +1496,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.feature.update.UpdateFlowTest' -Abi '
 
 - [ ] **T33 完成**
 
+**2026-10-13 完成主体。** 三个具体问题：①`MainActivity` **1164 → 293 行**，根 UI 装配搬到 `ui/AppRoot.kt`，需要 Android 系统的两件事（装更新包、重查 Shizuku）通过 `AppSystemHandoffs` 回调出去；其余 16 处 `this` 都是 Context 用途，用 `LocalContext.current` 即可。②`ui/dialogs/AppDialogs.kt` **2134 行 → 6 个文件**（最大 761 行）：DialogCommon/InstallDialogs/UninstallDialogs/SettingsDialogs/UpdateDialogs/PreviewDialogs。共用件从 `private` 改 `internal`。**落位偏离计划并登记**：计划写 `feature/install/InstallDialogs.kt` 会撞 R3（`feature/**` 不得 import `ui/**`），所以落到 `ui/dialogs/` 下按 feature 分组（同 T28 的 ModRoute）。③路由状态改为**可保存**（`ui/TopLevelNavigation.kt`，带 `Saver` + `rememberSaveable`）：旋转/字体缩放/深浅切换后不再掉回 Mods 第一页。`handleBack()` 只关设置面板（三个 tab 平级）。④**74 处** `collectAsState` → `collectAsStateWithLifecycle`（计划明确要求）。`NavigationStateTest` **6/6**（两条用 `StateRestorationTester` 真的走一遍保存/恢复）、12 个 UI 设备类 12/12、release smoke 4/4。**仍缺**：arm64、真实旋转/分屏走查；`AppRoot` 仍有 1003 行（Mods 页那一块还能再抽）。见 [T33 证据](../../refactor/evidence/T33.md)。
+
 **优先级：** P1　**前置：** T28、T29、T30、T31、T32
 
 **文件范围（实施工作区）：**
@@ -1528,6 +1534,8 @@ Test-Bd2Device -TestClass 'com.bd2toolsbox.ui.NavigationStateTest' -Abi 'x86_64'
 ### T34 — 验证并统一头像、缩略图的加载与缓存
 
 - [ ] **T34 完成**
+
+**2026-10-13 部分完成：内存上限。** 修掉三处**无上限**缓存：`GamekeeRepository.thumbs`、`AvatarRepository.decoded`（都是 `ConcurrentHashMap<String, ImageBitmap>`，滑一遍长列表就把每张解码图永久留在内存里）、`battleHtmlMemory`。新增 `core/images/BoundedImageCache.kt`：按**字节**计预算的 LRU（按条数在缩略图上刚好、在全尺寸立绘上就是 800 MB，两者差 16 倍）；`AvatarRepository.failed` 加上限 512 并补并发保护。`ImagePipelineTest` **10/10 PASS**。**没有引入 Coil 3（登记偏离）**：与 T48–T54 的减包目标直接冲突（Coil 会带回 okhttp，而这个 App 目前零第三方 HTTP 客户端，只用 HttpURLConnection），而要修的东西用 ~130 行 LRU 就解决了；Coil 的磁盘缓存这层本来就已经有。计划本身也把 Coil 写成「可选验证替换」「暂时保留旧路径」。**仍缺**：release 峰值内存实测、网络异常逐项状态、占位/失败状态统一、跨尺寸约束、arm64。见 [T34 证据](../../refactor/evidence/T34.md)。
 
 **优先级：** P1　**前置：** T17、T30、T28
 
