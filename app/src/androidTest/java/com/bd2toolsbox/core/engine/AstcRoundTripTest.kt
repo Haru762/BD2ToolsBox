@@ -236,4 +236,77 @@ RESULT = "OK %s %s" % (None if out is None else len(out), err)
             assertEquals("2x2 图必须恰好压成一个 4x4 块", 16, lenText.toInt())
         }
     }
+
+    /**
+     * T59：ASTC 编解码**耗时**（设备上真实测量）。
+     *
+     * 长期缺口是「ASTC 编解码耗时未测」—— 之前只验了正确性（往返）。
+     * 这里用一张有代表性的尺寸（512×512，即 128×128 = 16384 个 4×4 块）跑 3 次取中位数。
+     *
+     * 判据只给一个**很松**的上界：耗时的绝对值随设备差几个数量级，拿一个具体数字
+     * 当门禁只会变成假失败。真正要钉住的是「它不会慢到离谱」（比如退化成纯 Python 实现）。
+     * 具体数字记进证据，供以后对比。
+     */
+    @Test
+    fun astcEncodeAndDecodeTimingIsReported() {
+        val result = python(
+            """
+import time, statistics
+from repacker import repacker
+import texture2ddecoder as t2d
+
+W, H = 512, 512
+BX, BY = 4, 4
+# 有梯度的内容，比纯色更接近真实贴图（纯色会让编码器走捷径，测出来偏快）
+src = bytearray(W * H * 4)
+for y in range(H):
+    for x in range(W):
+        i = (y * W + x) * 4
+        src[i] = (x * 255) // (W - 1)
+        src[i+1] = (y * 255) // (H - 1)
+        src[i+2] = ((x + y) * 255) // (W + H - 2)
+        src[i+3] = 255
+src = bytes(src)
+
+enc = []
+dec = []
+encoded_bytes = 0
+for _ in range(3):
+    t0 = time.perf_counter()
+    out, err = repacker.compress_image_astc(src, W, H, BX, BY)
+    enc.append((time.perf_counter() - t0) * 1000.0)
+    if out is None:
+        RESULT = "ENCODE_FAILED: %s" % err
+        raise SystemExit
+    encoded_bytes = len(out)
+    t1 = time.perf_counter()
+    t2d.decode_astc(out, W, H, BX, BY)
+    dec.append((time.perf_counter() - t1) * 1000.0)
+
+RESULT = "OK pixels=%d encoded_bytes=%d enc_ms=%s enc_median=%.1f dec_ms=%s dec_median=%.1f" % (
+    W * H, encoded_bytes,
+    ",".join("%.1f" % v for v in enc), statistics.median(enc),
+    ",".join("%.1f" % v for v in dec), statistics.median(dec))
+            """.trimIndent()
+        )
+        assertTrue("ASTC 计时失败：$result", result.startsWith("OK "))
+        val body = result.removePrefix("OK ")
+
+        fun num(key: String): Double =
+            Regex("$key=([0-9.]+)").find(body)!!.groupValues[1].toDouble()
+
+        val pixels = num("pixels").toInt()
+        val encodedBytes = num("encoded_bytes").toInt()
+        val encMedian = num("enc_median")
+        val decMedian = num("dec_median")
+
+        assertEquals("512x512 的像素数", 512 * 512, pixels)
+        // 注意：这是**字节数**不是块数 —— 每块 16 字节，16384 块 = 262144 字节。
+        // 第一版把它叫 blocks，名字有误导（断言本身是对的）。
+        assertEquals("512x512 的 ASTC 字节数", (512 / 4) * (512 / 4) * 16, encodedBytes)
+        // 很松的上界：只要不是退化成纯 Python 实现就不该到这个量级
+        assertTrue("ASTC 编码中位数过慢：$encMedian ms（原始 $body）", encMedian < 30000.0)
+        assertTrue("ASTC 解码中位数过慢：$decMedian ms（原始 $body）", decMedian < 30000.0)
+        println("ASTC_TIMING $body")
+    }
 }

@@ -153,21 +153,25 @@ dumpsys gfxinfo com.bd2toolsbox reset
 |---|---|---|---|
 | `_build_file_index`（一次 `os.walk` 建索引） | 120 个 bundle / **9,240 个文件** | **107.75 ms** | 132.59 / 107.75 / 104.59 |
 | `json_to_skel`（Spine json → skel 二进制） | 60 bones / 80 slots / 6 animations | **15.23 ms** | 26.60 / 15.23 / 14.15 |
+| ASTC 编码（`repacker.compress_image_astc`，**设备**） | 512×512 / 4×4 块 / 262,144 字节产物 | **86.9 ms** | 101.3 / 86.1 / 86.9 |
+| ASTC 解码（`texture2ddecoder.decode_astc`，**设备**） | 同上 | **9.5 ms** | 10.5 / 9.5 / 9.5 |
 
 `json_to_skel` 产物 54,547 字节（非空校验）。脚本顺带断言：索引跳过 `.old` 备份目录与
 `.nomedia` 标记，索引到的词干数 == bundle 数。
 
 ## 4. 明确未覆盖
 
-- **ASTC 编解码耗时**：`libastcenc` 只在设备上有，且真机/模拟器上的实际解码仍未验
-  （`docs/refactor/evidence/` 里的既有缺口）。本轮的转换耗时**不含**这一段。
+- ~~ASTC 编解码耗时未测~~ → **已测**（设备，512×512：编码中位数 86.9 ms、解码 9.5 ms，
+  见上表）。它由 `AstcRoundTripTest#astcEncodeAndDecodeTimingIsReported` 测量，
+  只给一个很松的上界（30 s）—— 耗时的绝对值随设备差几个数量级，拿具体数字当门禁
+  只会变成假失败；要钉住的是「没退化成纯 Python 实现」。
 - **大列表滚动帧率**：需要 UI 自动化或人工录制；未做。`BundleListingSnapshot` 的
   分页不重扫已由 §2 覆盖，但「滚动时掉不掉帧」没有数据。
 - **图片峰值内存**：本仓库没有 Coil/Glide（预览走 WebView 与磁盘缓存
   `PreviewCacheRepository`），没有「图片内存缓存」这个对象可测；预览缓存的**容量上限**
   由 T24/T43 的功能用例覆盖，不是性能数字。
 - **arm64 真机**：本表是 x86_64 模拟器。真机数字未采（真机当前装的是优化后 release，
-  但本轮未跑性能采样）。
+  但本轮未跑性能采样）。ASTC 耗时同理 —— 模拟器上的绝对值不代表真机。
 - **16 KB 页 / API 29 上的性能**：只跑了功能，没采性能数字。
 - **网络因素**：全部场景都在本地，未区分缓存冷/热与网络耗时。
 
