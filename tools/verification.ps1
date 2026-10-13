@@ -109,6 +109,59 @@ function Write-Bd2Json {
     [IO.File]::WriteAllText($Path, $json, (New-Object Text.UTF8Encoding($false)))
 }
 
+function Install-Bd2Apk {
+    <#
+      .SYNOPSIS
+        装一个 APK，并对 **MIUI 的「USB 安装」限制**做回退。
+
+      .DESCRIPTION
+        真机是 MIUI。它的「USB 安装」安全门禁会在 `adb install` 上**间歇性**拒绝，
+        报 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user` ——
+        同一条命令刚才还成功，下一次就失败，所以那不是 APK 的问题。
+
+        设备有 root（KernelSU）时改走 `su -c pm install`：**同一条安装路径**，
+        只是绕开 MIUI 加在 adb 上的门禁。没有 root 的设备上这段不会触发。
+
+        回退**只在真的被拒时**发生，并且结果照样要看到 `Success` 才算成功 ——
+        不把「换了个命令」当成「装上了」。
+    #>
+    param(
+        [Parameter(Mandatory=$true)][string]$Serial,
+        [Parameter(Mandatory=$true)][string]$Apk,
+        [int]$Attempts = 3
+    )
+    if (-not (Test-Path -LiteralPath $Apk -PathType Leaf)) { throw "APK 不存在：$Apk" }
+    # **必须**在局部把 $ErrorActionPreference 降回 Continue。
+    #
+    # `$ErrorActionPreference = 'Stop'` 下，原生命令往 stderr 写一行就会被 PowerShell
+    # 当成**终止错误**抛出 —— 而 adb 装失败时正是往 stderr 写
+    # `Failure [INSTALL_FAILED_USER_RESTRICTED: ...]`。于是下面这段回退代码根本来不及
+    # 看 `$LASTEXITCODE`，调用方拿到的是 adb 的原始报错（实测踩过）。
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $last = ''
+        for ($i = 1; $i -le $Attempts; $i++) {
+            $last = ((& $Bd2Adb -s $Serial install -r -t $Apk 2>&1) -join ' ')
+            if ($LASTEXITCODE -eq 0 -and $last -match 'Success') { return $last }
+            if ($last -match 'USER_RESTRICTED') {
+                $remote = '/data/local/tmp/bd2-install-' + [guid]::NewGuid().ToString('N') + '.apk'
+                & $Bd2Adb -s $Serial push $Apk $remote 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $su = ((& $Bd2Adb -s $Serial shell "su -c 'pm install -r -t $remote'" 2>&1) -join ' ')
+                    & $Bd2Adb -s $Serial shell "su -c 'rm -f $remote'" 2>&1 | Out-Null
+                    if ($su -match 'Success') { return "via su: $su" }
+                    $last = "$last / su 回退也失败: $su"
+                }
+            }
+            Start-Sleep -Seconds 2
+        }
+        throw "安装失败（$Attempts 次）：$Apk -> $last"
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function New-Bd2RunDirectory {
     param([Parameter(Mandatory=$true)][string]$Label)
     $safe = ($Label -replace '[^A-Za-z0-9._-]+', '_').Trim('_')
@@ -891,10 +944,8 @@ function Test-Bd2Device {
         $summary.testApkSha256 = Get-Bd2Sha256 -Path $testApk
 
         foreach ($apk in @($appApk, $testApk)) {
-            $install = (& $Bd2Adb -s $serial install -r -t $apk) -join ' '
-            if ($LASTEXITCODE -ne 0 -or $install -notmatch 'Success') {
-                throw "安装失败：$apk -> $install (exit $LASTEXITCODE)"
-            }
+            $install = Install-Bd2Apk -Serial $serial -Apk $apk
+            $summary.steps += "install:$(Split-Path -Leaf $apk)"
         }
         # 每次 install -r 都会把 POST_NOTIFICATIONS 打回未授权，而 Install/ScanService 的
         # 通知断言（以及它们的 @Before 前置检查）要求它已授权。不补这一步的话，
@@ -1313,8 +1364,7 @@ function Test-Bd2JournalRecovery {
         $appApk = Get-Bd2ApkForAbi -BuildType 'debug' -Abi $Abi
         $testApk = Get-Bd2InstrumentationApk -Abi $Abi
         foreach ($apk in @($appApk, $testApk)) {
-            $install = (& $Bd2Adb -s $serial install -r -t $apk) -join ' '
-            if ($LASTEXITCODE -ne 0 -or $install -notmatch 'Success') { throw "安装失败：$apk -> $install" }
+            $install = Install-Bd2Apk -Serial $serial -Apk $apk
         }
         $summary.steps += 'install-debug-apks'
         Start-Sleep -Seconds 5
@@ -1410,8 +1460,7 @@ function Test-Bd2IsolatedRecovery {
         $appApk = Get-Bd2ApkForAbi -BuildType 'debug' -Abi $Abi
         $testApk = Get-Bd2InstrumentationApk -Abi $Abi
         foreach ($apk in @($appApk, $testApk)) {
-            $install = (& $Bd2Adb -s $serial install -r -t $apk) -join ' '
-            if ($LASTEXITCODE -ne 0 -or $install -notmatch 'Success') { throw "安装失败：$apk -> $install" }
+            $install = Install-Bd2Apk -Serial $serial -Apk $apk
         }
         $summary.steps += 'install-debug-apks'
         Start-Sleep -Seconds 5
@@ -1536,12 +1585,12 @@ function Test-Bd2ReleaseSmoke {
             throw 'Release probe and target APK must have the same signing certificate'
         }
         $summary.probeApkSha256 = Get-Bd2Sha256 -Path $testApk
-        $installApp = (& $Bd2Adb -s $serial install -r -t $artifact.path) -join ' '
+        $installApp = Install-Bd2Apk -Serial $serial -Apk $artifact.path
         if ($LASTEXITCODE -ne 0 -or $installApp -notmatch 'Success') {
             throw "release 安装失败：$installApp (exit $LASTEXITCODE)"
         }
         $summary.steps += 'install-release-apk'
-        $installTest = (& $Bd2Adb -s $serial install -r -t $testApk) -join ' '
+        $installTest = Install-Bd2Apk -Serial $serial -Apk $testApk
         if ($LASTEXITCODE -ne 0 -or $installTest -notmatch 'Success') {
             throw "探针包安装失败：$installTest (exit $LASTEXITCODE)"
         }
@@ -1837,6 +1886,18 @@ function Test-Bd2ReleaseSmoke {
                 )
                 foreach ($c in $checks) {
                     if ($c.was -le 0) { continue }
+                    # 基线只有**一轮**数据时不做门禁。
+                    #
+                    # 容忍度取的是「轮间中位数全距」，而单轮样本的这个值必然是 0 ——
+                    # 于是容忍度塌成 10%，把正常的抖动判成回退。实测踩过：
+                    # arm64 真机的基线是单轮的，暖启动 46 -> 56（+21.7%）被判成回退，
+                    # 而这一轮的原始样本是 [56,55,64,56,46]，紧得看不出任何退化。
+                    # 单轮数据本来就撑不起「中位数会怎么动」这个判断，所以只记录不判定。
+                    if (-not $c.runs -or @($c.runs).Count -lt 2) {
+                        Write-Host ("    {0}: {1} -> {2}；基线只有 1 轮数据，轮间波动未知 —— 只记录，不做门禁" -f `
+                            $c.name, $c.was, $c.now)
+                        continue
+                    }
                     $delta = ($c.now - $c.was) / $c.was
                     $allowance = Get-Bd2Allowance -Median $c.was -Raw $c.raw -RunMedians $c.runs
                     $excess = $c.now - $c.was
