@@ -1819,10 +1819,16 @@ function Test-Bd2ReleaseSmoke {
                     return $values[-1] - $values[0]
                 }
                 function Get-Bd2Allowance([int]$Median, $Raw, $RunMedians) {
+                    # 容忍度只取**轮间中位数全距**，不取池化原始样本的全距。
+                    #
+                    # 池化原始样本把「轮内噪声」与「轮间漂移」混在一起：
+                    # 暖启动的池化样本是 21..398，全距 377，比基线中位数 55 还大 7 倍 ——
+                    # 那个容忍度等于把门禁彻底废掉（实测：中位数从 55 涨到 117 也照样过）。
+                    # 要回答的问题是「**中位数**从一轮到下一轮会动多少」，
+                    # 那只能拿每轮的中位数来看。
                     $tenPercent = 0.10 * $Median
-                    $rawSpread = Get-Bd2Spread $Raw
                     $runSpread = Get-Bd2Spread $RunMedians
-                    return [Math]::Max($tenPercent, [Math]::Max($rawSpread, $runSpread))
+                    return [Math]::Max($tenPercent, $runSpread)
                 }
                 $checks = @(
                     @{ name = '冷启动中位数'; now = $coldMedian; was = [int]$entry.coldStartMedianMs; raw = $entry.coldStartRaw; runs = $entry.coldStartRunMedians },
@@ -1834,8 +1840,8 @@ function Test-Bd2ReleaseSmoke {
                     $delta = ($c.now - $c.was) / $c.was
                     $allowance = Get-Bd2Allowance -Median $c.was -Raw $c.raw -RunMedians $c.runs
                     $excess = $c.now - $c.was
-                    Write-Host ("    {0}: {1} -> {2} ({3:P1})；容忍度 {4:N0} = max(10%={5:N0}, 轮内全距={6:N0}, 轮间全距={7:N0})" -f `
-                        $c.name, $c.was, $c.now, $delta, $allowance, (0.10 * $c.was), (Get-Bd2Spread $c.raw), (Get-Bd2Spread $c.runs))
+                    Write-Host ("    {0}: {1} -> {2} ({3:P1})；容忍度 {4:N0} = max(10%={5:N0}, 轮间中位数全距={6:N0})" -f `
+                        $c.name, $c.was, $c.now, $delta, $allowance, (0.10 * $c.was), (Get-Bd2Spread $c.runs))
                     if ($delta -gt 0.10 -and $excess -gt $allowance) {
                         $regressions += ("{0} 回退 {1:P1}（{2} -> {3}，超出容忍度 {4:N0}）" -f `
                             $c.name, $delta, $c.was, $c.now, $allowance)
@@ -1867,6 +1873,56 @@ function Test-Bd2ReleaseSmoke {
             if ($regressions.Count -gt 0) {
                 throw ("性能相对基线回退（10% 触发线）：`n  " + ($regressions -join "`n  ") +
                     "`n原始数据在 $runDir；需归因并复测（见 docs/refactor/evidence/performance.md）")
+            }
+
+            # --- 滚动帧率：持续可见卡顿直接不通过 ---
+            #
+            # 用系统自己的 `gfxinfo` 计数，不靠肉眼也不靠截图。
+            # 先 reset，再在真实列表上连续上下滑，最后读 Janky frames 占比。
+            # 阈值取 50%：这个模拟器跑的是 swiftshader 软件渲染，
+            # 拿真实手机的帧率标准去卡它只会得到一个永远红的结果。
+            $jankyPercent = $null
+            try {
+                & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
+                Start-Sleep -Seconds 2
+                & $Bd2Adb -s $serial shell am start -W -n 'com.bd2toolsbox/.MainActivity' | Out-Null
+                Start-Sleep -Seconds 6
+                & $Bd2Adb -s $serial shell dumpsys gfxinfo com.bd2toolsbox reset | Out-Null
+                Start-Sleep -Seconds 2
+                for ($i = 0; $i -lt 8; $i++) {
+                    & $Bd2Adb -s $serial shell input swipe 960 820 960 300 250 | Out-Null
+                    Start-Sleep -Milliseconds 300
+                    & $Bd2Adb -s $serial shell input swipe 960 300 960 820 250 | Out-Null
+                    Start-Sleep -Milliseconds 300
+                }
+                $gfx = ((& $Bd2Adb -s $serial shell dumpsys gfxinfo com.bd2toolsbox) -join "`n")
+                [IO.File]::WriteAllText((Join-Path $runDir 'gfxinfo.txt'), $gfx, (New-Object Text.UTF8Encoding($false)))
+                $totalM = [regex]::Match($gfx, 'Total frames rendered:\s*(\d+)')
+                $jankyM = [regex]::Match($gfx, 'Janky frames:\s*(\d+)')
+                if ($totalM.Success -and $jankyM.Success) {
+                    $totalFrames = [int]$totalM.Groups[1].Value
+                    $jankyFrames = [int]$jankyM.Groups[1].Value
+                    if ($totalFrames -gt 0) {
+                        $jankyPercent = [Math]::Round(100.0 * $jankyFrames / $totalFrames, 2)
+                        $summary.scrollFramesTotal = $totalFrames
+                        $summary.scrollFramesJanky = $jankyFrames
+                        $summary.scrollJankyPercent = $jankyPercent
+                        Write-Host ("    滚动：{0} 帧，其中 janky {1} 帧（{2}%）" -f $totalFrames, $jankyFrames, $jankyPercent)
+                        if ($jankyPercent -gt 50) {
+                            throw "滚动卡顿过重：janky $jankyPercent%（$jankyFrames/$totalFrames）"
+                        }
+                    }
+                }
+                if ($null -eq $jankyPercent) {
+                    Write-Host '    gfxinfo 没有给出帧数（列表可能没有可滚动内容）—— 如实记为未测到'
+                    $summary.steps += 'scroll-jank-not-measured'
+                } else {
+                    $summary.steps += 'scroll-jank-measured'
+                }
+            } catch {
+                if ($_.Exception.Message -like '滚动卡顿过重*') { throw }
+                Write-Host ("    滚动帧率未测到：{0}" -f $_.Exception.Message)
+                $summary.steps += 'scroll-jank-not-measured'
             }
         }
 
