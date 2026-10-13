@@ -1,5 +1,6 @@
 package com.bd2toolsbox.data.repository
 
+import com.bd2toolsbox.core.images.BoundedImageCache
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.Log
@@ -76,6 +77,9 @@ class AvatarRepository @Inject constructor(
     }
 
     companion object {
+        /** 头像内存上限（T34）：列表里是几十 px，8 MB 够覆盖好几个屏幕。 */
+        const val AVATAR_MEMORY_BUDGET_BYTES = 8L * 1024 * 1024
+
         private const val TAG = "AvatarRepository"
 
         /**
@@ -120,8 +124,26 @@ class AvatarRepository @Inject constructor(
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     /** 缓存键 -> 已解码的图。键就是图片文件名（含扩展名），天然唯一。 */
-    private val decoded = ConcurrentHashMap<String, ImageBitmap>()
-    private val failed = ConcurrentHashMap<String, Boolean>()
+    /**
+     * 解码后的头像（T34）。
+     *
+     * 原来是**无上限**的 `ConcurrentHashMap<String, ImageBitmap>` —— 头像虽然小
+     * （列表里是几十 px），但角色多、皮肤多，且换一次列表就全留在内存里。
+     * 换成按字节计上限的 LRU 后，磁盘那一层（`avatars/`）不受影响：
+     * 被淘汰的头像重新解码即可，不会重新下载。
+     */
+    private val decoded = BoundedImageCache(AVATAR_MEMORY_BUDGET_BYTES)
+
+    /**
+     * 失败过的 URL。
+     *
+     * 上限 512 条：它的用途是「别让用户上下滚动时对着同一张坏图反复重试」，
+     * 记最近 512 个足够覆盖滚动范围；不设上限的话，一个坏掉的 CDN 会把
+     * 每个不同的 URL 都记进来。
+     */
+    private val failed = object : LinkedHashMap<String, Boolean>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?) = size > 512
+    }
 
     private val cacheDir: File
         get() = File(appContext.externalCacheDir ?: appContext.cacheDir, CACHE_DIR)
@@ -162,7 +184,7 @@ class AvatarRepository @Inject constructor(
     // ---------------------------------------------------------------- 取图
 
     /** 内存里已有就立刻返回，供 Composable 首帧直接画、不闪占位图。 */
-    fun peek(key: String?): ImageBitmap? = key?.let { decoded[it] }
+    fun peek(key: String?): ImageBitmap? = key?.let { decoded.get(it) }
 
     /**
      * 取图。内存 → 磁盘 → 网络，逐层回退；任何一步失败都返回 null。
@@ -170,15 +192,15 @@ class AvatarRepository @Inject constructor(
      * [key] 是图片文件名，[url] 是完整地址（两者都由上面那几个解析方法给出）。
      */
     suspend fun load(key: String, url: String): ImageBitmap? {
-        decoded[key]?.let { return it }
-        if (failed.containsKey(key)) return null
+        decoded.get(key)?.let { return it }
+        synchronized(failed) { if (failed.containsKey(key)) return null }
 
         return withContext(Dispatchers.IO) {
             val file = File(cacheDir, key)
 
             if (file.exists() && file.length() > 0) {
                 decodeFile(file)?.let {
-                    decoded[key] = it
+                    decoded.put(key, it)
                     return@withContext it
                 }
                 // 解不出来说明那份是坏的（半个文件之类），删掉重下
@@ -187,16 +209,16 @@ class AvatarRepository @Inject constructor(
 
             val outcome = downloadGate.withPermit { download(url, file) }
             if (outcome != Outcome.OK) {
-                failed[key] = true
+                synchronized(failed) { failed[key] = true }
                 return@withContext null
             }
             val bmp = decodeFile(file)
             if (bmp == null) {
                 file.delete()
-                failed[key] = true
+                synchronized(failed) { failed[key] = true }
                 return@withContext null
             }
-            decoded[key] = bmp
+            decoded.put(key, bmp)
             bmp
         }
     }
@@ -222,7 +244,7 @@ class AvatarRepository @Inject constructor(
             val targets = withContext(Dispatchers.IO) { avatarTargets() }
             // 上一趟没网留下的「不再重试」不该拦住这一趟；404 那类也会被清掉，
             // 代价只是下次滚到它时多发一个请求，换来的是「重试」真的能重试。
-            failed.clear()
+            synchronized(failed) { failed.clear() }
             val missing = withContext(Dispatchers.IO) {
                 targets.filterNot { isCached(it.first) }
             }
@@ -278,7 +300,7 @@ class AvatarRepository @Inject constructor(
 
     /** 预取专用：只把图落到磁盘，不进内存。 */
     private suspend fun cacheOnly(key: String, url: String): Outcome {
-        if (decoded.containsKey(key)) return Outcome.OK
+        if (decoded.contains(key)) return Outcome.OK
         if (isCached(key)) return Outcome.OK
         val file = File(cacheDir, key)
         return downloadGate.withPermit { download(url, file) }

@@ -4,6 +4,8 @@ import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.bd2toolsbox.core.images.BoundedImageCache
+import com.bd2toolsbox.core.images.BoundedStringCache
 import com.bd2toolsbox.data.model.CdkItem
 import com.bd2toolsbox.data.model.GuideArticle
 import com.bd2toolsbox.data.model.GuideCategory
@@ -72,6 +74,12 @@ class GamekeeRepository @Inject constructor(
 
     companion object {
         private const val TAG = "GamekeeRepository"
+
+        /** 缩略图内存上限（T34）：256px 缩略图约 256 KB/张，8 MB ≈ 32 张。 */
+        const val THUMB_MEMORY_BUDGET_BYTES = 8L * 1024 * 1024
+
+        /** 阵容正文内存上限（T34）：一篇几十 KB，4 MB ≈ 40~80 篇。 */
+        const val HTML_MEMORY_BUDGET_BYTES = 4L * 1024 * 1024
 
         /** gamekee 给棕色尘埃2分区的固定 id / 别名（接口头与 CDN 路径都要用）。 */
         // T30：这三个常量与 HTTP 层一起搬到了 GamekeeApi，这里保留同名别名，
@@ -445,17 +453,23 @@ class GamekeeRepository @Inject constructor(
             GuideDetail(article.copy(title = title), html, System.currentTimeMillis())
         }
 
-    /** 列表页缩略图。三层缓存与头像一致（内存 → guides/thumbs/ → 网络）。 */
-    private val thumbs = ConcurrentHashMap<String, ImageBitmap>()
+    /**
+     * 列表页缩略图。三层缓存与头像一致（内存 → guides/thumbs/ → 网络）。
+     *
+     * T34：内存这一层换成**按字节计上限**的 LRU。以前是无上限的
+     * `ConcurrentHashMap<String, ImageBitmap>` —— 滑一遍长列表就把每张解码图
+     * 永久留在内存里（256px 缩略图约 256 KB/张），直到用户手动清缓存。
+     */
+    private val thumbs = BoundedImageCache(THUMB_MEMORY_BUDGET_BYTES)
 
     suspend fun loadThumb(article: GuideArticle): ImageBitmap? {
         val url = article.thumb ?: return null
-        thumbs[url]?.let { return it }
+        thumbs.get(url)?.let { return it }
         return withContext(Dispatchers.IO) {
             val name = "${article.id}.img"
             val file = cache.thumbFile(name)
             if (file.exists() && file.length() > 0) {
-                decodeScaled(file)?.let { thumbs[url] = it; return@withContext it }
+                decodeScaled(file)?.let { thumbs.put(url, it); return@withContext it }
                 file.delete()
             }
             if (!download(url, file, referer = true)) {
@@ -463,7 +477,7 @@ class GamekeeRepository @Inject constructor(
                 return@withContext null
             }
             val bmp = decodeScaled(file)
-            if (bmp != null) thumbs[url] = bmp
+            if (bmp != null) thumbs.put(url, bmp)
             bmp
         }
     }
@@ -491,7 +505,8 @@ class GamekeeRepository @Inject constructor(
     /** v2 模板 ID 与 v3 阵容 ID 不属于同一命名空间。 */
     private data class BattleRef(val version: Int, val id: Long)
 
-    private val battleHtmlMemory = ConcurrentHashMap<BattleRef, String>()
+    // T34：同样无上限（一篇正文几十 KB）→ 换成有上限的 LRU。
+    private val battleHtmlMemory = BoundedStringCache(HTML_MEMORY_BUDGET_BYTES)
 
     /** 表情表（[loadEmojiMap]）的落盘文件与内存副本。 */
     private val emojiFile: File get() = cache.emojiFile
@@ -540,12 +555,12 @@ class GamekeeRepository @Inject constructor(
      * 只有成功的卡片才进入缓存；失败由文章渲染器就地生成带原文链接的提示。
      */
     private suspend fun battleCardHtml(ref: BattleRef): String? = withContext(Dispatchers.IO) {
-        battleHtmlMemory[ref]?.let { return@withContext it }
+        battleHtmlMemory.get(ref)?.let { return@withContext it }
         val key = "v" + ref.version + "_" + ref.id
         val cached = cache.battleFile(key)
         if (cached.exists() && cached.length() > 0) {
             try {
-                return@withContext cached.readText().also { battleHtmlMemory[ref] = it }
+                return@withContext cached.readText().also { battleHtmlMemory.put(ref, it) }
             } catch (e: Exception) {
                 Log.w(TAG, "阵容缓存读取失败: $ref", e)
                 cached.delete()
@@ -573,7 +588,7 @@ class GamekeeRepository @Inject constructor(
             return@withContext null
         }
         cache.writeAtomic(cached, html)
-        battleHtmlMemory[ref] = html
+        battleHtmlMemory.put(ref, html)
         html
     }
 
