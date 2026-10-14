@@ -727,11 +727,11 @@
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
-                "mappingBytes": 44906000,
-                "contentSha256": "9236a96d2bb58caddf30f0c38c2810ce6690cab4b5acca2f3f4ab52c508bb2c7",
-                "fileSha256": "3cbf2bd2be1be2df6519bbee8ee82eec936d928217a0e91779f41f8dc2acce1e",
+                "mappingBytes": 44941100,
+                "contentSha256": "7f4603904c8ea33c5d4fdd98e3b7649fd773091dd4e28aad4488ad3a46dbfc02",
+                "fileSha256": "683b7ffc952e88c7c0145ca298ffe97bf2c2c9505e7dfc581d828a9e1bed5682",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "2513f585b8a9343e303b7c95fdaa88276bd6a17bd8fe9955f1ef3c87d2e52693"
+                "mappingFileSha256": "e33a404771e58fcb4021acd0a270fb283c4d0a121d58ce3646a73352242e10d4"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
@@ -741,11 +741,11 @@
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
-                "mappingBytes": 44905928,
-                "contentSha256": "937c0f3765a5b46e81736cbf6a9d27c3257861fcabf7dbf5efe6d7046698a165",
-                "fileSha256": "9d800cb06610292185ca596ed572160fbf7b2038796cf5bdbd7d0c377de0c26d",
+                "mappingBytes": 44941028,
+                "contentSha256": "a4104df4593b0147ae857305a6f393426bbfa1055172fd2a4d0a40a7eeffef88",
+                "fileSha256": "adaffa8025ed0cbdaeed7e4d00cfafaa548ecc9ecae2a5af4615332c1801ad52",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "7c0791f62de7796816d97aa604f22b555b4c8f8964a1f6dab3db66ff546cf37b"
+                "mappingFileSha256": "ac0c3962e18235f01018898616172d7345d2ff69afc7e75783d2bedae38a2b4f"
             }
         },
         "baselineForSizeComparison": "t48Freeze",
@@ -782,14 +782,14 @@
                 "x86_64@API32": "10/10 PASS",
                 "x86_64@API34": "10/10 PASS",
                 "x86_64@API36-16KB": "10/10 PASS",
-                "arm64-v8a": "9/10 PASS (performance-scenarios single-run baseline recorded; see device-arm64-2026-10-13.md)"
+                "arm64-v8a": "10/10 PASS"
             },
             "deviceMatrix": {
                 "x86_64@API29": "PASS",
                 "x86_64@API32": "PASS",
                 "x86_64@API34": "PASS",
                 "x86_64@API36-16KB": "PASS",
-                "arm64-v8a@API36-real-device": "PARTIAL_PASS (8 non-Compose classes PASS incl. AstcRoundTripTest 4/4; 12 Compose classes blocked by MIUI Permission Denied Activity)"
+                "arm64-v8a@API36-real-device": "PASS (10/10 smoke + 8 non-Compose classes + 2 process-death orchestrations PASS; 12 Compose classes blocked by MIUI Permission Denied Activity)"
             },
             "localAll": "PASS (exit 0)",
             "deviceSuiteOnMuMu": "23/23 PASS (21 classes + 2 process-death orchestrations)",

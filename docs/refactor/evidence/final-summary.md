@@ -10,9 +10,9 @@
 |---|---|
 | 代码质量门禁 | **全绿**（架构 0 违规、JVM 1472/0/0/0、Python 245/0/0/0、基线清单 16/16、交付记录 20/20） |
 | 产物 | **两个 ABI 的 minified release 已构建**，签名与既有 0.2.16 一致（可覆盖升级） |
-| 设备矩阵 | **x86_64 四个 API 档全实测**（API 29 / 32 / 34 / 36-16KB），release smoke 各 **10/10**；**arm64 真机已实测**（release smoke **9/10** + 8 个非 Compose 设备类 PASS，含 ASTC 真机往返；12 个 Compose 类受 MIUI 限制未跑） |
+| 设备矩阵 | **x86_64 四个 API 档全实测**（API 29 / 32 / 34 / 36-16KB），release smoke 各 **10/10**；**arm64 真机已实测**（release smoke **10/10 PASS** + 8 个非 Compose 设备类 PASS + 2 条进程死亡编排 PASS；12 个 Compose 类受 MIUI 限制未跑） |
 | 设备用例（MuMu 最终门禁） | **23/23 PASS**（21 个类 + 两条进程死亡编排） |
-| release smoke | x86_64 四个 API 档各 **10/10 PASS**；arm64 真机 **9/10 PASS**（见 `device-arm64-2026-10-13.md`） |
+| release smoke | x86_64 四个 API 档各 **10/10 PASS**；arm64 真机 **10/10 PASS**（见 `device-arm64-2026-10-13.md`） |
 | 截图 | **18 张**真实 release 截图，程序化核对 PASS |
 | 滚动帧率 | **490 帧 / 0 janky（0%）** |
 | ASTC 编解码 | 编码中位数 86.9 ms、解码 9.5 ms（512×512，设备） |
@@ -37,13 +37,13 @@
 
 | ABI | 路径 | 字节数 | contentSha256 / fileSha256 | 签名证书 SHA-256 |
 |---|---|---|---|---|
-| arm64-v8a | `app/build/outputs/apk/arm64/release/app-arm64-release.apk` | 22,709,930 | `9236a96d2bb58cad…` / `3cbf2bd2be1be2df…` | `892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1` |
-| x86_64 | `app/build/outputs/apk/x64/release/app-x64-release.apk` | 22,882,015 | `937c0f3765a5b46e…` / `9d800cb066102921…` | 同上 |
+| arm64-v8a | `app/build/outputs/apk/arm64/release/app-arm64-release.apk` | 22,709,930 | `7f4603904c8ea33c…` / `683b7ffc952e88c7…` | `892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1` |
+| x86_64 | `app/build/outputs/apk/x64/release/app-x64-release.apk` | 22,882,015 | `a4104df4593b0147…` / `adaffa8025ed0cbd…` | 同上 |
 
 - 身份：`versionCode=17`、`versionName=0.2.16`（与冻结基线一致，见 §5）。
 - 签名指纹与设备上既装 0.2.16 **相同** → 用户**可直接覆盖升级、无需清数据**。
 - R8 mapping：`app/build/outputs/mapping/{arm64Release,x64Release}/mapping.txt`
-  （44,906,000 / 44,905,928 字节，SHA-256 `2513f585…` / `7c0791f6…`）。
+  （44,941,100 / 44,941,028 字节，SHA-256 `e33a4047…` / `ac0c3962…`）。
 - native 符号与 16 KB 对齐：见 `docs/refactor/evidence/native-strip.md`、`abi-packaging.md`。
 - 许可清单：`THIRD-PARTY-NOTICES.md`、`docs/refactor/license-inventory.md`。
 
@@ -64,7 +64,7 @@
 | AVD `bd2-x64-api29` | x86_64 / API 29（= minSdk）/ 4 KB | 设备用例全过；release smoke **10/10 PASS** |
 | AVD `bd2-x64-api34` | x86_64 / API 34 / 4 KB | 设备用例全过；release smoke **10/10 PASS** |
 | AVD `bd2-x64-api36-16k` | x86_64 / API 36 / **16 KB** | `PlatformBehaviorTest` **13/13**；release smoke **10/10 PASS** |
-| **真机 Xiaomi 2509FPN0BC** | **arm64-v8a / API 36 / 4 KB** | release smoke **9/10 PASS**；8 个非 Compose 设备类 PASS（含 `AstcRoundTripTest` 4/4）；12 个 Compose 类受 MIUI 拦截 Activity 未运行（见 `device-arm64-2026-10-13.md`） |
+| **真机 Xiaomi 2509FPN0BC** | **arm64-v8a / API 36 / 4 KB** | release smoke **10/10 PASS**；8 个非 Compose 设备类 + 2 条进程死亡编排 PASS（含 `AstcRoundTripTest` 4/4）；12 个 Compose 类受 MIUI 拦截 Activity 未运行（见 `device-arm64-2026-10-13.md`） |
 
 ## 5. 版本号：**刻意不改**
 

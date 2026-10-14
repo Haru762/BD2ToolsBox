@@ -1898,9 +1898,14 @@ function Test-Bd2ReleaseSmoke {
                     if (-not $c.runs -or @($c.runs).Count -lt 2) {
                         Write-Host ("    {0}: {1} -> {2}；基线不足 2 轮数据，本轮追加登记轮间中位数 —— 本轮不做门禁，下一轮起启用" -f `
                             $c.name, $c.was, $c.now)
-                        $existingRuns = if ($c.runs) { @($c.runs | ForEach-Object { [int]$_ }) } else { @($c.was) }
-                        $updatedRuns = @($existingRuns + @([int]$c.now))
-                        $entry | Add-Member -NotePropertyName $c.prop -NotePropertyValue $updatedRuns -Force
+                        $runList = New-Object System.Collections.Generic.List[int]
+                        if ($c.runs) {
+                            foreach ($r in @($c.runs)) { [void]$runList.Add([int]$r) }
+                        } else {
+                            [void]$runList.Add([int]$c.was)
+                        }
+                        [void]$runList.Add([int]$c.now)
+                        $entry | Add-Member -NotePropertyName $c.prop -NotePropertyValue $runList.ToArray() -Force
                         $baselineUpdated = $true
                         continue
                     }

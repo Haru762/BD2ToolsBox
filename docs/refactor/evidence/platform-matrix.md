@@ -13,7 +13,7 @@
 | AVD `bd2-x64-api36-16k` | x86_64 | 36 | **16 KB** | `emulator-5556` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
 | AVD `bd2-x64-api34` | x86_64 | **34** | 4 KB | `emulator-5558` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
 | AVD `bd2-x64-api29` | x86_64 | **29**（= minSdk） | 4 KB | `emulator-5554` | **3/3 PASS** | **13/13 PASS** | **6/6 PASS** | **10/10 PASS** |
-| 真机 Xiaomi 2509FPN0BC | **arm64-v8a** | 36 | 4 KB | `f7f409ac` | **4/4 PASS** | 13/13（x86_64）／真机上该机跑不了（见下） | **PASS** | **9/10** |
+| 真机 Xiaomi 2509FPN0BC | **arm64-v8a** | 36 | 4 KB | `f7f409ac` | **4/4 PASS** | 13/13（x86_64）／真机上该机跑不了（见下） | **PASS** | **10/10 PASS** |
 
 - **16 KB 页**那一格是 `getconf PAGE_SIZE` 实测的 16384，不是声明的；
   `PlatformBehaviorTest` 里含真实 `System.loadLibrary` 与打包 JNI 库的 16 KB 对齐断言。
