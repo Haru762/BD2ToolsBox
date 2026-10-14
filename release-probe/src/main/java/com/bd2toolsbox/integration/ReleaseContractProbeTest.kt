@@ -89,10 +89,15 @@ class ReleaseContractProbeTest {
         )
 
         // ---- 3. 应用身份 ----
+        val args = InstrumentationRegistry.getArguments()
+        val expectedVersionName = args.getString("expectedVersionName")?.takeIf { it.isNotBlank() }
+            ?: BASELINE_VERSION_NAME
+        val expectedVersionCode = args.getString("expectedVersionCode")?.toLongOrNull()
+            ?: BASELINE_VERSION_CODE
         assertEquals("包名必须与冻结基线一致", BASELINE_PACKAGE, context.packageName)
         val pkg = pm.getPackageInfo(context.packageName, 0)
-        assertEquals("版本名必须与冻结基线一致", BASELINE_VERSION_NAME, pkg.versionName)
-        assertEquals("版本号必须与冻结基线一致", BASELINE_VERSION_CODE, pkg.longVersionCode)
+        assertEquals("版本名必须与预期一致", expectedVersionName, pkg.versionName)
+        assertEquals("版本号必须与预期一致", expectedVersionCode, pkg.longVersionCode)
 
         // manifest 里没有 android:name 时应用类就是默认 Application；写了就必须是它本人。
         // 这样断言不依赖「当前还没有 Bd2Application」这个阶段性事实。

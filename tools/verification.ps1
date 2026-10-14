@@ -142,13 +142,13 @@ function Install-Bd2Apk {
     try {
         $last = ''
         for ($i = 1; $i -le $Attempts; $i++) {
-            $last = ((& $Bd2Adb -s $Serial install -r -t $Apk 2>&1) -join ' ')
+            $last = ((& $Bd2Adb -s $Serial install -r -t -d $Apk 2>&1) -join ' ')
             if ($LASTEXITCODE -eq 0 -and $last -match 'Success') { return $last }
             if ($last -match 'USER_RESTRICTED') {
                 $remote = '/data/local/tmp/bd2-install-' + [guid]::NewGuid().ToString('N') + '.apk'
                 & $Bd2Adb -s $Serial push $Apk $remote 2>&1 | Out-Null
                 if ($LASTEXITCODE -eq 0) {
-                    $su = ((& $Bd2Adb -s $Serial shell "su -c 'pm install -r -t $remote'" 2>&1) -join ' ')
+                    $su = ((& $Bd2Adb -s $Serial shell "su -c 'pm install -r -t -d $remote'" 2>&1) -join ' ')
                     $suExit = $LASTEXITCODE
                     & $Bd2Adb -s $Serial shell "rm -f $remote" 2>&1 | Out-Null
                     & $Bd2Adb -s $Serial shell "su -c 'rm -f $remote'" 2>&1 | Out-Null
@@ -1601,10 +1601,22 @@ function Test-Bd2ReleaseSmoke {
         }
         $summary.steps += 'install-release-probe-apk'
 
+        $expectedVerName = '0.2.16'
+        $expectedVerCode = '17'
+        if ($Case -ne 'baseline-startup') {
+            $verFile = Join-Path $Root 'gradle/version.properties'
+            if (Test-Path -LiteralPath $verFile -PathType Leaf) {
+                foreach ($line in (Get-Content -LiteralPath $verFile -Encoding UTF8)) {
+                    if ($line -match '^\s*appVersionName\s*=\s*(.+?)\s*$') { $expectedVerName = $Matches[1] }
+                    if ($line -match '^\s*appVersionCode\s*=\s*(\d+)\s*$') { $expectedVerCode = $Matches[1] }
+                }
+            }
+        }
         $probe = Invoke-Bd2Instrumentation -Serial $serial `
             -TestClass 'com.bd2toolsbox.integration.ReleaseContractProbeTest' `
             -Method 'baselineStartup' `
-            -TestPackage 'com.bd2toolsbox.releaseprobe'
+            -TestPackage 'com.bd2toolsbox.releaseprobe' `
+            -Arguments @{ expectedVersionName = $expectedVerName; expectedVersionCode = $expectedVerCode }
         # 先落盘再断言（同 Test-Bd2Device：失败也要留下现场）
         [IO.File]::WriteAllText((Join-Path $runDir 'probe.txt'), $probe.output, (New-Object Text.UTF8Encoding($false)))
         $count = Assert-Bd2InstrumentationResult -Result $probe -Label 'ReleaseContractProbeTest#baselineStartup'
@@ -1703,11 +1715,15 @@ function Test-Bd2ReleaseSmoke {
         }
         & $Bd2Adb -s $serial shell am force-stop com.bd2toolsbox | Out-Null
 
-        # 应用身份：包名/版本号/版本名必须与冻结基线一致（0.2.16 / 17）
+        # 应用身份：包名/版本号/版本名必须与预期版本一致
         $badging = ((& $Bd2Adb -s $serial shell dumpsys package com.bd2toolsbox) -join [Environment]::NewLine)
         [IO.File]::WriteAllText((Join-Path $runDir 'package.txt'), $badging, (New-Object Text.UTF8Encoding($false)))
-        if ($badging -notmatch 'versionCode=17') { throw '应用身份不符：设备上的 versionCode 不是 17' }
-        if ($badging -notmatch 'versionName=0\.2\.16') { throw '应用身份不符：设备上的 versionName 不是 0.2.16' }
+        if ($badging -notmatch ('versionCode=' + [regex]::Escape($expectedVerCode) + '\b')) {
+            throw "应用身份不符：设备上的 versionCode 不是 $expectedVerCode"
+        }
+        if ($badging -notmatch ('versionName=' + [regex]::Escape($expectedVerName) + '\b')) {
+            throw "应用身份不符：设备上的 versionName 不是 $expectedVerName"
+        }
         $summary.steps += 'verify-app-identity'
 
         if ($contract.performance) {
