@@ -238,9 +238,14 @@ fun AppRoot(
                 var previewHidden by rememberSaveable { mutableStateOf(false) }
 
                 Scaffold(
-                    // T40：根容器透明，壁纸背景层在下面；页头等无底色区域能看到壁纸，
-                    // 文字密集的内容区由内层不透明 Surface 负责可读性。
-                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    // T40：有壁纸时根容器透明，让底下的 WallpaperBackdrop 在页头露出来；
+                    // 无壁纸时直接用主题 background，确保顶栏与状态栏底色始终与当前明暗主题一致。
+                    containerColor = if (wallpaperUri != null) {
+                        androidx.compose.ui.graphics.Color.Transparent
+                    } else {
+                        MaterialTheme.colorScheme.background
+                    },
+                    contentColor = MaterialTheme.colorScheme.onBackground,
                     // T46：内容区自己避让系统栏与刘海。以前只有 topBar 里的
                     // statusBarsPadding()，内容区靠 Scaffold 的默认 padding 兜 ——
                     // 刘海（displayCutout）与横屏时的侧边系统栏没被算进去。

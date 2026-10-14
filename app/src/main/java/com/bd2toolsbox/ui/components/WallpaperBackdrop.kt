@@ -44,25 +44,34 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun WallpaperBackdrop(uri: Uri?, scrim: Float) {
-    if (uri == null) return
+    // 始终铺一层不透明的主题背景色兜底：
+    // 1) 未设置壁纸（uri == null）时，根 Scaffold 为透明，若不画这层底色，
+    //    顶栏（topBar）与状态栏会直接漏出 themes.xml 的 windowBackground（纯黑），
+    //    导致浅色主题下的深色顶栏文字/图标在黑底上完全看不见；
+    // 2) 设置了壁纸但异步解码尚未完成或 URI 失效时，也不会闪出黑底。
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        if (uri == null) return@Box
 
-    val context = LocalContext.current
-    val config = LocalConfiguration.current
-    val density = LocalDensity.current
+        val context = LocalContext.current
+        val config = LocalConfiguration.current
+        val density = LocalDensity.current
 
-    // 按屏幕像素宽解码，别把一张 4000×3000 的原图整个读进内存 ——
-    // 它只是背景，超过屏幕的分辨率一个像素都用不上。
-    val targetPx = remember(config.screenWidthDp, density) {
-        with(density) { config.screenWidthDp.dp.toPx() }.toInt().coerceAtLeast(720)
-    }
+        // 按屏幕像素宽解码，别把一张 4000×3000 的原图整个读进内存 ——
+        // 它只是背景，超过屏幕的分辨率一个像素都用不上。
+        val targetPx = remember(config.screenWidthDp, density) {
+            with(density) { config.screenWidthDp.dp.toPx() }.toInt().coerceAtLeast(720)
+        }
 
-    var image by remember(uri, targetPx) { mutableStateOf<ImageBitmap?>(null) }
+        var image by remember(uri, targetPx) { mutableStateOf<ImageBitmap?>(null) }
 
-    LaunchedEffect(uri, targetPx) {
-        image = withContext(Dispatchers.IO) { decodeScaled(context, uri, targetPx) }
-    }
+        LaunchedEffect(uri, targetPx) {
+            image = withContext(Dispatchers.IO) { decodeScaled(context, uri, targetPx) }
+        }
 
-    Box(Modifier.fillMaxSize()) {
         image?.let {
             Image(
                 bitmap = it,
@@ -70,14 +79,12 @@ fun WallpaperBackdrop(uri: Uri?, scrim: Float) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = scrim))
+            )
         }
-        // 图还没解出来时这层也照画：否则第一帧是纯透明，
-        // 深色壁纸配深色文字会闪一下看不清。
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = scrim))
-        )
     }
 }
 

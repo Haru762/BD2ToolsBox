@@ -37,13 +37,13 @@
 
 | ABI | 路径 | 字节数 | contentSha256 / fileSha256 | 签名证书 SHA-256 |
 |---|---|---|---|---|
-| arm64-v8a | `app/build/outputs/apk/arm64/release/app-arm64-release.apk` | 22,709,930 | `7f4603904c8ea33c…` / `683b7ffc952e88c7…` | `892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1` |
-| x86_64 | `app/build/outputs/apk/x64/release/app-x64-release.apk` | 22,882,015 | `a4104df4593b0147…` / `adaffa8025ed0cbd…` | 同上 |
+| arm64-v8a | `app/build/outputs/apk/arm64/release/app-arm64-release.apk` | 22,709,930 | `8f52879d1282b1c9…` / `4ca02f443decb2f8…` | `892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1` |
+| x86_64 | `app/build/outputs/apk/x64/release/app-x64-release.apk` | 22,882,015 | `5e3cd300f6c1da8c…` / `75b388e57da64984…` | 同上 |
 
 - 身份：`versionCode=17`、`versionName=0.2.16`（与冻结基线一致，见 §5）。
 - 签名指纹与设备上既装 0.2.16 **相同** → 用户**可直接覆盖升级、无需清数据**。
 - R8 mapping：`app/build/outputs/mapping/{arm64Release,x64Release}/mapping.txt`
-  （44,941,100 / 44,941,028 字节，SHA-256 `e33a4047…` / `ac0c3962…`）。
+  （44,946,893 / 44,946,821 字节，SHA-256 `4ad605ec…` / `ae0cec8e…`）。
 - native 符号与 16 KB 对齐：见 `docs/refactor/evidence/native-strip.md`、`abi-packaging.md`。
 - 许可清单：`THIRD-PARTY-NOTICES.md`、`docs/refactor/license-inventory.md`。
 
