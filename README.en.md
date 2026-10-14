@@ -1,23 +1,38 @@
 [![GitHub release](https://img.shields.io/github/v/release/Haru762/BD2ToolsBox)](https://github.com/Haru762/BD2ToolsBox/releases/latest)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/Android-10%2B%20(API%2029%2B)-3DDC84)](https://github.com/Haru762/BD2ToolsBox/releases)
 
 [简体中文](./README.md) | [English](./README.en.md)
 
 # BD2 ToolsBox
 
-**Manage and install your BrownDust 2 mods directly on your phone. No PC required.**
+**Manage, preview, and install your BrownDust 2 mods directly on your Android device — no PC required.**
+
+---
+
+## Preview
+
+| Core Workflow & Navigation | Themes & Dark Mode |
+| :---: | :---: |
+| ![Interaction Preview](./docs/assets/preview-interaction.gif) | ![Themes Preview](./docs/assets/preview-themes.gif) |
 
 ---
 
 ## Key Features
 
-*   **PC-Free Operation**: Unpacks, converts textures (ASTC), and repacks mods entirely on your Android device.
-*   **Browse by Character**: Automatically scans your mod folder and groups mods by character, preventing conflicts.
-*   **Batch Processing**: Select and install mods from different groups in a single operation.
-*   **Shizuku Integration**: Move repacked files into the game directory with a single tap.
-*   **Live Animation Preview**: Long-press any mod to preview its Spine animation before installing.
-*   **Guide Library**: Guides from the GameKee BrownDust 2 wiki — category tree, search, comments; articles are cached locally for offline reading.
-*   **Coupon Codes**: Code list plus one-tap redemption through the official channel — enter your in-game nickname once and rewards go straight to your in-game mailbox. No login, no launching the game.
-*   **Built-in Utilities**: Merge texture atlases and unpack game bundles.
+*   **PC-Free Operation**: Unpacks, converts textures (ASTC compression & automatic texture atlas merging), and repacks mods entirely on your Android device.
+*   **Browse by Character & Costume**: Automatically scans multiple mod folders (both directories and nested `.zip` archives), grouping mods by character with portraits, quick A–Z index jump, and search/status filters.
+*   **Batch Processing & Foreground Execution**: Select and convert multiple mods across characters in parallel; conversion, installation, bundle indexing, and batch pre-unpacking run inside foreground services so backgrounding the app won't interrupt long tasks.
+*   **Shizuku One-Tap Install & Crash-Safe Recovery**:
+    *   Automatically moves repacked bundles into the game directory via Shizuku using same-directory staging + SHA-256 verification + atomic replacement (never leaving half-written `__data` files);
+    *   Backs up verified pristine original bundles before installing so uninstalling restores them offline;
+    *   Detects interrupted installs after a process kill and offers one-tap **"Reconcile & Repair Records"** without re-converting;
+    *   Automatically places `.nomedia` in mod source folders to keep mod textures out of your system gallery.
+*   **Spine Animation & Static Image Preview**: Preview Spine animations before installing (adapting to light/dark theme); supports **Batch Pre-unpack** for instant previews and static image viewing for illustration-only mods.
+*   **GameKee Wiki & Guides**: Browse the BrownDust 2 GameKee wiki with category trees, search, in-app v2/v3 battle lineup rendering, comments with emoji stickers, offline article caching, and automatic light/dark reader styling.
+*   **Multi-Account Coupon Redemption**: View active coupon codes and redeem them across multiple saved in-game nicknames in one tap, automatically skipping already-settled or expired codes with per-account status summaries.
+*   **Customizable Appearance**: Light / Dark / Follow-System modes, 7 colour presets, Android 12+ Material You dynamic colour, and custom background wallpaper with adjustable scrim.
+*   **Built-in Utilities**: Standalone bundle unpacker (exports to `Download/outputs/`) and one-tap diagnostic log export.
 
 ---
 
@@ -25,77 +40,66 @@
 
 ### Requirements
 
-*   Android 8 or higher.
-*   The latest official version of BrownDust 2 installed.
-*   [Shizuku](https://shizuku.rikka.app/) for bundle scanning and one-tap file transfer. Without it you can convert mods but not install them.
+*   **Android 10 (API 29) or higher**.
+*   The latest official version of *BrownDust 2* installed.
+*   [Shizuku](https://shizuku.rikka.app/) for bundle indexing and one-tap game directory installation (without Shizuku, you can still convert and preview mods).
 
 ### Installation
 
-1.  Download the latest `.apk` from the [Releases page](https://github.com/Haru762/BD2ToolsBox/releases). On emulators, force the x86_64 ABI or the app will crash under ARM translation:
-    emulators install `BD2ToolsBox-<version>-android-x86_64.apk` (phones use arm64-v8a; the universal APK still needs `--abi x86_64` on emulators)
-2.  Start Shizuku and follow the onboarding to grant access.
-3.  Tap **"Add mod folder"** and pick the directory where you keep your mods.
+1.  Download the matching single-ABI `.apk` from [Releases](https://github.com/Haru762/BD2ToolsBox/releases) (**~21.7 MB**, reduced by 35%):
+    *   **Phones / Tablets**: install the `arm64-v8a` APK;
+    *   **PC Android Emulators (MuMu, LDPlayer, etc.)**: install the `x86_64` APK.
+2.  Start Shizuku and grant permission to BD2 ToolsBox.
+3.  Tap the top-left folder icon (**"Open / Add mod folder"**) and select the directory where you store your mods (multiple folders are supported).
+4.  On first use or after a major game update, run **"Build File Index"** from the top-left menu (supports checkpoint resume) so story, dating, and illustration mods can all be resolved.
 
-> Tip: create a dedicated folder (e.g. `.BD2_Mods`) in your phone's internal storage and keep all mods there.
+> 💡 **Tip**: Create a dedicated folder (e.g. `BD2_Mods`) in your phone's storage for all your mods. The app automatically adds `.nomedia` to prevent textures from cluttering your gallery.
 
 ---
 
 ## Mod Folder Structure (Important)
 
-Each mod needs its own folder, and filenames inside must **exactly match** the game's original asset names. Zip archives are recognized at any depth, and subfolders are scanned automatically — selecting a collection's root folder works too.
+Each mod should be in its own folder or `.zip` archive, and filenames inside must **match** the game's original asset names. Subfolders are scanned recursively — selecting a root collection folder works out of the box.
 
-> **⚠️ Warning:** All filenames must be **lowercase** (e.g. `char000104.png`, not `Char000104.png`). The image filename referenced inside the `.atlas` file must also be lowercase. Otherwise, the game might **crash**.
+> **⚠️ Warning:** All filenames must be **lowercase** (e.g. `char000104.png`, not `Char000104.png`), and texture filenames referenced inside `.atlas` must also be lowercase, or the game may crash.
 
 **Example Folder Structure:**
-```
-.BD2_Mods/
+```text
+BD2_Mods/
 ├── Lathel_DarkKnight_IDLE/
 │   ├── char000104.skel      (or .json for the skeleton)
 │   ├── char000104.atlas     (the atlas mapping file)
 │   └── char000104.png       (the texture image)
-└── Another_Mod/
-    └── ... (other mod files)
+└── Another_Mod.zip          (zip archives are supported directly)
 ```
 
 ---
 
-## Installing Mods
+## Installing & Uninstalling Mods
 
-1.  **Select**: check the mods you want to install.
-2.  **Convert**: tap **Start** — the app downloads the necessary original game files and repacks your selection, with live progress in a dialog.
-3.  **Install**: tap **"Install to game"** (Shizuku must be running) — files are moved into the game directory. **Restart the game** for changes to take effect.
-4.  **Uninstall**: "Uninstall all mods" or the per-mod Uninstall button restores the originals.
+1.  **Select**:
+    *   In **By Character** view, tap a character to open their costume sheet and install a single mod or batch-install selected costumes;
+    *   In **All** view, select multiple mods across characters for batch processing.
+2.  **Convert & Auto-Install**: The app reuses clean local originals (or downloads pristine bases from the official CDN), automatically merges extra texture pages if needed, and repacks the bundle. When Shizuku is running, converted files are **automatically installed into the game directory**. **Restart the game** for changes to take effect.
+3.  **Uninstall**: Uninstall individual mods from the character sheet / mod list, or use **"Settings → Uninstall all mods"** to restore all modified bundles to their official originals.
 
 Destination path (for manual transfers): `/Android/data/com.neowizgames.game.browndust2/files/UnityCache/`
 
 ---
 
-## Other Tools
-
-### Spine Animation Preview
-Not sure what a mod looks like in action? **Long-press** it in the list to open a live preview.
-
-### Spine Atlas Merger (Troubleshooting Tool)
-If a mod displays incorrectly after installing: select **only that mod**, tap Merge. The originals are backed up into a `.old` subfolder; re-install the merged mod.
-
-### Standalone Bundle Unpacker
-To extract original game files: deselect all mods, tap the unpack icon, and pick the `__data` file. Output goes to `Download/outputs`.
-
----
-
 ## FAQ
 
-**Q: My mods aren't showing up.**
-Double-check the folder selected via "Add mod folder"; make sure your mods follow the structure above and their filenames match the game's original assets.
+**Q: My mods aren't showing up or appear as "Unrecognized".**
+1. Verify the folder added via "Add mod folder" and make sure each mod contains `.skel`/`.json` + `.atlas` + `.png` (or a converted `__data` file);
+2. For story, dating, or newly released costumes, run **"Build File Index"** from the top-left menu and then tap **"Rescan"**.
 
-**Q: The game crashes after installing a mod.**
-Usually one of these: texture count mismatch with the original (the app usually fixes this automatically), or filenames that aren't fully lowercase (see the warning above). Try the Atlas Merger; if it still fails, the mod itself is likely corrupted or incompatible.
+**Q: The game crashes or graphics are broken after installing a mod.**
+*   Extra texture pages are merged automatically during conversion;
+*   Check that all filenames and `.atlas` texture references are **strictly lowercase**;
+*   Ensure the mod is complete (`.png`, `.atlas`, and `.skel`/`.json`).
 
-**Q: Installation failed.**
-Common causes: poor network (original files failed to download), incorrect mod filenames, or a repacking error. Check the message in the dialog.
-
-**Q: Graphics are broken after installing.**
-The mod is likely incomplete or incompatible with the Android version. A complete character mod requires three files: `.png`, `.atlas`, and either `.skel` or `.json`.
+**Q: What if the app shows a recovery banner on startup?**
+If the app was force-stopped by the system mid-installation, tap **"Reconcile & Repair Records"** on the recovery banner. It verifies the game files' SHA-256 hashes read-only and repairs the install ledger without re-converting.
 
 ---
 

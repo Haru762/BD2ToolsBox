@@ -1,7 +1,7 @@
 {
   "capturedFrom": {
     "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-    "apkSha256": "0fb8eaa9980ba911db8091554f374da850d040df93841ca986bc51a38c0758b8",
+    "apkSha256": "75b388e57da6498481b29c6eab617818a8d1f186e4fe492cb41fe95d2d5df92b",
     "abi": "x86_64",
     "serial": "127.0.0.1:16384",
     "package": "com.bd2toolsbox",
@@ -14,6 +14,7 @@
     "设置工作表里没找到「清空」，确认框未采。",
     "壁纸状态（无/亮/暗/高纹理）**未采到真实截图**：`restoreWallpaper` 要求 URI 在 `persistedUriPermissions` 里，否则主动清掉该偏好（刻意的，避免空白背景）。该权限只能由 App 自己 `takePersistableUriPermission` 得到，即必须走系统文件选择器 —— 需要真人级交互。本轮改为验证**行为**：注入无权限 URI 后 App 确实清掉了它（见 wallpaper-ungranted-uri.png）。",
     "带「收起/取消」的 `TaskProgressPanel` **未采到截图**：它只在装入/预解包这类任务里出现，需要跑一个真的装入流程；索引扫描弹的是另一个进度页（已采）。面板的收起/再展开语义由 `TaskPanelLifecycleTest` 6/6 在 Compose 层覆盖。",
+    "同一维度签名（LIGHT|PURPLE|1.0|main-no-wallpaper）采到 2 张不同的图，可能是动画或瞬时状态。",
     "本机（MuMu）是固定 1920x1080 横屏，`settings put system user_rotation` 不生效，实际只采到 ['landscape'] 一种方向。**竖屏布局与旋转恢复的观感未验证**，需要真机或可竖屏的模拟器补拍。"
   ],
   "shots": [
@@ -29,8 +30,8 @@
         1920,
         1080
       ],
-      "bytes": 175516,
-      "sha256": "1c0d38c9b224bafe6f5e0a26984014bcab61c0cb1413650e9f03a2c99234d98c"
+      "bytes": 144092,
+      "sha256": "85ee3be8ba2714e012b3f48b09b3dcdabe49f26f044f307300374e9f361a584b"
     },
     {
       "file": "dark-default.png",
@@ -44,8 +45,8 @@
         1920,
         1080
       ],
-      "bytes": 174322,
-      "sha256": "e6c98e0807ec06e42b9cc4c5d1ead26ae8a53b0d059cb6f66c6be0e58a62f9e3"
+      "bytes": 176067,
+      "sha256": "5f252885bbfe9fbe1d19b6ae73cb8dc7682c4c58d8a328022f5cf71a00da7244"
     },
     {
       "file": "light-teal.png",
@@ -59,8 +60,8 @@
         1920,
         1080
       ],
-      "bytes": 176076,
-      "sha256": "c870231004d7a26e0247164f743af199a37af53fc8f715bf4c0608d772595dbc"
+      "bytes": 178008,
+      "sha256": "2d3cb57a6eeb961621494ab35a15b94ed2f85befa5aa7be64eb27589a9f831ac"
     },
     {
       "file": "dark-graphite.png",
@@ -74,8 +75,8 @@
         1920,
         1080
       ],
-      "bytes": 174367,
-      "sha256": "a49ca48749796cb3b31e20333791d089f4f8502d5e595e17556c6e8864dbf81a"
+      "bytes": 176166,
+      "sha256": "00d9dfaada14e59592c36f9632c0a22af12c3ad99e6b3c1f0727ea4dd50fc306"
     },
     {
       "file": "light-font1.3.png",
@@ -89,8 +90,8 @@
         1920,
         1080
       ],
-      "bytes": 199205,
-      "sha256": "5e0f76fb47ed10c4bc1c95017bb08a593500fee8d86af3fb04b38e711944e86a"
+      "bytes": 201204,
+      "sha256": "79acb6e9c901285dbada134d732b02a4d3d61d10f444489d2f0166410346eb40"
     },
     {
       "file": "light-font2.0.png",
@@ -104,8 +105,8 @@
         1920,
         1080
       ],
-      "bytes": 240485,
-      "sha256": "d90f8f1626c21ae7a4531b9ce9d99090fed85d3b632ddcf5899892ad7d1640e1"
+      "bytes": 242058,
+      "sha256": "2fb1cd07775e43ccea215e6ef5bd04d7c34ba1a370c2629714145411be1d8919"
     },
     {
       "file": "dark-font2.0.png",
@@ -119,8 +120,8 @@
         1920,
         1080
       ],
-      "bytes": 238895,
-      "sha256": "4786f17238148420e29ea511f7a7974c13ab43a72840b252a003da671197f884"
+      "bytes": 240684,
+      "sha256": "8e32e629e56caa3d08ae0931653c8d7ade477413808c8c06190b67ffd610a8c3"
     },
     {
       "file": "screen-redeem.png",
@@ -130,8 +131,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|screen-redeem",
       "actualOrientation": "landscape",
-      "bytes": 94391,
-      "sha256": "c1ed8b7ee8ce8ef15ddcf45ef5169213a7a020f360b5639881c6c0b4c9e8adff"
+      "bytes": 98012,
+      "sha256": "ea61055eeb8d5dfdd55165ba658d48304cfe05f3e4238dae35adddf739081ded"
     },
     {
       "file": "screen-guide.png",
@@ -141,19 +142,19 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|screen-guide",
       "actualOrientation": "landscape",
-      "bytes": 295042,
-      "sha256": "0c1ff41f558c55b4ce4d49b1e4568feba6ae2cea5b14d73b24f47f8fe73bfa6f"
+      "bytes": 301439,
+      "sha256": "30440ed21712f335ff6bc53a74c8f71738e41e9a423a6965730ed4b039e11522"
     },
     {
       "file": "screen-reader.png",
-      "label": "阅读器正文（装备指南 进阶篇…）",
+      "label": "阅读器正文（本期魔兽（水）…）",
       "appThemeMode": "LIGHT",
       "colorPreset": "PURPLE",
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|screen-reader",
       "actualOrientation": "landscape",
-      "bytes": 1767587,
-      "sha256": "6f988f77207112592e58a85d4990970b7b3fab1428c477fd192ff0437fd4beee"
+      "bytes": 330657,
+      "sha256": "9aa941912eaa3e354534206e2f440b3f2484ba2f32ab6a8014170c4a692ebb3c"
     },
     {
       "file": "screen-sheet-appearance-light.png",
@@ -163,8 +164,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 206778,
-      "sha256": "71d71446742c47c4551c933d75ae253fec677e6bb995b8ced91c3ca34206910e"
+      "bytes": 220459,
+      "sha256": "47f9c2951df0aab4c05c147aaace0b7f3a709eccadc34cc3b8c6d2f431d4db24"
     },
     {
       "file": "screen-sheet-appearance-dark.png",
@@ -174,8 +175,8 @@
       "fontScale": "1.0",
       "dimensionKey": "DARK|PURPLE|1.0|sheet-appearance",
       "actualOrientation": "landscape",
-      "bytes": 204334,
-      "sha256": "919ea0d6168dd8f91e6e43890df12a4fe92395651ef88c83b18757e621f076ba"
+      "bytes": 218043,
+      "sha256": "f8b463e62802bb3045dd45b491995ecef9745d35059fd33b08692438f967c30b"
     },
     {
       "file": "screen-licenses.png",
@@ -185,8 +186,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|screen-licenses",
       "actualOrientation": "landscape",
-      "bytes": 106382,
-      "sha256": "49952bf92b92ee64e2e52c8bbdcbc6dd206fd5781a727726e66c602391b876ef"
+      "bytes": 106475,
+      "sha256": "532bed233f201746b19ea3961ee266fe0041bef19ecae666cd814841950ce27e"
     },
     {
       "file": "wallpaper-none-light.png",
@@ -196,8 +197,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|main-no-wallpaper",
       "actualOrientation": "landscape",
-      "bytes": 139622,
-      "sha256": "9f27b8ebe1a8159fc350a19bb1d1417075b85fb0ea00e58679ebd8574ab00c8d"
+      "bytes": 144415,
+      "sha256": "714e97b78b62c6384a12520c5c80e22a6a4b8646741b1873e2832bb15f441fa2"
     },
     {
       "file": "wallpaper-ungranted-uri.png",
@@ -207,8 +208,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|main-no-wallpaper",
       "actualOrientation": "landscape",
-      "bytes": 139622,
-      "sha256": "9f27b8ebe1a8159fc350a19bb1d1417075b85fb0ea00e58679ebd8574ab00c8d"
+      "bytes": 144415,
+      "sha256": "714e97b78b62c6384a12520c5c80e22a6a4b8646741b1873e2832bb15f441fa2"
     },
     {
       "file": "system-night-yes.png",
@@ -218,8 +219,8 @@
       "fontScale": "1.0",
       "dimensionKey": "DARK|PURPLE|1.0|main-system-night",
       "actualOrientation": "landscape",
-      "bytes": 140145,
-      "sha256": "4a8f9e5a2255d7eb5a19a6566518100e50104e5d037b47b9b98493cb29c7c780"
+      "bytes": 142850,
+      "sha256": "92c687453ac38722b8eb4e98c6917bbccd484a985472f633cee5cf03917d590a"
     },
     {
       "file": "system-night-no.png",
@@ -229,8 +230,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|main-no-wallpaper",
       "actualOrientation": "landscape",
-      "bytes": 139622,
-      "sha256": "9f27b8ebe1a8159fc350a19bb1d1417075b85fb0ea00e58679ebd8574ab00c8d"
+      "bytes": 144565,
+      "sha256": "ae765f418f4d31115fb104d7de1d0a3652d3fc36818bd18716016bfe22e3012d"
     },
     {
       "file": "task-panel-scan-running.png",
@@ -240,8 +241,8 @@
       "fontScale": "1.0",
       "dimensionKey": "LIGHT|PURPLE|1.0|task-scan-running",
       "actualOrientation": "landscape",
-      "bytes": 137526,
-      "sha256": "44ac5cf2fda7f665fa40a71c2fff6cd947caf72af18e962f54df96cad356b521"
+      "bytes": 150091,
+      "sha256": "b28810b7bd2d1816b38a150912477e96786ba2077b5920aed3112d5e4cbbdb70"
     }
   ]
 }
