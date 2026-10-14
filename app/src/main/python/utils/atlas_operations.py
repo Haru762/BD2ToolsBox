@@ -48,13 +48,14 @@ def parse_atlas_file(atlas_path: str) -> Tuple[Optional[Dict], Optional[str]]:
         pages[name] = page
 
     for line in text.strip().split('\n'):
-        if line.endswith('.png'):
+        stripped_line = line.strip()
+        if stripped_line.lower().endswith('.png') and ':' not in stripped_line:
             flush()
-            name, size_line, filter_line, sprite_lines = line.strip(), None, None, []
+            name, size_line, filter_line, sprite_lines = stripped_line, None, None, []
         elif name is None:
             # 页头之前的内容：把首个非空行当页名开一个隐式小节（空文件则一节都没有）
-            if line.strip():
-                name, size_line, filter_line, sprite_lines = line.strip(), None, None, []
+            if stripped_line:
+                name, size_line, filter_line, sprite_lines = stripped_line, None, None, []
         else:
             stripped = line.strip()
             if stripped.startswith('size:'):

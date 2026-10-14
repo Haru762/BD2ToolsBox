@@ -209,7 +209,7 @@ def _build_file_index(working_dir):
             index['all_files'].append(filepath)
             lowered = f.lower()
             if lowered.endswith(('.skel', '.json')):
-                stem = os.path.splitext(f)[0]
+                stem = os.path.splitext(f)[0].lower()
                 ftype = 'skel' if lowered.endswith('.skel') else 'json'
                 index['skel_json'].setdefault(stem, (ftype, filepath, root))
     return index
@@ -227,6 +227,29 @@ def _asset_objects(asset_map, target_asset_name, type_name=None):
 # Spine 贴图合并（mod 页数 > 原版时压回原页数）
 # ---------------------------------------------------------------------------
 
+def _normalize_atlas_page_headers(script: str) -> str:
+    """将 .atlas 文本中的贴图页头文件名（如 Char000104.PNG）统一规范化为小写。
+
+    Unity bundle 内的原版 Texture2D m_Name 均为小写，规范化页头后用户无需再手动
+    把 .atlas 内引用的 .png 改成小写。
+    """
+    out_lines = []
+    for line in script.splitlines(keepends=True):
+        ending = ''
+        if line.endswith('\r\n'):
+            body, ending = line[:-2], '\r\n'
+        elif line.endswith('\n') or line.endswith('\r'):
+            body, ending = line[:-1], line[-1:]
+        else:
+            body = line
+        stripped = body.strip()
+        if stripped.lower().endswith('.png') and ':' not in stripped and not body.startswith((' ', '\t')):
+            out_lines.append(stripped.lower() + ending)
+        else:
+            out_lines.append(line)
+    return ''.join(out_lines)
+
+
 def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
     """把 <base>_N.png 序列合并成 target_count 张，重写 .atlas 对齐。
 
@@ -234,11 +257,13 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
     拼接，第二张起 bounds 右移。返回 None 成功、字符串失败。
     """
     report(f"Starting Spine asset merge for '{base_name}' in temporary directory.")
+    base_lower = base_name.lower()
 
     png_pattern = re.compile(rf'^{re.escape(base_name)}(_\d+)?\.png$', re.IGNORECASE)
     pngs = [os.path.join(mod_dir_path, f)
             for f in os.listdir(mod_dir_path) if png_pattern.match(f)]
-    atlas_path = os.path.join(mod_dir_path, f"{base_name}.atlas")
+    atlas_path = (find_file_case_insensitive(mod_dir_path, f"{base_name}.atlas")
+                  or os.path.join(mod_dir_path, f"{base_name}.atlas"))
 
     if not pngs or not os.path.exists(atlas_path):
         return "SKIPPING: Missing png or atlas files for {base} in the working directory.".replace("{base}", base_name)
@@ -246,13 +271,14 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
     atlas_db, err = parse_atlas_file(atlas_path)
     if err:
         return f"FAILED: Could not parse atlas file: {err}"
+    atlas_db_lower = {k.lower(): v for k, v in atlas_db.items()}
 
     # _2 排在 _10 前面；主图（无后缀）排最前
     def page_order(path):
         name = os.path.basename(path)
-        if name.lower() == f"{base_name.lower()}.png":
+        if name.lower() == f"{base_lower}.png":
             return 0
-        m = re.search(r'_(\d+)\.png$', name)
+        m = re.search(r'_(\d+)\.png$', name, re.IGNORECASE)
         return int(m.group(1)) if m else float('inf')
     pngs.sort(key=page_order)
 
@@ -268,7 +294,7 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
         for p in pngs:
             img = Image.open(p)
             img.load()  # 立即读全，截断图在这里就炸
-            images[os.path.basename(p)] = img
+            images[os.path.basename(p).lower()] = img
     except OSError as e:
         for img in images.values():
             img.close()
@@ -278,9 +304,9 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
     # 轮流分桶：桶 i 收第 i、i+target_count、… 张
     buckets = [[] for _ in range(target_count)]
     for i, p in enumerate(pngs):
-        buckets[i % target_count].append(os.path.basename(p))
+        buckets[i % target_count].append(os.path.basename(p).lower())
 
-    merged_names = {f"{base_name}.png" if i == 0 else f"{base_name}_{i + 1}.png"
+    merged_names = {f"{base_lower}.png" if i == 0 else f"{base_lower}_{i + 1}.png"
                     for i in range(target_count)}
 
     try:
@@ -288,7 +314,7 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
         for i, group in enumerate(buckets):
             if not group:
                 continue
-            out_name = f"{base_name}.png" if i == 0 else f"{base_name}_{i + 1}.png"
+            out_name = f"{base_lower}.png" if i == 0 else f"{base_lower}_{i + 1}.png"
 
             base_img = images[group[0]].copy()
             offsets = {group[0]: (0, 0)}
@@ -313,7 +339,7 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
             sprite_parts = []
             filter_line = None
             for name in group:
-                page = atlas_db.get(name)
+                page = atlas_db_lower.get(name.lower())
                 if not page:
                     report(f"WARNING: Missing atlas entry for {name}; skipping atlas block data during merge.")
                     continue
@@ -342,9 +368,12 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
         # 删掉没进合并产物的原图（产物名与原图名可能重合，只删多余的）
         report("Cleaning up original, unmerged texture files...")
         for p in pngs:
-            if os.path.basename(p) not in merged_names:
+            if os.path.basename(p).lower() not in merged_names or os.path.basename(p) not in merged_names:
                 try:
-                    os.remove(p)
+                    if os.path.abspath(p) != os.path.abspath(os.path.join(mod_dir_path, os.path.basename(p).lower())):
+                        os.remove(p)
+                    elif os.path.basename(p).lower() not in merged_names:
+                        os.remove(p)
                 except OSError as e:
                     report(f"Could not delete old file {p}: {e}")
         return None
@@ -475,6 +504,8 @@ def _replace_text_assets(items, asset_map, report, edited):
             else:
                 with open(mod_filepath, "rb") as f:
                     script = f.read().decode("utf-8", "surrogateescape")
+                if target_name.lower().endswith((".atlas", ".atlas.txt")):
+                    script = _normalize_atlas_page_headers(script)
             for obj in objects:
                 _write_text_asset(obj, script)
                 edited = True

@@ -5193,7 +5193,24 @@ class MainViewModel @Inject constructor(
                         skel = dest.absolutePath
                     }
                 }
-                fileName.endsWith(".atlas", ignoreCase = true) -> atlas = dest.absolutePath
+                fileName.endsWith(".atlas", ignoreCase = true) -> {
+                    runCatching {
+                        val normalized = dest.readLines().joinToString("\n") { line ->
+                            val trimmed = line.trim()
+                            if (trimmed.endsWith(".png", ignoreCase = true) &&
+                                !trimmed.contains(':') &&
+                                !line.startsWith(' ') &&
+                                !line.startsWith('\t')
+                            ) {
+                                trimmed.lowercase(java.util.Locale.ROOT)
+                            } else {
+                                line
+                            }
+                        }
+                        dest.writeText(normalized)
+                    }
+                    atlas = dest.absolutePath
+                }
                 fileName.endsWith(".png", ignoreCase = true) -> pngs.add(dest.absolutePath)
             }
         }
@@ -5204,11 +5221,12 @@ class MainViewModel @Inject constructor(
                 val fileName = file.name ?: ""
                 if (!shouldIgnoreModEntry(fileName) &&
                     previewExts.any { fileName.endsWith(it, ignoreCase = true) }) {
-                    val dest = File(tempDir, fileName)
+                    val normalizedName = fileName.lowercase(java.util.Locale.ROOT)
+                    val dest = File(tempDir, normalizedName)
                     context.contentResolver.openInputStream(file.uri)?.use { input ->
                         dest.outputStream().use { input.copyTo(it) }
                     }
-                    onExtracted(fileName, dest)
+                    onExtracted(normalizedName, dest)
                 }
             }
         } else {
@@ -5223,9 +5241,10 @@ class MainViewModel @Inject constructor(
                             fileName != ".." &&
                             !shouldIgnoreModEntry(fileName) &&
                             previewExts.any { fileName.endsWith(it, ignoreCase = true) }) {
-                            val dest = File(tempDir, fileName)
+                            val normalizedName = fileName.lowercase(java.util.Locale.ROOT)
+                            val dest = File(tempDir, normalizedName)
                             dest.outputStream().use { zis.copyTo(it) }
-                            onExtracted(fileName, dest)
+                            onExtracted(normalizedName, dest)
                         }
                         entry = zis.nextEntry
                     }

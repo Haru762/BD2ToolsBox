@@ -57,11 +57,9 @@
 
 ---
 
-## Mod Folder Structure (Important)
+## Mod Folder Structure
 
-Each mod should be in its own folder or `.zip` archive, and filenames inside must **match** the game's original asset names. Subfolders are scanned recursively — selecting a root collection folder works out of the box.
-
-> **⚠️ Warning:** All filenames must be **lowercase** (e.g. `char000104.png`, not `Char000104.png`), and texture filenames referenced inside `.atlas` must also be lowercase, or the game may crash.
+Each mod should be in its own folder or `.zip` archive, with filenames matching the game's original asset names (scanning, previewing, and repacking automatically normalize filename and `.atlas` page header casing). Subfolders are scanned recursively — selecting a root collection folder works out of the box.
 
 **Example Folder Structure:**
 ```text
@@ -94,9 +92,8 @@ Destination path (for manual transfers): `/Android/data/com.neowizgames.game.bro
 2. For story, dating, or newly released costumes, run **"Build File Index"** from the top-left menu and then tap **"Rescan"**.
 
 **Q: The game crashes or graphics are broken after installing a mod.**
-*   Extra texture pages are merged automatically during conversion;
-*   Check that all filenames and `.atlas` texture references are **strictly lowercase**;
-*   Ensure the mod is complete (`.png`, `.atlas`, and `.skel`/`.json`).
+*   Extra texture pages are merged automatically and filenames/`.atlas` headers are normalized to lowercase during conversion;
+*   Ensure the mod is complete (`.png`, `.atlas`, and `.skel`/`.json`) and not corrupted.
 
 **Q: What if the app shows a recovery banner on startup?**
 If the app was force-stopped by the system mid-installation, tap **"Reconcile & Repair Records"** on the recovery banner. It verifies the game files' SHA-256 hashes read-only and repairs the install ledger without re-converting.

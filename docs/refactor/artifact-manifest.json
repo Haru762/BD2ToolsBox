@@ -727,11 +727,11 @@
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
-                "mappingBytes": 44946893,
-                "contentSha256": "8f52879d1282b1c92ac2c5d37ea3e522b36fe98a9a8752e140a8122ef5b93d2e",
-                "fileSha256": "4ca02f443decb2f89084d4fb3491becfce6d3274478563000b7fc47212dd9c4a",
+                "mappingBytes": 44958880,
+                "contentSha256": "65f9448be52d29f53eb7c5748b9417adf78daf4d23b813c1725191c2d91e681f",
+                "fileSha256": "af75bc715975c48f30a7031de2b0a88716fb1c3751ba517342dafceee7d6b05f",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "4ad605ec42ea82774c917aeb44e13e39bcce7fa71fccb8ccddbaecc517c9ed3e"
+                "mappingFileSha256": "e2d96791aa12cb912af8abea81de105fc4ff00a9e7470c0ef20b4db00d2e8988"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
@@ -741,11 +741,11 @@
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
-                "mappingBytes": 44946821,
-                "contentSha256": "5e3cd300f6c1da8c84f3697ae2107d8973327045fdb2865e54136166875f4b0a",
-                "fileSha256": "75b388e57da6498481b29c6eab617818a8d1f186e4fe492cb41fe95d2d5df92b",
+                "mappingBytes": 44958808,
+                "contentSha256": "25ef891469b1c5b780440c6a20d0968f0a76096565948647a91b01374c47cbb6",
+                "fileSha256": "893ca5b25e5e3a55017948ef0cd4107acafd589a6ac3635d99e70efc9326f728",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "ae0cec8eff4613b130bc82713cea1582c05d4c9d689bd680f332de529317a986"
+                "mappingFileSha256": "57640681d8332fced9cf4c5e2c28dd3c3e4e7b04147b5ee1667b88ff186a1260"
             }
         },
         "baselineForSizeComparison": "t48Freeze",

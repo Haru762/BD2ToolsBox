@@ -89,6 +89,24 @@ class FileIndexTest(unittest.TestCase):
         index = repacker._build_file_index(self.root)
         self.assertTrue(any(p.endswith(".nomedia.txt") for p in index["all_files"]))
 
+    def test_uppercase_atlas_page_headers_and_merge_are_normalized_to_lowercase(self):
+        raw_atlas = "\nChar000104.PNG\r\n size: 64,64\r\n filter: Linear, Linear\r\nhead\r\n bounds: 0,0,32,32\r\n\r\nChar000104_2.PNG\r\n size: 64,64\r\n filter: Linear, Linear\r\nbody\r\n bounds: 0,0,32,32\r\n"
+        normalized = repacker._normalize_atlas_page_headers(raw_atlas)
+        self.assertIn("char000104.png\r\n", normalized)
+        self.assertIn("char000104_2.png\r\n", normalized)
+        self.assertNotIn("Char000104.PNG", normalized)
+
+        from PIL import Image
+        Image.new("RGBA", (64, 64), (255, 0, 0, 255)).save(os.path.join(self.root, "Char000104.PNG"))
+        Image.new("RGBA", (64, 64), (0, 255, 0, 255)).save(os.path.join(self.root, "Char000104_2.PNG"))
+        atlas_file = self._write("Char000104.ATLAS", raw_atlas)
+        err = repacker._merge_spine_assets(self.root, "Char000104", 1, lambda _m: None)
+        self.assertIsNone(err)
+        with open(atlas_file, "r", encoding="utf-8") as fh:
+            merged_atlas = fh.read()
+        self.assertTrue(merged_atlas.startswith("char000104.png\n"))
+        self.assertIn(" size: 128,64", merged_atlas)
+
 
 if __name__ == "__main__":
     unittest.main()
