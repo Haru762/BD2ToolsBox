@@ -198,16 +198,21 @@ def _build_file_index(working_dir):
     """一次遍历建好文件索引，取代反复 os.walk。
 
     返回 {'skel_json': {词干: (类型, 路径, 目录)}, 'spine_stems': {词干: 目录},
-          'modfile_stems': [词干], 'all_files': [路径]}。
+          'modfile_stems': [词干], 'dir_modfiles': {目录: [词干]}, 'all_files': [路径]}。
     `.old` 备份目录与 `.nomedia`/`.modfile` 标记跳过。
     """
-    index = {'skel_json': {}, 'spine_stems': {}, 'modfile_stems': [], 'all_files': []}
+    index = {
+        'skel_json': {}, 'spine_stems': {},
+        'modfile_stems': [], 'dir_modfiles': {}, 'all_files': []
+    }
     for root, dirs, files in os.walk(working_dir):
         dirs[:] = [d for d in dirs if d != '.old']
         for f in files:
             lowered = f.lower()
             if lowered.endswith('.modfile') and lowered != '.modfile':
-                index['modfile_stems'].append(os.path.splitext(lowered)[0])
+                mf_stem = os.path.splitext(lowered)[0]
+                index['modfile_stems'].append(mf_stem)
+                index['dir_modfiles'].setdefault(os.path.abspath(root), []).append(mf_stem)
                 continue
             if should_ignore_entry(f) or lowered.endswith(('.png~', '.jsonbk', '.skelbk', '.ini')):
                 continue
@@ -531,6 +536,10 @@ def _replace_sprite_atlas_entries(env, png_path, modfile_stems, use_astc, report
                         continue
                     tex_data = tex_obj.read()
                     base_img = tex_data.image.convert("RGBA")
+                    if base_img.getbbox() is None:
+                        base_img.close()
+                        report(f"Warning: Base SpriteAtlas texture '{tex_data.m_Name}' decoded empty; skipping to avoid corrupting atlas.")
+                        continue
                     with Image.open(png_path) as raw_mod:
                         mod_img = raw_mod.convert("RGBA")
                         if mod_img.size != (rw, rh):
@@ -804,8 +813,15 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
         astc_items = []      # (mod路径, 目标名)
         rgba_items = []      # (mod路径, 目标名)
         modfile_stems = file_index.get('modfile_stems') or []
+        dir_modfiles = file_index.get('dir_modfiles') or {}
 
-        def _resolve_texture_target(raw_stem):
+        def _modfiles_for_path(filepath):
+            cur = os.path.abspath(os.path.dirname(filepath))
+            parent = os.path.abspath(os.path.dirname(cur))
+            local = (dir_modfiles.get(cur) or []) + (dir_modfiles.get(parent) or [])
+            return local if local else modfile_stems
+
+        def _resolve_texture_target(raw_stem, filepath):
             if _asset_objects(asset_map, raw_stem, "Texture2D"):
                 return raw_stem
             mapped = SPECIAL_ILLUST_ADDRESS_TO_ASSET.get(raw_stem)
@@ -814,7 +830,7 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
             stripped = re.sub(r'(?:\s+new|cutscene|cut|loop)$', '', raw_stem).strip()
             if stripped != raw_stem and _asset_objects(asset_map, stripped, "Texture2D"):
                 return stripped
-            for mf_stem in modfile_stems:
+            for mf_stem in _modfiles_for_path(filepath):
                 if _asset_objects(asset_map, mf_stem, "Texture2D"):
                     return mf_stem
                 mf_mapped = SPECIAL_ILLUST_ADDRESS_TO_ASSET.get(mf_stem)
@@ -832,7 +848,7 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
                     text_items.append((mod_filepath, target, True))
             elif lowered.endswith('.png'):
                 raw_stem = os.path.splitext(filename)[0].lower()
-                target = _resolve_texture_target(raw_stem)
+                target = _resolve_texture_target(raw_stem, mod_filepath)
                 if target and (target == raw_stem or target not in seen_tex_targets):
                     seen_tex_targets.add(target)
                     (astc_items if use_astc else rgba_items).append((mod_filepath, target))

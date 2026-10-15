@@ -1864,8 +1864,10 @@ class MainViewModel @Inject constructor(
             updateJobStatus(hashedName, JobStatus.Installing("Extracting mod files..."))
             if (modAssetsDir.exists()) modAssetsDir.deleteRecursively()
             modAssetsDir.mkdirs()
-            for (mod in installJob.job.modsToInstall) {
-                extractModInto(mod, context, modAssetsDir)
+            val modsToExtract = installJob.job.modsToInstall
+            for ((modIdx, mod) in modsToExtract.withIndex()) {
+                val targetDir = if (modsToExtract.size > 1) File(modAssetsDir, "mod_$modIdx") else modAssetsDir
+                extractModInto(mod, context, targetDir)
             }
 
             // ---- 重打包（或纯还原）----
