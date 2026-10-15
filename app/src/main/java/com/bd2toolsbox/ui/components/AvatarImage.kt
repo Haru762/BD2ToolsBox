@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +56,7 @@ fun CharacterAvatar(
     cornerRadius: Dp = 8.dp
 ) {
     val repo = rememberUiRepositories().avatarRepository()
+    val epoch by repo.epoch.collectAsStateWithLifecycle()
 
     // 初值走 peek 那条不建表、不解码的快路：附加数据表已就绪且图已解码时，
     // 首帧就能直接画出来，来回滚动不会每次先闪一下占位图。
@@ -64,11 +66,14 @@ fun CharacterAvatar(
     var image by remember(characterName) { mutableStateOf(initial) }
     var settled by remember(characterName) { mutableStateOf(initial != null) }
 
-    LaunchedEffect(characterName) {
+    LaunchedEffect(characterName, epoch) {
         if (image == null) {
             // avatarFor 可能要建表（读 52 KB assets json），所以放 IO 上
             val resolved = withContext(Dispatchers.IO) { repo.avatarFor(characterName) }
-            image = resolved?.let { repo.load(it.first, it.second) }
+            val loaded = resolved?.let { repo.load(it.first, it.second) }
+            if (loaded != null) {
+                image = loaded
+            }
             settled = true
         }
     }
@@ -104,14 +109,16 @@ fun SkinThumbnail(
     contentDescription: String? = null
 ) {
     val repo = rememberUiRepositories().avatarRepository()
+    val epoch by repo.epoch.collectAsStateWithLifecycle()
 
     var image by remember(fileId) { mutableStateOf<ImageBitmap?>(null) }
 
-    LaunchedEffect(fileId) {
+    LaunchedEffect(fileId, epoch) {
         if (fileId != null && image == null) {
             val resolved = withContext(Dispatchers.IO) { repo.illustForFileId(fileId) }
             if (resolved != null) {
-                image = repo.load(resolved.first, resolved.second)
+                val loaded = repo.load(resolved.first, resolved.second)
+                if (loaded != null) image = loaded
             }
         }
     }

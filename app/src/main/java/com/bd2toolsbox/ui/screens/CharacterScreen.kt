@@ -219,9 +219,7 @@ private fun initialOf(name: String): Char {
 @Composable
 private fun CharacterRow(entry: CharacterEntry, onClick: () -> Unit) {
     val meta = rememberUiRepositories().characterMetaRepository()
-    // peek 而非 forCharacter：这里在 composition 里，不能为了一个中文名去读 52 KB 的
-    // assets json。表由筛选/头像那条路在协程里建好，之后这里就是 O(1) 命中。
-    val nameCn = remember(entry.name) { meta.peekCharacter(entry.name)?.nameCn.orEmpty() }
+    val nameCn = remember(entry.name) { meta.forCharacter(entry.name)?.nameCn.orEmpty() }
 
     Row(
         modifier = Modifier

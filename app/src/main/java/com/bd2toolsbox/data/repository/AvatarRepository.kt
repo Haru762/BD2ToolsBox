@@ -101,7 +101,7 @@ class AvatarRepository @Inject constructor(
          * 网不通时每个目标都要等满 15 秒超时，83 个目标排下去是二十分钟的徒劳 ——
          * 连着四个都碰壁（正好一整轮并发位）就认定网络不通，把剩下的留给下一次。
          */
-        private const val BAIL_AFTER_FAILURES = 4
+        private const val BAIL_AFTER_FAILURES = 12
 
         /**
          * 缓存目录的源版本号。
@@ -122,6 +122,10 @@ class AvatarRepository @Inject constructor(
 
     private val _syncState = MutableStateFlow(SyncState.IDLE)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+
+    /** 每次预取收尾或新图落地后递增，驱动界面上尚处于首字母占位的头像组件自动重读磁盘。 */
+    private val _epoch = MutableStateFlow(0)
+    val epoch: StateFlow<Int> = _epoch.asStateFlow()
 
     /** 缓存键 -> 已解码的图。键就是图片文件名（含扩展名），天然唯一。 */
     /**
@@ -250,6 +254,7 @@ class AvatarRepository @Inject constructor(
             }
             if (missing.isEmpty()) {
                 _syncState.value = SyncState.DONE
+                _epoch.value++
                 return@withLock
             }
 
@@ -262,7 +267,10 @@ class AvatarRepository @Inject constructor(
                     async(Dispatchers.IO) {
                         if (consecutive.get() >= BAIL_AFTER_FAILURES) return@async
                         when (cacheOnly(key, url)) {
-                            Outcome.OK -> consecutive.set(0)
+                            Outcome.OK -> {
+                                consecutive.set(0)
+                                _epoch.value++
+                            }
                             // 服务器答了话（404/403）说明网是通的，不该记进「网络不通」
                             Outcome.HTTP_ERROR -> consecutive.set(0)
                             Outcome.NETWORK_ERROR -> {
@@ -277,6 +285,7 @@ class AvatarRepository @Inject constructor(
             val stillMissing = withContext(Dispatchers.IO) {
                 targets.count { !isCached(it.first) }
             }
+            _epoch.value++
             // 失败口径：网络类异常 **且仍有缺张** 才算失败。瞬时抖动（比如 83 张里
             // 1 张超时、滚动时又被 load() 补上了）不算 —— 只看 networkFailures 会把
             // 「其实已经齐了」挂成永久 FAILED，提示条压着列表还不会自动消失。单纯
@@ -347,7 +356,31 @@ class AvatarRepository @Inject constructor(
      */
     private enum class Outcome { OK, HTTP_ERROR, NETWORK_ERROR }
 
+    private fun candidateUrls(primaryUrl: String): List<String> {
+        val rawPrefix = "https://raw.githubusercontent.com/myssal/Brown-Dust-2-Asset/refs/heads/master/"
+        if (!primaryUrl.startsWith(rawPrefix)) return listOf(primaryUrl)
+        val relPath = primaryUrl.removePrefix(rawPrefix)
+        return listOf(
+            "https://fastly.jsdelivr.net/gh/myssal/Brown-Dust-2-Asset@master/$relPath",
+            "https://gcore.jsdelivr.net/gh/myssal/Brown-Dust-2-Asset@master/$relPath",
+            "https://cdn.jsdelivr.net/gh/myssal/Brown-Dust-2-Asset@master/$relPath",
+            primaryUrl
+        )
+    }
+
     private fun download(url: String, dest: File): Outcome {
+        var sawHttpError = false
+        for (candidate in candidateUrls(url)) {
+            when (val res = downloadSingleUrl(candidate, dest)) {
+                Outcome.OK -> return Outcome.OK
+                Outcome.HTTP_ERROR -> sawHttpError = true
+                Outcome.NETWORK_ERROR -> Unit
+            }
+        }
+        return if (sawHttpError) Outcome.HTTP_ERROR else Outcome.NETWORK_ERROR
+    }
+
+    private fun downloadSingleUrl(url: String, dest: File): Outcome {
         var conn: HttpURLConnection? = null
         // 先写独立 .part 再改名：中途断网留下的半个文件若直接叫最终名，
         // 下次会被当成有效缓存，然后永远解码失败；带唯一后缀避免同 key 并发下载互踩。
@@ -355,8 +388,8 @@ class AvatarRepository @Inject constructor(
         return try {
             dest.parentFile?.mkdirs()
             conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15000
-                readTimeout = 20000
+                connectTimeout = 8000
+                readTimeout = 12000
                 instanceFollowRedirects = true
                 setRequestProperty("User-Agent", "BD2ToolsBox")
             }
@@ -381,7 +414,6 @@ class AvatarRepository @Inject constructor(
                 Outcome.HTTP_ERROR
             }
         } catch (e: IOException) {
-            // 连不上、超时、连接被重置 —— 国内直连 raw.githubusercontent 的常态都落在这里
             Log.w(TAG, "下载失败（网络）: $url (${e.message})")
             part.delete()
             Outcome.NETWORK_ERROR
