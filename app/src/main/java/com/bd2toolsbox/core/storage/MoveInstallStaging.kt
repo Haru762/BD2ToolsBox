@@ -79,6 +79,7 @@ class MoveInstallStaging internal constructor(
             if (!lease.stillOwned() || manifest.files != expected) {
                 throw IOException("暂存内容或目录身份与冻结目标不一致")
             }
+            lease.grantCrossUidReadAccess()
             return PreparedMoveInstall(lease, frozen, manifest, sharedRoot, sharedReal, sourceIdentity, identity)
         } catch (failure: Throwable) {
             try { lease.release() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }

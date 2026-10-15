@@ -203,7 +203,9 @@ class ShizukuFileService(context: Context? = null) : IFileService.Stub() {
      */
     private fun copyTree(source: File, dest: File) {
         if (!dest.exists()) dest.mkdirs()
-        source.listFiles()?.forEach { file ->
+        val children = source.listFiles()
+            ?: throw IOException("Cannot list source directory (permission denied or missing): ${source.absolutePath}")
+        children.forEach { file ->
             val target = File(dest, file.name)
             if (file.isDirectory) {
                 copyTree(file, target)

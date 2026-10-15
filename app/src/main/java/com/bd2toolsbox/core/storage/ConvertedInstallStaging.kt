@@ -136,6 +136,7 @@ class ConvertedInstallStaging internal constructor(
         if (!lease.stillOwned()) {
             return failed("枚举后暂存目录身份已改变，拒绝返回 Ready", null, lease)
         }
+        lease.grantCrossUidReadAccess()
 
         // 8) 事实来自实际 dataFile；账本字段原样冻结。
         val target = JournalTarget(

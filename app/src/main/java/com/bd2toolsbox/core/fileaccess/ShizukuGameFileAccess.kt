@@ -254,8 +254,12 @@ class ShizukuGameFileAccess internal constructor() : GameFileAccess {
             if (service == null) return@withContext Pair(false, error!!)
             try {
                 val ok = service.copyDirectory(sourceDir, "$GAME_SHARED_PATH/$bundleName")
-                if (ok) Pair(true, "已装入游戏目录")
-                else Pair(false, "拷贝到游戏目录失败：$bundleName")
+                if (ok) {
+                    Pair(true, "已装入游戏目录")
+                } else {
+                    Log.e(TAG, "installConvertedBundle returned false for bundle=$bundleName sourceDir=$sourceDir")
+                    Pair(false, "拷贝到游戏目录失败：$bundleName")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error installing converted bundle $bundleName", e)
                 Pair(false, "出错：${e.message}")

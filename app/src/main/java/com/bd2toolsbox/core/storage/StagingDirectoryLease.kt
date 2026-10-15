@@ -9,6 +9,7 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.PosixFilePermission
 
 /**
  * 读取一个路径的**真实目录身份**（inode 级实体标识）。
@@ -62,13 +63,61 @@ internal class StagingDirectoryLease private constructor(
                     "暂存根目录身份不可确认（文件系统未提供 fileKey），拒绝创建暂存子目录：$realRoot"
                 )
             }
+            makeCrossUidTraversable(realRoot, isDir = true)
             val d = Files.createTempDirectory(realRoot, "cvt-stage-")
+            makeCrossUidTraversable(d, isDir = true)
             val real = d.toRealPath()
             val identity = reader.read(real)
                 ?: throw StagingIdentityUnavailable(
                     "已创建暂存目录但无法确认其身份，保留该空暂存不做递归清理：$real"
                 )
             return StagingDirectoryLease(d, real, identity, reader)
+        }
+
+        private fun makeCrossUidTraversable(path: Path, isDir: Boolean) {
+            try {
+                val perms = Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS).toMutableSet()
+                perms.add(PosixFilePermission.GROUP_READ)
+                perms.add(PosixFilePermission.OTHERS_READ)
+                if (isDir) {
+                    perms.add(PosixFilePermission.GROUP_WRITE)
+                    perms.add(PosixFilePermission.GROUP_EXECUTE)
+                    perms.add(PosixFilePermission.OTHERS_EXECUTE)
+                }
+                Files.setPosixFilePermissions(path, perms)
+            } catch (_: Exception) {
+                // Windows/NTFS 或不支持 POSIX 权限修改的卷静默忽略
+            }
+            try {
+                val f = path.toFile()
+                f.setReadable(true, false)
+                if (isDir) f.setExecutable(true, false)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * 为暂存树开放跨 UID 读取与目录遍历权限（0755/0644）。
+     *
+     * `Files.createTempDirectory` 在 POSIX 上默认使用 `0700 (drwx------)`，
+     * 会阻断以 `UID=2000 (shell)` 运行的非 Root Shizuku 文件服务进入 `externalCacheDir`
+     * 下的 `cvt-stage-*` 暂存目录读取待装入的 `__data`。
+     */
+    fun grantCrossUidReadAccess() {
+        try {
+            makeCrossUidTraversable(acquiredReal, isDir = true)
+            Files.walkFileTree(acquiredReal, object : SimpleFileVisitor<Path>() {
+                override fun preVisitDirectory(d: Path, a: BasicFileAttributes): FileVisitResult {
+                    makeCrossUidTraversable(d, isDir = true)
+                    return FileVisitResult.CONTINUE
+                }
+                override fun visitFile(file: Path, a: BasicFileAttributes): FileVisitResult {
+                    makeCrossUidTraversable(file, isDir = false)
+                    return FileVisitResult.CONTINUE
+                }
+            })
+        } catch (_: Exception) {
         }
     }
 

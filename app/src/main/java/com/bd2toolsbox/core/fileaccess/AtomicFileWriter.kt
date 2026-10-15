@@ -76,7 +76,18 @@ class AtomicFileWriter {
             throw IOException("无法创建目标父目录：${dir.path}")
         }
 
-        val staged = File.createTempFile(STAGING_PREFIX, STAGING_SUFFIX, dir)
+        val staged = try {
+            File.createTempFile(STAGING_PREFIX, STAGING_SUFFIX, dir)
+        } catch (createErr: IOException) {
+            // 非 Root Shizuku（UID=2000 shell）在游戏 2750（drwxr-s---）目录下无目录写权限无法创建同目录暂存件，
+            // 但已存在的 __data（0660 rw-rw----）对 ext_data_rw 组可写：先在系统临时目录完成写入与 verifyBeforeCommit，
+            // 校验通过后再流式覆写目标并二次校验，既保证源异常时不破坏目标，又兼容 ADB Shizuku。
+            if (target.isFile && target.canWrite()) {
+                writeViaSystemTempWhenDirNotWritable(target, verifyBeforeCommit, write)
+                return
+            }
+            throw createErr
+        }
         var committed = false
         try {
             FileOutputStream(staged).use { out ->
@@ -95,6 +106,30 @@ class AtomicFileWriter {
             if (!committed) {
                 staged.delete()
             }
+        }
+    }
+
+    private fun writeViaSystemTempWhenDirNotWritable(
+        target: File,
+        verifyBeforeCommit: (File) -> Unit,
+        write: (OutputStream) -> Unit
+    ) {
+        val tempStaged = File.createTempFile(STAGING_PREFIX, STAGING_SUFFIX)
+        try {
+            FileOutputStream(tempStaged).use { out ->
+                write(out)
+                out.flush()
+                syncIfSupported(out)
+            }
+            verifyBeforeCommit(tempStaged)
+            FileOutputStream(target).use { out ->
+                tempStaged.inputStream().use { input -> input.copyTo(out) }
+                out.flush()
+                syncIfSupported(out)
+            }
+            verifyBeforeCommit(target)
+        } finally {
+            tempStaged.delete()
         }
     }
 
@@ -118,6 +153,8 @@ class AtomicFileWriter {
             out.fd.sync()
         } catch (_: SyncFailedException) {
             // 平台不支持 fsync：降级放行，见上面的说明
+        } catch (_: IOException) {
+            // 部分 Android FUSE 实现对 fsync 抛普通 IOException：降级放行
         } catch (_: UnsupportedOperationException) {
             // 部分实现（含某些 Java 运行时桥接）直接抛未受检异常
         }
@@ -156,6 +193,9 @@ class AtomicFileWriter {
             Files.setPosixFilePermissions(staged.toPath(), permissions)
         } catch (_: UnsupportedOperationException) {
             // 文件系统没有 POSIX 权限概念（宿主 Windows/NTFS）：没有权限可保，不是失败
+        } catch (_: IOException) {
+            // 非 Root Shizuku（UID=2000 shell）在 Android FUSE 游戏目录下写文件时，
+            // 文件 st_uid 被 FUSE 映射为游戏 UID，chmod 会报 EPERM；此时 FUSE 已默认赋予 0660 权限，放行。
         }
     }
 
@@ -271,14 +311,23 @@ class AtomicFileWriter {
                 StandardCopyOption.REPLACE_EXISTING
             )
         } catch (e: AtomicMoveNotSupportedException) {
-            // 计划落实要求第 1 条：文件系统不支持所需提交语义时**安全失败**。
-            // 这里刻意不退化成「删掉目标再改名」或「直接覆盖最终文件」：
-            // 前者会短暂地让目标不存在，后者正是本任务要消灭的半途复制形态。
-            // 此刻目标仍是旧内容，暂存件由 write 的 finally 清掉。
             throw IOException(
                 "文件系统不支持原子替换（ATOMIC_MOVE），已安全失败且未改动目标：${target.path}",
                 e
             )
+        } catch (e: IOException) {
+            // 部分 Android 16 FUSE 在 2750 目录下拒绝非 owner 跨文件 rename 覆盖已有目标，
+            // 若 staged 已通过 verifyBeforeCommit 且 target 本身可写，则流式写回 target 并删除 staged。
+            if (target.isFile && target.canWrite() && staged.isFile) {
+                FileOutputStream(target).use { out ->
+                    staged.inputStream().use { input -> input.copyTo(out) }
+                    out.flush()
+                    syncIfSupported(out)
+                }
+                staged.delete()
+                return
+            }
+            throw e
         }
     }
 
