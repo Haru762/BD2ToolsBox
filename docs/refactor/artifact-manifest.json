@@ -711,8 +711,8 @@
         "recordedByTask": "T61",
         "status": "RELEASED",
         "statusNote": "产物已构建并记录；**未**发布、未合并、未推送。对外版本号刻意保持 0.2.16 / 17 —— 发版号必须按渠道当前最大值决定，不能用本次开发用的 17 盲推。本记录是「当前构建的产物哈希」，改代码重建后**理应**过期：本地验证默认跳过它（verify_manifests.py 的 --check-delivery 才核），发版前必须重新登记并核对一次。",
-        "versionName": "0.3.0",
-        "versionCode": 18,
+        "versionName": "0.3.1",
+        "versionCode": 19,
         "packageName": "com.bd2toolsbox",
         "minSdk": 29,
         "targetSdk": 34,
@@ -728,8 +728,8 @@
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
                 "mappingBytes": 45203437,
-                "contentSha256": "1028558b7e995c69b74085da9d6d27ee18142b43a7c11a51a269fa3398e52ebc",
-                "fileSha256": "528c55e650e45c4a96880f18e07365d264c2f36e7c3ec8674ebbf2c8b8982b7b",
+                "contentSha256": "fedb3bb47dd5f7bf8d8a3b500c308413df5a445d5f1e3def42e880afe2df073f",
+                "fileSha256": "292edf05025283d160943ca8aa1bf1406d2948ab8e546d2f38364f245d814206",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
                 "mappingFileSha256": "09e8abbdb2a2b97a7f57c5f590362457250aacd9237a97c14a037fcca36f1cfb"
             },
@@ -742,8 +742,8 @@
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
                 "mappingBytes": 45203365,
-                "contentSha256": "6109c1dc37fd2d878072f0a07d21db570a32b8c4cdfa95e816141b3802bd8ed8",
-                "fileSha256": "6c6d6391d1b74cf3d7c7b1785001c0aeae0344925416008708ebcfaaa2a109de",
+                "contentSha256": "9016bd3a58544e3a4bad7221b249094905db450b088802c0ac0d50caf4c59e07",
+                "fileSha256": "c1a468d2c3a8e3877f4294ec2855e15634c2e9de80b1372e7ad3384e33488786",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
                 "mappingFileSha256": "903a17da43270666d430f2ed7f1bf7f2f22e188f615f7dcfce6c97a09ec52235"
             }
