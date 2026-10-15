@@ -129,8 +129,10 @@ class ModRepository(
 
     private fun shouldIgnoreModEntry(entryName: String?): Boolean {
         val name = entryName?.substringAfterLast('/')?.trim()?.lowercase() ?: return true
-        // T62：`.nomedia` 媒体扫描隔离标记同样不参与 MOD 枚举/签名/重打包输入。
+        // T62：`.nomedia` 媒体扫描隔离标记与编辑器备份文件不参与 MOD 枚举/签名/重打包输入。
         return name.isEmpty() || name == ".modfile" || name.endsWith(".modfile") ||
+            name.endsWith(".png~") || name.endsWith(".jsonbk") || name.endsWith(".skelbk") ||
+            name == "desktop.ini" ||
             com.bd2toolsbox.core.storage.MediaExclusionManager.shouldSkipInModScan(name)
     }
 
@@ -298,6 +300,46 @@ class ModRepository(
                     )
                 )
                 return      // mod 目录里的 .old 备份等子目录天然被跳过
+            }
+
+            // 好感度 / 亲密度 / 壁纸 Mod 结构：顶层放 <Target>.modfile，贴图放在 textures/ 子目录。
+            // 将当前目录整体识别为一个 Mod（避免钻入 textures/ 丢失目录名与 .modfile 目标信息）。
+            val modfileStems = files.mapNotNull { f ->
+                val low = f.name.trim().lowercase()
+                if (low.endsWith(".modfile") && low != ".modfile") low.removeSuffix(".modfile") else null
+            }
+            val texturesDir = children.firstOrNull { it.isDirectory && it.name.equals("textures", ignoreCase = true) }
+            if (modfileStems.isNotEmpty() && texturesDir != null) {
+                val texChildren = listChildren(treeRootUri, texturesDir.docId)
+                val texFiles = texChildren.filter { !it.isDirectory && !shouldIgnoreModEntry(it.name) && isModAssetFile(it.name) }
+                if (texFiles.isNotEmpty()) {
+                    val texNames = texFiles.map { it.name }
+                    val primaryStem = modfileStems.first()
+                    val combinedNames = if (
+                        primaryStem.endsWith("_atlas_eventpackgui") ||
+                        primaryStem.matches(Regex("^pack\\d+_title\\d+$"))
+                    ) {
+                        listOf("$primaryStem.png")
+                    } else {
+                        buildList {
+                            addAll(texNames)
+                            if (texNames.none { it.startsWith("specialillust", ignoreCase = true) || it.startsWith("sepcialillust", ignoreCase = true) }) {
+                                modfileStems.forEach { add("$it.png") }
+                            }
+                        }
+                    }
+                    found.add(
+                        DiscoveredMod(
+                            uri = DocumentsContract.buildDocumentUriUsingTree(treeRootUri, docId),
+                            displayName = relPath.ifEmpty { dirName },
+                            lastModified = maxOf(dirLastModified, texturesDir.lastModified),
+                            isDirectory = true,
+                            fileNames = combinedNames,
+                            sourceSignature = sourceSignature(files + texFiles)
+                        )
+                    )
+                    return
+                }
             }
 
             val subdirectories = children.filter { it.isDirectory && !it.name.startsWith(".") }
@@ -498,7 +540,8 @@ class ModRepository(
             val errorReason = resolved.optString("errorReason").ifBlank { null }
             val resolvedTargets = parseResolvedTargets(resolved.optJSONArray("resolvedTargets"))
             val bestMatch = characterRepository.findBestMatch(
-                candidate.modDetails.fileId, candidate.modDetails.fileNames)
+                candidate.modDetails.fileId, candidate.modDetails.fileNames
+            ) ?: characterRepository.findMatchByDisplayName(candidate.name)
 
             val character: String
             val costume: String
@@ -624,19 +667,19 @@ class ModRepository(
 
     private fun extractModDetailsFromUri(zipUri: Uri): ModDetails {
         val fileNames = mutableListOf<String>()
+        val modfileStems = mutableListOf<String>()
         var fileId: String? = null
         try {
             context.contentResolver.openInputStream(zipUri)?.use {
                 ZipInputStream(it).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
-                        if (!entry.isDirectory && !shouldIgnoreModEntry(entry.name)) {
-                            // T06：这里不写盘，但条目名会被 resolver 按 **basename** 匹配
-                            // （resolver.py:187 `Path(file_name).name`）—— 于是 `../outside.txt`
-                            // 会被当成 `outside.txt` 参与 bundle 判定，一个有越界条目的
-                            // zip 仍可能被判 KNOWN 并送进真正的解压。所以不安全的条目
-                            // 既不记入 fileNames、也不参与 extractFileId。
-                            // 这是**丢东西**，必须留下可见痕迹，不能静默。
+                        val leaf = entry.name.substringAfterLast('/').trim().lowercase()
+                        if (!entry.isDirectory && leaf.endsWith(".modfile") && leaf != ".modfile") {
+                            if (SafeArchivePaths.entryNameRejectionReason(entry.name) == null) {
+                                modfileStems.add(leaf.removeSuffix(".modfile"))
+                            }
+                        } else if (!entry.isDirectory && !shouldIgnoreModEntry(entry.name)) {
                             val reason = SafeArchivePaths.entryNameRejectionReason(entry.name)
                             if (reason == null) {
                                 fileNames.add(entry.name)
@@ -658,6 +701,16 @@ class ModRepository(
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+        if (modfileStems.isNotEmpty() && fileId == null) {
+            val primaryStem = modfileStems.first()
+            if (primaryStem.endsWith("_atlas_eventpackgui") || primaryStem.matches(Regex("^pack\\d+_title\\d+$"))) {
+                fileNames.clear()
+                fileNames.add("$primaryStem.png")
+            } else {
+                modfileStems.forEach { fileNames.add("$it.png") }
+            }
+            fileId = modfileStems.firstNotNullOfOrNull { characterRepository.extractFileId(it) }
         }
         return ModDetails(fileId, fileNames)
     }

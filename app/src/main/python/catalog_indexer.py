@@ -223,6 +223,16 @@ def load_cached_bundle_hints(output_dir, quality, version):
 # 的 bundle 里，TextAsset 的 m_Name 正是 cutscene_char000707.skel。
 _ADDRESS_EXT_ALIASES = (('.skel.bytes', '.skel'), ('.atlas.txt', '.atlas'))
 
+# catalog 里部分角色立绘、NPC 立绘、对话立绘、特殊插画与小游戏 Spine 不以
+# .skel.bytes 登记，而是以 UI/Prefabs/Spine/... 下的 .prefab / .playable 登记。
+_ILLUST_CHAR_PREFAB = re.compile(r'^illust_char(\d{6})_\d+\.prefab$')
+_ILLUST_NPC_PREFAB = re.compile(r'^illust_npc(\d+)_\d+\.prefab$')
+_ILLUST_TALK_PREFAB = re.compile(r'^illust_talk_?(\w+)\.prefab$')
+_SPECIAL_ILLUST_PLAYABLE = re.compile(r'^specialillust(\d+)\.playable$')
+_SPECIAL_ILLUST_PREFAB = re.compile(r'^specialillust(\d+)\.prefab$')
+_EVENTPACK_ATLAS = re.compile(r'^(p\d+_ui/[^/]+/atlas/eventpackgui)\.spriteatlasv2$', re.IGNORECASE)
+_LOCALPACK_TITLE = re.compile(r'^localpacktitle/localpacktitle(\d+)\.spriteatlasv2$', re.IGNORECASE)
+
 
 def _address_aliases(segment):
     """地址末段 → 它在 assetToBundles 里可能出现的那几种键（全小写）。"""
@@ -231,6 +241,34 @@ def _address_aliases(segment):
     for registered, asset_name in _ADDRESS_EXT_ALIASES:
         if low.endswith(registered):
             aliases.add(low[:-len(registered)] + asset_name)
+    m = _ILLUST_CHAR_PREFAB.match(low)
+    if m:
+        cid = m.group(1)
+        aliases.update((f"char{cid}.skel", f"char{cid}.atlas"))
+    m = _ILLUST_NPC_PREFAB.match(low)
+    if m:
+        nid = m.group(1)
+        aliases.update((f"npc{nid}.skel", f"npc{nid}.atlas"))
+    m = _ILLUST_TALK_PREFAB.match(low)
+    if m:
+        tid = m.group(1)
+        aliases.update((
+            f"illust_talk{tid}.skel", f"illust_talk{tid}.atlas",
+            f"illust_talk_{tid}.skel", f"illust_talk_{tid}.atlas",
+        ))
+        if tid == "ellin":
+            aliases.update(("npc_ellin.skel", "npc_ellin.atlas"))
+    m = _SPECIAL_ILLUST_PLAYABLE.match(low)
+    if m:
+        sid = m.group(1)
+        aliases.update((
+            f"specialillust{sid}.skel", f"specialillust{sid}.atlas",
+            f"illust_special{sid}.skel", f"illust_special{sid}.atlas",
+        ))
+    if low == "coverpack_f_special2.prefab":
+        aliases.update(("illust_special2.skel", "illust_special2.atlas"))
+    if low == "rhythm_char001.prefab":
+        aliases.update(("rhythmhitanim.skel", "rhythmhitanim.atlas"))
     return aliases
 
 
@@ -247,6 +285,7 @@ def build_catalog_asset_index(catalog_content, wanted_keys=None):
     index = {}
     wanted = None if wanted_keys is None else set(wanted_keys)
     catalog = Catalog(catalog_content)
+    fallback_special_prefabs = []
     for i in range(len(catalog.entries)):
         entry_index = i
         if entry_index in catalog.bundles:
@@ -259,12 +298,50 @@ def build_catalog_asset_index(catalog_content, wanted_keys=None):
         if not bundle_name:
             continue
 
-        for alias in _address_aliases(address.rsplit('/', 1)[-1]):
+        addr_seg = address.rsplit('/', 1)[-1]
+        m_prefab = _SPECIAL_ILLUST_PREFAB.match(addr_seg.lower())
+        if m_prefab:
+            fallback_special_prefabs.append((m_prefab.group(1), bundle_name))
+
+        segments = {addr_seg}
+        internal_id = catalog.internal_id_of(entry_index)
+        if isinstance(internal_id, str) and internal_id:
+            segments.add(internal_id.rsplit('/', 1)[-1])
+
+        for seg in segments:
+            for alias in _address_aliases(seg):
+                if wanted is not None and alias not in wanted:
+                    continue
+                bundles = index.setdefault(alias, [])
+                if bundle_name not in bundles:
+                    bundles.append(bundle_name)
+
+        # 活动卡带与故事卡带壁纸 Mod（.modfile 指向 EventPackGUI 或 packN_title1 SpriteAtlas）
+        extra_full_aliases = []
+        m_ep = _EVENTPACK_ATLAS.match(address)
+        if m_ep:
+            extra_full_aliases.append(m_ep.group(1).lower().replace('/', '_') + '.png')
+        m_lp = _LOCALPACK_TITLE.match(address)
+        if m_lp:
+            extra_full_aliases.append(f"pack{m_lp.group(1)}_title1.png")
+        for alias in extra_full_aliases:
             if wanted is not None and alias not in wanted:
                 continue
             bundles = index.setdefault(alias, [])
             if bundle_name not in bundles:
                 bundles.append(bundle_name)
+
+    # 仅当某个 SpecialIllustN 没有 .playable 条目（如 SpecialIllust181）时，
+    # 才用其 .prefab 条目兜底补充 .skel/.atlas 键，避免与 .playable 产生双包歧义。
+    for sid, bundle_name in fallback_special_prefabs:
+        for alias in (
+            f"specialillust{sid}.skel", f"specialillust{sid}.atlas",
+            f"illust_special{sid}.skel", f"illust_special{sid}.atlas",
+        ):
+            if wanted is not None and alias not in wanted:
+                continue
+            if alias not in index:
+                index[alias] = [bundle_name]
     return index
 
 

@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageFile
 
 from .json_to_skel import json_to_skel
+from resolver import SPECIAL_ILLUST_ADDRESS_TO_ASSET
 from utils.atlas_operations import parse_atlas_file
 from utils.file_operations import find_file_case_insensitive  # noqa: F401 兼容导入
 
@@ -196,22 +197,30 @@ def should_ignore_entry(name):
 def _build_file_index(working_dir):
     """一次遍历建好文件索引，取代反复 os.walk。
 
-    返回 {'skel_json': {词干: (类型, 路径, 目录)}, 'all_files': [路径]}。
+    返回 {'skel_json': {词干: (类型, 路径, 目录)}, 'spine_stems': {词干: 目录},
+          'modfile_stems': [词干], 'all_files': [路径]}。
     `.old` 备份目录与 `.nomedia`/`.modfile` 标记跳过。
     """
-    index = {'skel_json': {}, 'all_files': []}
+    index = {'skel_json': {}, 'spine_stems': {}, 'modfile_stems': [], 'all_files': []}
     for root, dirs, files in os.walk(working_dir):
         dirs[:] = [d for d in dirs if d != '.old']
         for f in files:
-            if should_ignore_entry(f):
+            lowered = f.lower()
+            if lowered.endswith('.modfile') and lowered != '.modfile':
+                index['modfile_stems'].append(os.path.splitext(lowered)[0])
+                continue
+            if should_ignore_entry(f) or lowered.endswith(('.png~', '.jsonbk', '.skelbk', '.ini')):
                 continue
             filepath = os.path.join(root, f)
             index['all_files'].append(filepath)
-            lowered = f.lower()
             if lowered.endswith(('.skel', '.json')):
                 stem = os.path.splitext(f)[0].lower()
                 ftype = 'skel' if lowered.endswith('.skel') else 'json'
                 index['skel_json'].setdefault(stem, (ftype, filepath, root))
+                index['spine_stems'].setdefault(stem, root)
+            elif lowered.endswith('.atlas'):
+                stem = os.path.splitext(f)[0].lower()
+                index['spine_stems'].setdefault(stem, root)
     return index
 
 
@@ -259,7 +268,7 @@ def _merge_spine_assets(mod_dir_path, base_name, target_count, report):
     report(f"Starting Spine asset merge for '{base_name}' in temporary directory.")
     base_lower = base_name.lower()
 
-    png_pattern = re.compile(rf'^{re.escape(base_name)}(_\d+)?\.png$', re.IGNORECASE)
+    png_pattern = re.compile(rf'^{re.escape(base_name)}(?:_([2-9]|\d{{2,}}))?\.png$', re.IGNORECASE)
     pngs = [os.path.join(mod_dir_path, f)
             for f in os.listdir(mod_dir_path) if png_pattern.match(f)]
     atlas_path = (find_file_case_insensitive(mod_dir_path, f"{base_name}.atlas")
@@ -473,6 +482,84 @@ def _write_text_asset(obj, script_text):
     data.save()
 
 
+def _replace_sprite_atlas_entries(env, png_path, modfile_stems, use_astc, report):
+    """将 png_path 贴入 SpriteAtlas 中对应的子图区域（如 bg_eventpack / pack1003_title1）。"""
+    try:
+        import unpacker  # noqa: F401 确保注册 decompress_astc_ctypes
+    except Exception:
+        pass
+    wanted_sprites = set()
+    for stem in modfile_stems:
+        wanted_sprites.add(stem.lower())
+        if stem.lower().endswith("_atlas_eventpackgui"):
+            wanted_sprites.add("bg_eventpack")
+
+    sprite_keys = []
+    tex_objs = {}
+    atlas_objs = []
+    for obj in env.objects:
+        tname = obj.type.name
+        if tname == "Texture2D":
+            tex_objs[obj.path_id] = obj
+        elif tname == "SpriteAtlas":
+            atlas_objs.append(obj)
+        elif tname == "Sprite":
+            try:
+                d = obj.read()
+                if getattr(d, "m_Name", "").lower() in wanted_sprites:
+                    sprite_keys.append((d.m_Name, d.m_RenderDataKey))
+            except Exception:
+                pass
+
+    if not sprite_keys or not atlas_objs:
+        return False
+
+    edited = False
+    for sprite_name, rkey in sprite_keys:
+        for atlas_obj in atlas_objs:
+            try:
+                atlas_data = atlas_obj.read()
+                for k, v in atlas_data.m_RenderDataMap:
+                    if k != rkey:
+                        continue
+                    tex_obj = tex_objs.get(v.texture.path_id)
+                    if tex_obj is None:
+                        continue
+                    rect = v.textureRect
+                    rw, rh = int(round(rect.width)), int(round(rect.height))
+                    if rw <= 0 or rh <= 0:
+                        continue
+                    tex_data = tex_obj.read()
+                    base_img = tex_data.image.convert("RGBA")
+                    with Image.open(png_path) as raw_mod:
+                        mod_img = raw_mod.convert("RGBA")
+                        if mod_img.size != (rw, rh):
+                            mod_img = mod_img.resize((rw, rh), Image.LANCZOS)
+                    px = int(round(rect.x))
+                    py = int(round(base_img.height - rect.y - rect.height))
+                    base_img.paste(mod_img, (px, py))
+                    mod_img.close()
+                    if use_astc and _load_astcenc() is not None:
+                        flipped = base_img.transpose(Image.FLIP_TOP_BOTTOM)
+                        compressed, err = compress_image_astc(
+                            flipped.tobytes(), base_img.width, base_img.height, 4, 4)
+                        flipped.close()
+                        if compressed and not err:
+                            _write_astc_texture(tex_obj, compressed, base_img.width, base_img.height)
+                            edited = True
+                        else:
+                            _write_rgba_texture(tex_obj, base_img)
+                            edited = True
+                    else:
+                        _write_rgba_texture(tex_obj, base_img)
+                        edited = True
+                    base_img.close()
+                    report(f"Replaced SpriteAtlas sprite '{sprite_name}' in '{tex_data.m_Name}'")
+            except Exception as e:
+                report(f"Warning: SpriteAtlas replacement failed for '{sprite_name}': {e}")
+    return edited
+
+
 def _detach_stream(data):
     """纹理数据改为内联后，流数据字段必须清零（否则读端还去找老偏移）。"""
     if hasattr(data, 'm_StreamData'):
@@ -664,12 +751,14 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
         report("Building file index...")
         file_index = _build_file_index(working_dir)
 
-        spine_stems = {stem: d for stem, (_t, _p, d) in file_index['skel_json'].items()}
+        spine_stems = dict(file_index.get('spine_stems') or {
+            stem: d for stem, (_t, _p, d) in file_index['skel_json'].items()
+        })
         if spine_stems:
             report(f"Detected {len(spine_stems)} unique Spine mods for pre-processing: {list(spine_stems.keys())}")
             for stem, mod_dir in spine_stems.items():
                 report(f"--- Processing: {stem} ---")
-                name_pattern = re.compile(f"^{re.escape(stem)}(_\\d+)?$", re.IGNORECASE)
+                name_pattern = re.compile(f"^{re.escape(stem)}(?:_([2-9]|\\d{{2,}}))?$", re.IGNORECASE)
 
                 original_pages = 0
                 for obj in env.objects:
@@ -680,7 +769,7 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
                         except Exception as e:
                             report(f"Couldn't read asset name, skipping. Error: {e}")
 
-                mod_png_pattern = re.compile(rf'^{re.escape(stem)}(_\d+)?\.png$', re.IGNORECASE)
+                mod_png_pattern = re.compile(rf'^{re.escape(stem)}(?:_([2-9]|\d{{2,}}))?\.png$', re.IGNORECASE)
                 mod_pages = sum(1 for f in os.listdir(mod_dir) if mod_png_pattern.match(f))
                 report(f"Found {original_pages} matching textures in the original game file for {stem}.")
                 report(f"Mod has {mod_pages} textures for {stem}.")
@@ -714,7 +803,26 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
         text_items = []      # (mod路径, 目标名, is_json)
         astc_items = []      # (mod路径, 目标名)
         rgba_items = []      # (mod路径, 目标名)
+        modfile_stems = file_index.get('modfile_stems') or []
 
+        def _resolve_texture_target(raw_stem):
+            if _asset_objects(asset_map, raw_stem, "Texture2D"):
+                return raw_stem
+            mapped = SPECIAL_ILLUST_ADDRESS_TO_ASSET.get(raw_stem)
+            if mapped and _asset_objects(asset_map, mapped, "Texture2D"):
+                return mapped
+            stripped = re.sub(r'(?:\s+new|cutscene|cut|loop)$', '', raw_stem).strip()
+            if stripped != raw_stem and _asset_objects(asset_map, stripped, "Texture2D"):
+                return stripped
+            for mf_stem in modfile_stems:
+                if _asset_objects(asset_map, mf_stem, "Texture2D"):
+                    return mf_stem
+                mf_mapped = SPECIAL_ILLUST_ADDRESS_TO_ASSET.get(mf_stem)
+                if mf_mapped and _asset_objects(asset_map, mf_mapped, "Texture2D"):
+                    return mf_mapped
+            return None
+
+        seen_tex_targets = set()
         for mod_filepath in file_index['all_files']:
             filename = os.path.basename(mod_filepath)
             lowered = filename.lower()
@@ -723,8 +831,10 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
                 if _asset_objects(asset_map, target, "TextAsset"):
                     text_items.append((mod_filepath, target, True))
             elif lowered.endswith('.png'):
-                target = os.path.splitext(filename)[0].lower()
-                if _asset_objects(asset_map, target, "Texture2D"):
+                raw_stem = os.path.splitext(filename)[0].lower()
+                target = _resolve_texture_target(raw_stem)
+                if target and (target == raw_stem or target not in seen_tex_targets):
+                    seen_tex_targets.add(target)
                     (astc_items if use_astc else rgba_items).append((mod_filepath, target))
             else:
                 target = lowered
@@ -763,6 +873,13 @@ def repack_bundle(original_bundle_path, modded_assets_folder, output_path,
 
         del asset_map
         gc.collect()
+
+        # ---- SpriteAtlas 子图替换兜底（针对卡带/活动大厅壁纸 .modfile + textures/*.png）----
+        if not edited and modfile_stems:
+            png_files = [p for p in file_index['all_files'] if p.lower().endswith('.png')]
+            if png_files:
+                edited = _replace_sprite_atlas_entries(
+                    env, png_files[0], modfile_stems, use_astc, report)
 
         if not edited:
             msg = "No modifications were made. Check if your mod files match any assets in the bundle."

@@ -15,7 +15,7 @@ class EndianBinaryWriter:
         if isinstance(input_, (bytes, bytearray)):
             self.stream = BytesIO(input_)
             self.stream.seek(0, 2)
-        elif isinstance(input_, IOBase):
+        elif isinstance(input_, IOBase) or hasattr(input_, "write"):
             self.stream = input_
         else:
             raise ValueError("Invalid input type - %s." % type(input_))

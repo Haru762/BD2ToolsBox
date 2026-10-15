@@ -35,6 +35,7 @@ class CharacterRepository(private val context: Context) {
     }
 
     /** file_id → 该角色的全部皮肤条目（idle / cutscene 各一条）。 */
+    @Volatile
     private var characterLut: Map<String, List<CharacterInfo>> = emptyMap()
 
     init {
@@ -43,6 +44,7 @@ class CharacterRepository(private val context: Context) {
         // 所以铺底必须早于任何读取方第一次取值 —— 晚一步，那个实例就会一直
         // 拿着空表显示「未识别」，直到进程重启。
         seedCharactersJsonFromAssets()
+        characterLut = parseCharacterJsonSync()
     }
 
     /**
@@ -112,25 +114,34 @@ class CharacterRepository(private val context: Context) {
      */
     private fun seedCharactersJsonFromAssets() {
         val target = File(context.filesDir, CHARACTERS_JSON)
-        if (target.length() > 0L) return
         synchronized(seedLock) {
-            if (target.length() > 0L) return
             val text = try {
                 context.assets.open(ASSET_CHARACTERS_JSON).bufferedReader().use { it.readText() }
             } catch (e: Exception) {
-                // assets 里没有或读不动：维持原状，仍旧走运行时生成
+                if (target.length() <= 0L) e.printStackTrace()
+                return
+            }
+            val assetObj = try {
+                JSONObject(text)
+            } catch (e: Exception) {
                 e.printStackTrace()
                 return
             }
-            val count = try {
-                JSONObject(text).optJSONArray("characters")?.length() ?: 0
-            } catch (e: Exception) {
-                e.printStackTrace()
-                0
-            }
+            val count = assetObj.optJSONArray("characters")?.length() ?: 0
             if (count == 0) {
                 println("内置 $ASSET_CHARACTERS_JSON 解析不出条目，跳过铺底")
                 return
+            }
+            if (target.length() > 0L) {
+                val existingVersion = try {
+                    JSONObject(target.readText()).optString("version", "")
+                } catch (_: Exception) {
+                    ""
+                }
+                val assetVersion = assetObj.optString("version", "")
+                if (existingVersion.isNotEmpty() && existingVersion >= assetVersion) {
+                    return
+                }
             }
             try {
                 // 先写临时文件再重命名：中途被打断也不会留下半截角色表
@@ -155,40 +166,52 @@ class CharacterRepository(private val context: Context) {
      */
     private suspend fun parseCharacterJson(): Map<String, List<CharacterInfo>> =
         withContext(Dispatchers.IO) {
-            seedCharactersJsonFromAssets()
-            val file = File(context.filesDir, CHARACTERS_JSON)
-            if (!file.exists()) return@withContext emptyMap()
-            val text = try {
-                file.readText()
-            } catch (e: Exception) {
-                e.printStackTrace(); ""
-            }
-            if (text.isEmpty()) return@withContext emptyMap()
-
-            val lut = mutableMapOf<String, MutableList<CharacterInfo>>()
-            fun absorb(arr: JSONArray) {
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    val info = CharacterInfo(
-                        obj.getString("character"),
-                        obj.getString("costume"),
-                        obj.getString("type"),
-                        obj.getString("hashed_name")
-                    )
-                    lut.getOrPut(obj.getString("file_id").lowercase()) { mutableListOf() }.add(info)
-                }
-            }
-            try {
-                absorb(JSONObject(text).getJSONArray("characters"))
-            } catch (_: Exception) {
-                try {
-                    absorb(JSONArray(text))
-                } catch (e2: Exception) {
-                    e2.printStackTrace()
-                }
-            }
-            lut
+            parseCharacterJsonSync()
         }
+
+    private fun parseCharacterJsonSync(): Map<String, List<CharacterInfo>> {
+        seedCharactersJsonFromAssets()
+        val file = File(context.filesDir, CHARACTERS_JSON)
+        if (!file.exists()) return emptyMap()
+        val text = try {
+            file.readText()
+        } catch (e: Exception) {
+            e.printStackTrace(); ""
+        }
+        if (text.isEmpty()) return emptyMap()
+
+        val lut = mutableMapOf<String, MutableList<CharacterInfo>>()
+        fun absorb(arr: JSONArray) {
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val info = CharacterInfo(
+                    obj.getString("character"),
+                    obj.getString("costume"),
+                    obj.getString("type"),
+                    obj.getString("hashed_name")
+                )
+                lut.getOrPut(obj.getString("file_id").lowercase()) { mutableListOf() }.add(info)
+            }
+        }
+        try {
+            absorb(JSONObject(text).getJSONArray("characters"))
+        } catch (_: Exception) {
+            try {
+                absorb(JSONArray(text))
+            } catch (e2: Exception) {
+                e2.printStackTrace()
+            }
+        }
+        return lut
+    }
+
+    private fun ensureLut(): Map<String, List<CharacterInfo>> {
+        val current = characterLut
+        if (current.isNotEmpty()) return current
+        val loaded = parseCharacterJsonSync()
+        characterLut = loaded
+        return loaded
+    }
 
     /**
      * 把一个 mod（file_id + 文件名）匹配到具体皮肤条目。
@@ -198,7 +221,7 @@ class CharacterRepository(private val context: Context) {
      */
     fun findBestMatch(fileId: String?, fileNames: List<String>): CharacterInfo? {
         if (fileId == null) return null
-        val candidates = characterLut[fileId] ?: return null
+        val candidates = ensureLut()[fileId] ?: return null
         if (candidates.size <= 1) return candidates.firstOrNull()
 
         if (fileNames.any { it.contains("cutscene", ignoreCase = true) }) {
@@ -208,6 +231,30 @@ class CharacterRepository(private val context: Context) {
         candidates.filter { !it.hashedName.isNullOrBlank() }.singleOrNull()?.let { return it }
         candidates.find { it.type == "idle" }?.let { return it }
         return candidates.first()
+    }
+
+    /**
+     * 当 file_id 是 specialillust 等通用插画 ID 时，尝试从文件夹展示名匹配所属角色。
+     */
+    fun findMatchByDisplayName(displayName: String): CharacterInfo? {
+        val leaf = displayName.substringAfterLast('/').trim()
+        if (leaf.isEmpty()) return null
+        val lut = ensureLut()
+        val knownChars = lut.values.asSequence().flatten().map { it.character }
+            .filter { it.isNotBlank() && !it.startsWith("Unknown", ignoreCase = true) }
+            .distinct()
+            .sortedByDescending { it.length }
+            .toList()
+        val matchedChar = knownChars.firstOrNull { ch ->
+            leaf.startsWith(ch, ignoreCase = true) ||
+                leaf.contains(ch.replace(" ", ""), ignoreCase = true)
+        } ?: return null
+        return CharacterInfo(
+            character = matchedChar,
+            costume = leaf,
+            type = "special",
+            hashedName = ""
+        )
     }
 
     /** 从 mod 文件名里抽出 file_id（如 char000104），与 python 侧的正则保持同款。 */

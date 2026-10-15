@@ -336,7 +336,7 @@ class BundleFile(File.File):
         if writer is None:
             writer = EndianBinaryWriter()
             close_writer = True
-        elif isinstance(writer, IOBase):
+        elif isinstance(writer, IOBase) or hasattr(writer, "write"):
             writer = EndianBinaryWriter(writer)
 
         writer.write_string_to_null(self.signature)

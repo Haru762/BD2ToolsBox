@@ -1972,7 +1972,9 @@ class MainViewModel @Inject constructor(
             ZipInputStream(fis).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
-                    if (!entry.isDirectory && !shouldIgnoreModEntry(entry.name)) {
+                    val leaf = entry.name.substringAfterLast('/').trim().lowercase()
+                    val isNamedModfile = leaf.endsWith(".modfile") && leaf != ".modfile"
+                    if (!entry.isDirectory && (!shouldIgnoreModEntry(entry.name) || isNamedModfile)) {
                         // T06：条目名来自归档、是外部输入。旧写法 File(dest, entry.name)
                         // 实测能被 `../outside.txt` / `..\outside.txt` 写出 dest 之外。
                         // 不安全的条目在这里抛 IllegalArgumentException，由
@@ -4961,7 +4963,9 @@ class MainViewModel @Inject constructor(
         if (!destinationDir.exists()) destinationDir.mkdirs()
         sourceDir.listFiles().forEach { file ->
             val fileName = file.name ?: return@forEach
-            if (file.isFile && !shouldIgnoreModEntry(fileName)) {
+            if (file.isDirectory && fileName.equals("textures", ignoreCase = true)) {
+                copyDirectoryToCache(context, file, File(destinationDir, fileName))
+            } else if (file.isFile && (!shouldIgnoreModEntry(fileName) || fileName.endsWith(".modfile", ignoreCase = true))) {
                 val destFile = File(destinationDir, fileName)
                 try {
                     context.contentResolver.openInputStream(file.uri)?.use { input -> destFile.outputStream().use { output -> input.copyTo(output) } }

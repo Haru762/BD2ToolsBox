@@ -1,5 +1,5 @@
 {
-    "version": "20260904214954",
+    "version": "20261007173939",
     "characters": [
         {
             "character": "Olivier",
@@ -825,7 +825,7 @@
             "file_id": "char003701",
             "costume": "Apostle",
             "type": "idle",
-            "hashed_name": "872dcd180d4fd703cceb1e7720d934aa"
+            "hashed_name": "349017d3a198df5e7016d66cfe69b5c1"
         },
         {
             "character": "Blade",
@@ -1031,6 +1031,20 @@
             "hashed_name": "21f7856145801b110515788d607ad308"
         },
         {
+            "character": "Tyr",
+            "file_id": "char004192",
+            "costume": "Clumsy Wuff",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Tyr",
+            "file_id": "char004192",
+            "costume": "Clumsy Wuff",
+            "type": "cutscene",
+            "hashed_name": "d9381afee92d45dc8171b252f1d4edb6"
+        },
+        {
             "character": "Palette",
             "file_id": "char004201",
             "costume": "Shattered Dream",
@@ -1071,6 +1085,20 @@
             "costume": "Deadeye",
             "type": "cutscene",
             "hashed_name": "371525638464b6f2db597dfde31d187c"
+        },
+        {
+            "character": "Nekyndalia",
+            "file_id": "char004302",
+            "costume": "Unraveling Mummy",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Nekyndalia",
+            "file_id": "char004302",
+            "costume": "Unraveling Mummy",
+            "type": "cutscene",
+            "hashed_name": "ada282b64c18f05fa89f3d4847e75631"
         },
         {
             "character": "Eris",
@@ -1255,46 +1283,74 @@
             "hashed_name": "f17153c53963e8c49ee6f18b978cbc80"
         },
         {
-            "character": "Unknown Character",
+            "character": "Kyouka Uzen",
             "file_id": "char021101",
-            "costume": "Unknown (char021101)",
+            "costume": "Eternal Chains",
             "type": "idle",
             "hashed_name": "555d52b64287b546d2f27172dcf19341"
         },
         {
-            "character": "Unknown Character",
+            "character": "Kyouka Uzen",
             "file_id": "char021101",
-            "costume": "Unknown (char021101)",
+            "costume": "Eternal Chains",
             "type": "cutscene",
             "hashed_name": "49d4fbf8b75a5fc6df2cbc7c473d1936"
         },
         {
-            "character": "Unknown Character",
+            "character": "Tenka Izumo",
             "file_id": "char021201",
-            "costume": "Unknown (char021201)",
+            "costume": "Ame-no-Mitori",
             "type": "idle",
             "hashed_name": "555d52b64287b546d2f27172dcf19341"
         },
         {
-            "character": "Unknown Character",
+            "character": "Tenka Izumo",
             "file_id": "char021201",
-            "costume": "Unknown (char021201)",
+            "costume": "Ame-no-Mitori",
             "type": "cutscene",
             "hashed_name": "4b79d29b334a54b02658c9a60b2da843"
         },
         {
-            "character": "Unknown Character",
+            "character": "Tenka Izumo",
             "file_id": "char021291",
-            "costume": "Unknown (char021291)",
+            "costume": "Special Date",
             "type": "idle",
             "hashed_name": "555d52b64287b546d2f27172dcf19341"
         },
         {
-            "character": "Unknown Character",
+            "character": "Tenka Izumo",
             "file_id": "char021291",
-            "costume": "Unknown (char021291)",
+            "costume": "Special Date",
             "type": "cutscene",
             "hashed_name": "bc043c379a9d785f82a1a9b94b02b25f"
+        },
+        {
+            "character": "Ren Yamashiro",
+            "file_id": "char021301",
+            "costume": "Lord of the Cosmos",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Ren Yamashiro",
+            "file_id": "char021301",
+            "costume": "Lord of the Cosmos",
+            "type": "cutscene",
+            "hashed_name": "8ac9a7b86fd1897c5eecc9b0f1e0935f"
+        },
+        {
+            "character": "Ren Yamashiro",
+            "file_id": "char021391",
+            "costume": "Role Reversal",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
+        },
+        {
+            "character": "Ren Yamashiro",
+            "file_id": "char021391",
+            "costume": "Role Reversal",
+            "type": "cutscene",
+            "hashed_name": "2ed9e00d20e8a4502e9356605308b7ae"
         },
         {
             "character": "Celia",
@@ -2403,13 +2459,6 @@
             "hashed_name": "c0d2e9ad91aa7949915c333af673f48c"
         },
         {
-            "character": "Unknown Character",
-            "file_id": "char021301",
-            "costume": "Unknown (char021301)",
-            "type": "idle",
-            "hashed_name": "555d52b64287b546d2f27172dcf19341"
-        },
-        {
             "character": "Alec",
             "file_id": "char060301",
             "costume": "The Destruction",
@@ -2457,6 +2506,13 @@
             "costume": "Healer",
             "type": "idle",
             "hashed_name": "61a2fe1c3c2144e5d1df0e312e2b3b16"
+        },
+        {
+            "character": "Aquila",
+            "file_id": "char067902",
+            "costume": "Sealed Desires",
+            "type": "idle",
+            "hashed_name": "555d52b64287b546d2f27172dcf19341"
         },
         {
             "character": "Gynt",

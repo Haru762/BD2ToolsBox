@@ -76,6 +76,7 @@ class Catalog:
         extra = base64.b64decode(content['m_ExtraDataString'])
         entry = base64.b64decode(content['m_EntryDataString'])
         internal_ids = content.get('m_InternalIds') or []
+        self._internal_ids = tuple(internal_ids)
 
         # bucket 段：[桶数][每桶 (key 偏移, 依赖 entry 数, 依赖 entry 序号...)]
         num_buckets = read_int32(bucket, 0)
