@@ -541,7 +541,8 @@ class ModRepository(
             val resolvedTargets = parseResolvedTargets(resolved.optJSONArray("resolvedTargets"))
             val bestMatch = characterRepository.findBestMatch(
                 candidate.modDetails.fileId, candidate.modDetails.fileNames
-            ) ?: characterRepository.findMatchByDisplayName(candidate.name)
+            )?.takeUnless { com.bd2toolsbox.data.model.isUnknownCharacter(it.character) }
+                ?: characterRepository.findMatchByDisplayName(candidate.name)
 
             val character: String
             val costume: String

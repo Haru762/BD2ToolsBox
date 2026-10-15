@@ -127,7 +127,7 @@ fun CharacterScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Row(Modifier.fillMaxSize()) {
                     LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
-                        items(playable, key = { it.name }) { entry ->
+                        items(playable, key = { "playable:${it.name}" }) { entry ->
                             CharacterRow(entry = entry, onClick = { onPickCharacter(entry.name) })
                             HorizontalDivider()
                         }
@@ -141,7 +141,7 @@ fun CharacterScreen(
                                     modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
                                 )
                             }
-                            items(npc, key = { it.name }) { entry ->
+                            items(npc, key = { "npc:${it.name}" }) { entry ->
                                 CharacterRow(entry = entry, onClick = { onPickCharacter(entry.name) })
                                 HorizontalDivider()
                             }
@@ -363,8 +363,12 @@ fun buildCharacterEntries(
             installed.merge(name, 1, Int::plus)
         }
     }
-    // 角色表里没收录、但 mod 解析出了名字的，也补进来，否则它的 mod 无处可寻
-    val names = LinkedHashSet(allCharacters).apply { addAll(counts.keys) }
+    // 角色表里没收录、但 mod 解析出了名字的，也补进来，否则它的 mod 无处可寻；
+    // 已在 npcCharacters 中的名字与 "Other" 归入底部 NPC/其他分区，不在可玩角色里重复出现。
+    val npcSet = npcCharacters.toSet()
+    val names = LinkedHashSet(allCharacters).apply {
+        addAll(counts.keys.filter { it !in npcSet && it != "Other" })
+    }
     val playable = names.map { n ->
         CharacterEntry(name = n, counts = counts[n] ?: emptyMap(), installedCount = installed[n] ?: 0)
     }.sortedBy { it.name.lowercase() }
@@ -372,7 +376,6 @@ fun buildCharacterEntries(
     // （characters.json 之外的），同样补进来
     val npcNames = LinkedHashSet(npcCharacters).apply {
         addAll(counts.keys.filter { it !in names })
-        // counts 里的补录名字已含在上一行的差集里；能玩名单里没有的都是补录
     }.filter { it !in allCharacters }
     val npc = npcNames.map { n ->
         CharacterEntry(

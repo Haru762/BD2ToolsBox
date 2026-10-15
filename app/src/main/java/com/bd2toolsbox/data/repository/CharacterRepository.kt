@@ -248,11 +248,11 @@ class CharacterRepository(private val context: Context) {
         val matchedChar = knownChars.firstOrNull { ch ->
             leaf.startsWith(ch, ignoreCase = true) ||
                 leaf.contains(ch.replace(" ", ""), ignoreCase = true)
-        } ?: return null
+        } ?: if (leaf.startsWith("NPC", ignoreCase = true)) "NPC" else return null
         return CharacterInfo(
             character = matchedChar,
             costume = leaf,
-            type = "special",
+            type = if (matchedChar == "NPC") "idle" else "special",
             hashedName = ""
         )
     }
