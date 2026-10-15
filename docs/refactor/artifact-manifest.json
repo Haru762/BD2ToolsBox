@@ -711,8 +711,8 @@
         "recordedByTask": "T61",
         "status": "RELEASED",
         "statusNote": "产物已构建并记录；**未**发布、未合并、未推送。对外版本号刻意保持 0.2.16 / 17 —— 发版号必须按渠道当前最大值决定，不能用本次开发用的 17 盲推。本记录是「当前构建的产物哈希」，改代码重建后**理应**过期：本地验证默认跳过它（verify_manifests.py 的 --check-delivery 才核），发版前必须重新登记并核对一次。",
-        "versionName": "0.3.2",
-        "versionCode": 20,
+        "versionName": "0.3.3",
+        "versionCode": 21,
         "packageName": "com.bd2toolsbox",
         "minSdk": 29,
         "targetSdk": 34,
@@ -721,31 +721,31 @@
         "artifacts": {
             "arm64-v8a": {
                 "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
-                "bytes": 22742702,
+                "bytes": 22760018,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
-                "mappingBytes": 45241173,
-                "contentSha256": "add3acdcf22627c0e2361416c954557d299db665e549091ee896de6d9a6916c8",
-                "fileSha256": "2952195b7834e218234c9c5e555ab298ca2158d4fc5f1662c6a59a40686cfadd",
+                "mappingBytes": 45280256,
+                "contentSha256": "c9c397933084587c87b3791acb4808632f9e3f9925eb95c7541cb2f21b69070c",
+                "fileSha256": "52b2716cf024c623b172b404c657dbb98606f51114ce93f948b5c6c14ff12909",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "a396a0cd5efda1e80d878708e48633fe0e5696cfb150a0b62be96a2e41f7eb7b"
+                "mappingFileSha256": "430df1bb8fca1e8732f6648999d24aaceb18c8201f384fda8aaf2183a07b0efc"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-                "bytes": 22914787,
+                "bytes": 22932103,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
-                "mappingBytes": 45241101,
-                "contentSha256": "f287fed4b0d5eb3574c8ddfab3abb114f38b00d42c97dcdabbd0442d3235bd5d",
-                "fileSha256": "42abadfb9695eaa2e24c03e03396b3a3604681f845681c3794c49ad70783f410",
+                "mappingBytes": 45280184,
+                "contentSha256": "bf04e2294b13e492b6af74d94fced52e8fc29db01efc3452ebbebf3e6146b698",
+                "fileSha256": "38d7fadfc9aaf4b09251f2a9e8b9f542173aab5792524ecb12a0e8d986a826d3",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "39bb63cd577d5c1b5f4305cd557f1b262dd3d05c13228b666a8327756f452201"
+                "mappingFileSha256": "7fd578070cb6c232b36309cb3c4ba68232ddb38b919e87eb2a2a0cf78a2c54ba"
             }
         },
         "baselineForSizeComparison": "t48Freeze",
