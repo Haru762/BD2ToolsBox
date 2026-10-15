@@ -131,7 +131,7 @@ fun GuideScreen(viewModel: GuideViewModel) {
 
     // 展开后的平铺分类。remember 必须放在 LazyColumn 外面 —— LazyListScope 的
     // lambda 不是 composable 上下文，状态读取进不去。
-    val flat = remember(tree.categories, expanded.size) {
+    val flat = remember(tree.categories, expanded.toList()) {
         flattenTree(tree.categories, expanded.toSet())
     }
 
@@ -288,17 +288,16 @@ fun GuideScreen(viewModel: GuideViewModel) {
                 .align(Alignment.TopCenter)
                 .graphicsLayer { translationY = -boxTopInWindow },
         )
-    }
 
-
-    // ---------------------------------------------------------- 阅读层
-    when (val d = detail) {
-        GuideViewModel.DetailState.Closed -> Unit
-        else -> GuideArticleViewer(
-            state = d,
-            onBack = { viewModel.backFromArticle() },
-            onOpenLink = { article -> viewModel.openArticle(article) }
-        )
+        // ---------------------------------------------------------- 阅读层
+        when (val d = detail) {
+            GuideViewModel.DetailState.Closed -> Unit
+            else -> GuideArticleViewer(
+                state = d,
+                onBack = { viewModel.backFromArticle() },
+                onOpenLink = { article -> viewModel.openArticle(article) }
+            )
+        }
     }
 }
 

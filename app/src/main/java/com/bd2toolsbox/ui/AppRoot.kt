@@ -263,7 +263,7 @@ fun AppRoot(
                             ) {
                                 Column {
                                     Text(
-                                        "攻略",
+                                        "Wiki",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold
                                     )
@@ -566,7 +566,7 @@ fun AppRoot(
                                 selected = nav.tab == TopLevelTab.GUIDES,
                                 onClick = { nav.select(TopLevelTab.GUIDES) },
                                 icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null) },
-                                label = { Text("攻略") }
+                                label = { Text("Wiki") }
                             )
                             NavigationBarItem(
                                 selected = nav.tab == TopLevelTab.CDK,
