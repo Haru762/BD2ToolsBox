@@ -133,4 +133,36 @@ class GamekeeBattleV2RendererTest {
         assertFalse("回合 3 不默认展开", Regex("<details class=\"b-v2-round\" open>.*?回合 3", RegexOption.DOT_MATCHES_ALL)
             .containsMatchIn(html.replaceFirst("<details class=\"b-v2-round\" open>", "<details class=\"b-v2-round\">")))
     }
+
+    @Test
+    fun `v3阵容同时渲染一级图鉴链接与二级多队回合轴及角色装备面板`() {
+        val v3Sample = Json.parseToJsonElement(
+            """
+            {
+              "id": 720,
+              "title": "狐狸半自动标准轴",
+              "desc": "1T章鱼3火\n3T冰盾3火",
+              "like_count": 12,
+              "view_count": 41000,
+              "boss": {"id": 146, "name": "深渊魔姬卡", "attr": "水"},
+              "team": [[
+                {"name_code": "600786-3", "avatar": "//cdnimg-v2.gamekee.com/a.png", "level": 5, "attr": "水", "damage": "魔法"}
+              ]],
+              "panel": {
+                "600786": "{\"awakeInfo\":{\"imprintSlot1Level\":10,\"imprintSlot2Level\":10,\"imprintSlot3Level\":10,\"isAwake\":true},\"charInfo\":{\"id\":6694,\"level\":100,\"name\":\"克蕾西亚\"},\"costumeList\":[{\"id\":66906,\"level\":5,\"nameCn\":\"纪律部\",\"potentialNum\":15,\"skillPotentialNum\":1,\"icon\":\"//cdnimg-v2.gamekee.com/c2.png\"},{\"id\":66902,\"level\":5,\"nameCn\":\"爱丽丝\",\"potentialNum\":16,\"skillPotentialNum\":2,\"icon\":\"//cdnimg-v2.gamekee.com/c1.png\"},{\"id\":66907,\"level\":5,\"nameCn\":\"天守传人\",\"potentialNum\":17,\"skillPotentialNum\":3,\"icon\":\"//cdnimg-v2.gamekee.com/c3.png\"}],\"equipmentList\":[{\"name\":\"传说毒蛇之手\",\"level\":9,\"slotType\":3,\"mainOption\":[{\"charStatType\":6,\"charStatValue\":1.34,\"charStatIsPercent\":true}],\"subOption\":[],\"privateOption\":[]}],\"health\":12695,\"magicDamage\":1230,\"criticalChance\":0.648,\"criticalDamage\":3.3984,\"elementDamage\":0.5,\"elementResistance\":0.5,\"physicalDamage\":18,\"physicalDefense\":0,\"magicDefense\":1.552}"
+              },
+              "content": "[{\"roundTotal\":2,\"memberRoundInfos\":[{\"spRemaining\":9,\"member\":[{\"content_id\":600786,\"currentLevel\":5,\"actionType\":\"damage\",\"currentPotential\":3,\"memberIndex\":0,\"memberPosition\":4,\"firstRoundEnabled\":false,\"choose_burst\":null,\"currentSkin\":{\"name_code\":\"600786-3\"}}]},{\"spRemaining\":0,\"member\":[{\"content_id\":600786,\"currentLevel\":5,\"actionType\":\"skills\",\"currentPotential\":3,\"memberIndex\":0,\"memberPosition\":4,\"firstRoundEnabled\":true,\"choose_burst\":3,\"currentSkin\":{\"name_code\":\"600786-1\"}}]}]}]"
+            }
+            """.trimIndent()
+        ) as JsonObject
+
+        val html = GamekeeBattleV3Renderer.render(720L, v3Sample)
+        assertTrue("应包含角色名克蕾西亚", html.contains("克蕾西亚"))
+        assertTrue("600786-3 应按 costume id 升序映射到第3套『天守传人』", html.contains("天守传人"))
+        assertTrue("一级角色应带跳转图鉴二级页链接", html.contains("https://www.gamekee.com/zsca2/tj/600786.html?style=3"))
+        assertTrue("应包含二级详情折叠面板", html.contains("展开阵容详情与回合轴"))
+        assertTrue("应包含第 1 回合与第 3 回合切换标签", html.contains("第 1 回合（余 9 SP）") && html.contains("第 3 回合（余 0 SP）"))
+        assertTrue("第 3 回合切到 600786-1 应显示第1套服装『爱丽丝』与爆发 3", html.contains("爱丽丝") && html.contains("释放技能（爆发 3）"))
+        assertTrue("应包含角色属性与装备面板（传说毒蛇之手）", html.contains("传说毒蛇之手") && html.contains("12695"))
+    }
 }

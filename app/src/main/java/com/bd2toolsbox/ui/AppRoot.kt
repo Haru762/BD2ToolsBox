@@ -549,7 +549,13 @@ fun AppRoot(
                         }
                     },
                     bottomBar = {
-                        NavigationBar {
+                        NavigationBar(
+                            containerColor = if (wallpaperUri != null) {
+                                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainer
+                            }
+                        ) {
                             NavigationBarItem(
                                 selected = nav.tab == TopLevelTab.MODS,
                                 onClick = { nav.select(TopLevelTab.MODS) },
@@ -571,7 +577,9 @@ fun AppRoot(
                         }
                     }
                     ) { padding ->
-                        com.bd2toolsbox.ui.components.AppScreenSurface(
+                        // 有壁纸时内容区保持透明，由底层 WallpaperBackdrop + 可调 scrim 遮罩负责背景与可读性；
+                        // 无壁纸时底层 WallpaperBackdrop 与 Scaffold 已提供不透明的 MaterialTheme.colorScheme.background。
+                        Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding)
@@ -579,8 +587,7 @@ fun AppRoot(
                                 // 「添加账号」「提交」这类输入与按钮会被键盘盖住。
                                 // 用 imePadding 而不是 adjustResize：本 Activity 是
                                 // edge-to-edge，窗口不会自己缩，得由 insets 驱动。
-                                .imePadding(),
-                            color = MaterialTheme.colorScheme.background
+                                .imePadding()
                         ) {
                             // T43：进行中的任务被收起后，这里给出**统一的重开入口**。
                             // 它只改展示，绝不取消任务或释放仍使用的 Binder。

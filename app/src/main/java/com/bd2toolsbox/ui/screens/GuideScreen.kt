@@ -656,8 +656,18 @@ private fun GuideArticleViewer(
     // 旧缓存不用删即可正确展示。
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     var progress by remember { mutableFloatStateOf(1f) }
+    var preferredStyleTab by remember { mutableIntStateOf(0) }
 
-    val html = (state as? GuideViewModel.DetailState.Ready)?.detail?.html
+    val rawHtml = (state as? GuideViewModel.DetailState.Ready)?.detail?.html
+    val html = remember(rawHtml, preferredStyleTab) {
+        if (rawHtml != null && preferredStyleTab > 0 && rawHtml.contains("id=\"tj_style_$preferredStyleTab\"")) {
+            rawHtml
+                .replace("id=\"tj_style_0\" checked>", "id=\"tj_style_0\">")
+                .replace("id=\"tj_style_$preferredStyleTab\">", "id=\"tj_style_$preferredStyleTab\" checked>")
+        } else {
+            rawHtml
+        }
+    }
     val title = when (state) {
         is GuideViewModel.DetailState.Ready -> state.detail.article.title
         is GuideViewModel.DetailState.Loading -> state.article.title
@@ -729,11 +739,15 @@ private fun GuideArticleViewer(
                                             request: WebResourceRequest
                                         ): Boolean {
                                             val url = request.url.toString()
-                                            // 站内文章引用（mention-doc）→ 拦回应用内继续读
+                                            // 站内文章引用（mention-doc）或阵容角色图鉴跳转（/zsca2/tj/600786.html?style=3）→ 拦回应用内打开二级页面
                                             val inApp = Regex(
-                                                "https?://www\\.gamekee\\.com/zsca2/(\\d+)\\.html"
+                                                "https?://www\\.gamekee\\.com/zsca2/(?:tj/)?(\\d+)(?:\\.html)?(?:\\?([^#]*))?"
                                             ).find(url)
                                             if (inApp != null) {
+                                                val query = inApp.groupValues.getOrNull(2).orEmpty()
+                                                val styleParam = Regex("(?:^|&)style=(?:style)?(\\d+)")
+                                                    .find(query)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                                                preferredStyleTab = styleParam
                                                 onOpenLink(
                                                     GuideArticle(
                                                         id = inApp.groupValues[1].toLong(),
@@ -743,8 +757,7 @@ private fun GuideArticleViewer(
                                                 )
                                                 return true
                                             }
-                                            if (url.startsWith("https://")) return false
-                                            // 其余 scheme 交给系统；打不开就算了，别留在应用里卡死
+                                            // 其余外链交给系统浏览器打开，不在无 JS 的阅读器 WebView 内白屏加载
                                             return try {
                                                 ctx.startActivity(
                                                     Intent(Intent.ACTION_VIEW, Uri.parse(url))

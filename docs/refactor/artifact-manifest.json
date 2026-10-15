@@ -721,31 +721,31 @@
         "artifacts": {
             "arm64-v8a": {
                 "apk": "app/build/outputs/apk/arm64/release/app-arm64-release.apk",
-                "bytes": 22709934,
+                "bytes": 22726318,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/arm64Release/mapping.txt",
-                "mappingBytes": 44958880,
-                "contentSha256": "b89c8bd0a7d2122fc195c91dd73540875a6d5ff9e02e44fe366170ef58626feb",
-                "fileSha256": "7b84ec4696ad7d21d75534e9a359715244c92660e3421d3613daed12f4818efc",
+                "mappingBytes": 45203437,
+                "contentSha256": "1028558b7e995c69b74085da9d6d27ee18142b43a7c11a51a269fa3398e52ebc",
+                "fileSha256": "528c55e650e45c4a96880f18e07365d264c2f36e7c3ec8674ebbf2c8b8982b7b",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "e2d96791aa12cb912af8abea81de105fc4ff00a9e7470c0ef20b4db00d2e8988"
+                "mappingFileSha256": "09e8abbdb2a2b97a7f57c5f590362457250aacd9237a97c14a037fcca36f1cfb"
             },
             "x86_64": {
                 "apk": "app/build/outputs/apk/x64/release/app-x64-release.apk",
-                "bytes": 22882019,
+                "bytes": 22898403,
                 "signedBy": "debug.keystore",
                 "signerSha256": "892d95f0be2e42fa1293247e5153c1b90d04adb13a70ebff1e63a705156bdbd1",
                 "universal": false,
                 "note": "single-ABI flavor (T49); no universal APK is produced",
                 "mapping": "app/build/outputs/mapping/x64Release/mapping.txt",
-                "mappingBytes": 44958808,
-                "contentSha256": "8769c9911fbb2cffa7675acc506da2d13204bdabd67eacc20816a00e7696aa05",
-                "fileSha256": "a09a85d66850e21aea7dec2d9e718ac6981293a7abd15ee8e29f09af81a15559",
+                "mappingBytes": 45203365,
+                "contentSha256": "6109c1dc37fd2d878072f0a07d21db570a32b8c4cdfa95e816141b3802bd8ed8",
+                "fileSha256": "6c6d6391d1b74cf3d7c7b1785001c0aeae0344925416008708ebcfaaa2a109de",
                 "fileSha256Note": "构建实例相关（签名块每次构建都不同）；身份核对用 contentSha256",
-                "mappingFileSha256": "57640681d8332fced9cf4c5e2c28dd3c3e4e7b04147b5ee1667b88ff186a1260"
+                "mappingFileSha256": "903a17da43270666d430f2ed7f1bf7f2f22e188f615f7dcfce6c97a09ec52235"
             }
         },
         "baselineForSizeComparison": "t48Freeze",

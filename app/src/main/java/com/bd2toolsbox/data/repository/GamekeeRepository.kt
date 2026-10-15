@@ -93,8 +93,9 @@ class GamekeeRepository @Inject constructor(
          *  旧渲染，自动失效重拉（见 loadArticleDetail）。
          *  v3：评论正文解析重做 —— 表情标记 `_(… […])` 换成表情图、发言上传的
          *  图片排到文字下方（v2 缓存里这两样都是转义后的代码文本，必须重渲染）。
-         *  v4：接入 v2 阵容接口，淘汰旧版组件无法显示的错误占位。 */
-        private const val RENDERER_STAMP = "<!--renderer:v4"
+         *  v4：接入 v2 阵容接口，淘汰旧版组件无法显示的错误占位。
+         *  v5：v3 阵容接入完整二级回合站位轴与角色装备面板，editor_type 3 接入多皮肤 styleData 选项卡。 */
+        private const val RENDERER_STAMP = "<!--renderer:v5"
 
         /** 渲染器戳后面跟着的内容版本号（来自 content_cdn 的 ?v=），两者都对上
          *  才复用缓存 —— 官方改了文章版本号就变，缓存自动过期。 */
@@ -556,7 +557,7 @@ class GamekeeRepository @Inject constructor(
      */
     private suspend fun battleCardHtml(ref: BattleRef): String? = withContext(Dispatchers.IO) {
         battleHtmlMemory.get(ref)?.let { return@withContext it }
-        val key = "v" + ref.version + "_" + ref.id
+        val key = "v5_" + ref.version + "_" + ref.id
         val cached = cache.battleFile(key)
         if (cached.exists() && cached.length() > 0) {
             try {
@@ -582,7 +583,7 @@ class GamekeeRepository @Inject constructor(
             val data = response.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
                 ?: return@withContext null
             if (ref.version == 2) GamekeeBattleV2Renderer.render(ref.id, data)
-            else buildBattleCard(ref.id, data)
+            else GamekeeBattleV3Renderer.render(ref.id, data)
         } catch (e: Exception) {
             Log.w(TAG, "阵容解析失败: $ref", e)
             return@withContext null
@@ -788,38 +789,106 @@ class GamekeeRepository @Inject constructor(
      * cellColor 是表头/字段名的背景色，照搬。解析失败退回原文 ——
      * 旧路径把 JSON 当 HTML 展示虽然难看，但不至于崩。
      */
-    private fun renderTableDocument(inner: String): String {
-        return try {
-            val rows = Json.parseToJsonElement(inner).asJsonObject
-                .get("baseData")?.takeIf { it.isJsonArray }?.asJsonArray
-                ?: return inner
-            val sb = StringBuilder("<table class=\"gktable\">")
-            for (rowEl in rows) {
-                if (!rowEl.isJsonArray) continue
-                sb.append("<tr>")
-                for (cellEl in rowEl.asJsonArray) {
-                    if (!cellEl.isJsonObject) {
-                        sb.append("<td></td>")
-                        continue
-                    }
-                    val cell = cellEl.asJsonObject
-                    val type = cell.get("type")?.takeIf { it.isJsonPrimitive }?.asString ?: "text"
-                    val value = cell.get("value")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
-                    val color = cell.get("cellColor")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
-                    val bg = if (color.length > 1) " style=\"background:$color\"" else ""
-                    sb.append("<td$bg>")
-                    if (type == "image" && value.isNotBlank()) {
+    private fun renderTableRows(rows: JsonArray, isStyleSheet: Boolean = false): String {
+        val sb = StringBuilder("<table class=\"gktable\">")
+        for (rowEl in rows) {
+            if (!rowEl.isJsonArray) continue
+            val cells = rowEl.asJsonArray.mapNotNull { if (it.isJsonObject) it.asJsonObject else null }
+            if (cells.isEmpty()) continue
+            val firstText = cells.firstOrNull()?.get("value")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+            // 过滤内部编辑器专用的空配置行 / Live2D 原始 JSON 行 / 音频文件原始行
+            if (isStyleSheet && (
+                    firstText.contains("live 2d", ignoreCase = true) ||
+                    firstText.contains("live2D", ignoreCase = true) ||
+                    firstText in setOf("服装类别", "服装完整立绘", "服装普通概率", "服装up概率", "服装UP时间", "服装毕业破度", "超链接")
+                )
+            ) {
+                continue
+            }
+            val nonBlankCount = cells.count { c ->
+                val t = c.get("type")?.takeIf { it.isJsonPrimitive }?.asString ?: "text"
+                val v = c.get("value")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+                v.isNotEmpty() && t != "live2d" && !v.startsWith("{")
+            }
+            if (nonBlankCount == 0) continue
+            // 若整行只有第一个标题单元格有字、后面全是空的模板占位行，跳过
+            if (isStyleSheet && cells.size > 1 && nonBlankCount == 1 && firstText.isNotEmpty()) {
+                continue
+            }
+
+            sb.append("<tr>")
+            for (cell in cells) {
+                val type = cell.get("type")?.takeIf { it.isJsonPrimitive }?.asString ?: "text"
+                if (type == "live2d") continue
+                val value = cell.get("value")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                if (value.trimStart().startsWith("{\"") && value.length > 80) continue
+                val color = cell.get("cellColor")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                val bg = if (color.length > 1) " style=\"background:$color\"" else ""
+                sb.append("<td$bg>")
+                when {
+                    type == "image" && value.isNotBlank() -> {
                         absolutize(value)?.let { url ->
                             sb.append("<img src=\"").append(esc(url)).append("\" loading=\"lazy\">")
                         }
-                    } else {
-                        sb.append(esc(value).replace("\n", "<br>"))
                     }
-                    sb.append("</td>")
+                    type == "video" || type == "audio" -> {
+                        absolutize(value)?.let { url ->
+                            sb.append("<a href=\"").append(esc(url)).append("\">[查看媒体]</a>")
+                        }
+                    }
+                    else -> sb.append(esc(value).replace("\n", "<br>"))
                 }
-                sb.append("</tr>")
+                sb.append("</td>")
             }
-            sb.append("</table>").toString()
+            sb.append("</tr>")
+        }
+        return sb.append("</table>").toString()
+    }
+
+    private fun extractCostumeTabTitle(styleObj: JsonObject, index: Int): String {
+        val defaultName = styleObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+            ?.takeIf { it.isNotBlank() } ?: "服装 ${index + 1}"
+        val rows = styleObj.get("data")?.takeIf { it.isJsonArray }?.asJsonArray ?: return defaultName
+        val firstRow = rows.firstOrNull()?.takeIf { it.isJsonArray }?.asJsonArray ?: return defaultName
+        val costumeName = firstRow.getOrNull(1)?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.get("value")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+        return if (costumeName.isNotEmpty()) "服装 ${index + 1}：$costumeName" else defaultName
+    }
+
+    private fun renderTableDocument(inner: String): String {
+        return try {
+            val rootObj = Json.parseToJsonElement(inner).asJsonObject
+            val baseRows = rootObj.get("baseData")?.takeIf { it.isJsonArray }?.asJsonArray
+                ?: return inner
+            val styleList = rootObj.get("styleData")?.takeIf { it.isJsonArray }?.asJsonArray
+                ?.mapNotNull { if (it.isJsonObject) it.asJsonObject else null }
+                .orEmpty()
+
+            if (styleList.isEmpty()) {
+                return renderTableRows(baseRows, isStyleSheet = false)
+            }
+
+            // 含 styleData（多套服装详情）的角色图鉴页：顶部生成纯 CSS 选项卡切换「基础信息」与各套服装
+            val sb = StringBuilder("<div class=\"tabs tj-style-tabs\">")
+            sb.append("<input class=\"tr\" type=\"radio\" name=\"tj_style_group\" id=\"tj_style_0\" checked>")
+            sb.append("<label class=\"tl\" for=\"tj_style_0\">📋 基础属性与专武</label>")
+            sb.append("<div class=\"tp\">").append(renderTableRows(baseRows, isStyleSheet = false)).append("</div>")
+
+            styleList.forEachIndexed { idx, styleObj ->
+                val tabId = "tj_style_${idx + 1}"
+                val tabTitle = extractCostumeTabTitle(styleObj, idx)
+                val dataRows = styleObj.get("data")?.takeIf { it.isJsonArray }?.asJsonArray
+                if (dataRows != null && dataRows.size > 0) {
+                    sb.append("<input class=\"tr\" type=\"radio\" name=\"tj_style_group\" id=\"")
+                        .append(tabId).append("\">")
+                    sb.append("<label class=\"tl\" for=\"").append(tabId).append("\">👗 ")
+                        .append(esc(tabTitle)).append("</label>")
+                    sb.append("<div class=\"tp\">")
+                        .append(renderTableRows(dataRows, isStyleSheet = true))
+                        .append("</div>")
+                }
+            }
+            sb.append("</div>").toString()
         } catch (e: Exception) {
             Log.w(TAG, "表格页解析失败，退回原文", e)
             inner
@@ -1094,7 +1163,15 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
   .b-meta { font-size:.8em; color:#9a8a5e; white-space:nowrap; }
   .b-team-t { font-size:.85em; color:#9a8a5e; margin:4px 0 2px; }
   .b-team { display:flex; flex-wrap:wrap; gap:8px; margin:.3em 0; }
-  .b-m { display:flex; flex-direction:column; align-items:center; width:64px; }
+  .b-m { display:flex; flex-direction:column; align-items:center; width:72px; text-decoration:none; color:inherit; }
+  .b-m-link { cursor:pointer; border-radius:8px; padding:2px; }
+  .b-v3-cname { font-size:.76em; font-weight:600; color:#4a3b18; margin-top:2px; max-width:70px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .b-v3-sname { font-size:.7em; color:#7a6a3a; max-width:70px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .b-v3-detail { border-top:1px dashed #d9c89a; margin-top:8px; padding-top:4px; }
+  .b-v3-summary { cursor:pointer; font-weight:600; font-size:.9em; color:#3b5998; padding:6px 0; }
+  .b-v3-tag { display:inline-block; font-size:.75em; background:#e67e22; color:#fff; border-radius:4px; padding:0 5px; }
+  .b-v3-phead { font-size:.92em; margin:4px 0 6px; }
+  .b-v3-ptable { width:100%; margin:4px 0 8px; }
   /* 组件图的尺寸要用 !important 压过全局的 height:auto，否则头像会被拉成椭圆 */
   .b-av { width:56px !important; height:56px !important; border-radius:8px;
           border:1px solid #e0d6b8; object-fit:cover; background:#fff; }

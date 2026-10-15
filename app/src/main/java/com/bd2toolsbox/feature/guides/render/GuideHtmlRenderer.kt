@@ -32,6 +32,13 @@ object GuideHtmlRenderer {
         .array-card { background:#2B2930 !important; border-color:#8E7B4F !important;
                       color:#E8C88A !important; }
         .battle { background:#1D1B20 !important; border-color:#6B5F3E !important; }
+        .b-desc { background:#2B2930 !important; color:#CAC4D0 !important; }
+        .b-v2-cell { background:#2B2930 !important; border-color:#49454F !important; color:#E6E1E5 !important; }
+        .b-v2-empty { background:transparent !important; color:#938F99 !important; }
+        .b-v3-cname, .b-v2-round > summary, .b-v2-enemy > summary { color:#E6E1E5 !important; }
+        .b-v3-sname, .b-v2-note, .b-v2-skin, .b-team-t { color:#CAC4D0 !important; }
+        .b-v3-summary { color:#A8C7FA !important; }
+        .b-v3-detail { border-top-color:#49454F !important; }
         .tabs .tl { background:#2B2930 !important; color:#CAC4D0 !important; }
         .tabs .tr:checked + .tl { background:#D0BCFF !important; color:#381E72 !important; }
         .tabs .tp { border-color:#49454F !important; }
