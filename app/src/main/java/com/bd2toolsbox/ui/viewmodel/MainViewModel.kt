@@ -5375,18 +5375,60 @@ class MainViewModel @Inject constructor(
             }
             when (result) {
                 is RecoveryApplyResult.Applied -> {
-                    _recoveryVerdict.value = runCatching { installedModRepository.checkRecovery() }
-                        .getOrDefault(OperationJournalStore.RecoveryVerdict.Consistent)
-                    _recoveryDispositions.value = runCatching { OperationRecovery(installedModRepository).classify() }
-                        .getOrDefault(emptyList())
+                    refreshRecoveryStateAfterResolution()
                     runCatching { refreshInstallStates() }
-                    notifyLedgerNotice("已根据目标内容补齐安装记录。")
+                    notifyLedgerNotice("核对完成：游戏文件已确认为最新 Mod，已自动补齐安装记录。")
                 }
-                is RecoveryApplyResult.NotApplied -> notifyLedgerNotice(result.error.message)
+                is RecoveryApplyResult.NotApplied -> {
+                    val msg = result.error.message
+                    val isBusy = msg.contains("进行中")
+                    val canResolveAsUnchanged = !isBusy && (
+                        msg.contains("content mismatch") ||
+                            msg.contains("缺少完整恢复事实") ||
+                            msg.contains("无法安全恢复") ||
+                            (msg.contains("unverified targets") && ShizukuManager.isAvailable())
+                        )
+                    if (canResolveAsUnchanged) {
+                        installedModRepository.discardPendingJournal()
+                        refreshRecoveryStateAfterResolution()
+                        runCatching { refreshInstallStates() }
+                        notifyLedgerNotice(
+                            "核对完成：游戏目录中的文件未受上次中断影响（上次操作未实际生效），" +
+                                "已清理中断记录，现在可以正常装入。"
+                        )
+                    } else if (!isBusy) {
+                        notifyLedgerNotice(
+                            msg + "\n\n（请先确认 Shizuku 已启动并授权；若确认无需恢复，也可点击「忽略并清除记录」直接解除限制。）"
+                        )
+                    }
+                }
             }
             } finally {
                 ShizukuManager.releaseConnection(recoveryConnectionToken)
             }
         }
+    }
+
+    /** 用户显式选择忽略上次未收尾的中断日志并解除装入限制。 */
+    fun discardPendingRecovery() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val err = installedModRepository.discardPendingJournal()
+            withContext(Dispatchers.Main) {
+                if (err == null) {
+                    refreshRecoveryStateAfterResolution()
+                    runCatching { refreshInstallStates() }
+                    notifyLedgerNotice("已清除上次未完成的中断记录，现在可以正常装入。")
+                } else {
+                    notifyLedgerNotice(err.message)
+                }
+            }
+        }
+    }
+
+    private fun refreshRecoveryStateAfterResolution() {
+        _recoveryVerdict.value = runCatching { installedModRepository.checkRecovery() }
+            .getOrDefault(OperationJournalStore.RecoveryVerdict.Consistent)
+        _recoveryDispositions.value = runCatching { OperationRecovery(installedModRepository).classify() }
+            .getOrDefault(emptyList())
     }
 }

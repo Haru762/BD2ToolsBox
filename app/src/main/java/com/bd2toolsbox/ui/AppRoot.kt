@@ -782,10 +782,18 @@ fun AppRoot(
                 )
 
                 val ledgerNotice by viewModel.ledgerResetNotice.collectAsStateWithLifecycle()
+                val recoveryVerdict by viewModel.recoveryVerdict.collectAsStateWithLifecycle()
+                val hasPendingRecovery =
+                    recoveryVerdict is com.bd2toolsbox.core.storage.OperationJournalStore.RecoveryVerdict.PendingReconciliation
                 LedgerResetDialog(
                     notice = ledgerNotice,
                     onDismiss = { viewModel.dismissLedgerResetNotice() },
-                    onReconcile = { viewModel.reconcilePendingInstalls() }
+                    onReconcile = if (hasPendingRecovery) {
+                        { viewModel.reconcilePendingInstalls() }
+                    } else null,
+                    onDiscard = if (hasPendingRecovery) {
+                        { viewModel.discardPendingRecovery() }
+                    } else null
                 )
 
                 val overwritePlan by viewModel.convertedOverwritePlan.collectAsStateWithLifecycle()

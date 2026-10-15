@@ -56,22 +56,41 @@ fun PreviewProgressDialog(
 fun LedgerResetDialog(
     notice: String?,
     onDismiss: () -> Unit,
-    onReconcile: (() -> Unit)? = null
+    onReconcile: (() -> Unit)? = null,
+    onDiscard: (() -> Unit)? = null
 ) {
     if (notice == null) return
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = dialogContainerColor(),
-        title = { Text("装入记录已重置") },
+        title = {
+            Text(
+                if (onReconcile != null) "上次装入未完整收尾" else "装入记录提示"
+            )
+        },
         text = { Text(notice, style = MaterialTheme.typography.bodyMedium) },
-        confirmButton = { Button(onClick = onDismiss) { Text("知道了") } },
-        dismissButton = if (onReconcile != null) {
-            {
-                TextButton(onClick = {
-                    onReconcile()
+        confirmButton = {
+            if (onReconcile != null) {
+                Button(onClick = {
                     onDismiss()
+                    onReconcile()
                 }) { Text("核对并修复记录") }
+            } else {
+                Button(onClick = onDismiss) { Text("知道了") }
             }
-        } else null
+        },
+        dismissButton = {
+            if (onReconcile != null) {
+                Row {
+                    if (onDiscard != null) {
+                        TextButton(onClick = {
+                            onDismiss()
+                            onDiscard()
+                        }) { Text("忽略并清除记录") }
+                    }
+                    TextButton(onClick = onDismiss) { Text("稍后") }
+                }
+            }
+        }
     )
 }

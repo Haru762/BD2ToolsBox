@@ -467,6 +467,27 @@ class MoveInstallWiringTest {
         )
     }
 
+    @Test fun reconciliationResolvesMismatchedUnappliedJournalAndUnblocksNewInstalls() = runTest(dispatcher) {
+        plantPendingRecovery()
+        // 游戏目录里的文件仍是原版（上次中断并未真正替换成功，哈希与预期的新 Mod 不一致）
+        coEvery { ShizukuManager.copyGameDataForRecovery(any(), any(), any()) } coAnswers {
+            val destination = File(thirdArg<String>())
+            requireNotNull(destination.parentFile).mkdirs()
+            destination.writeText("ORIGINAL_UNMODIFIED_GAME_FILE")
+            true
+        }
+        vm.reconcilePendingInstalls()
+        joinMove()
+        assertFalse("确认未生效后必须清理中断日志以解除门禁死锁", repo.journalFile().exists())
+        assertTrue("未生效的操作不得写入虚假账本记录", repo.load().isEmpty())
+        assertEquals(
+            OperationJournalStore.RecoveryVerdict.Consistent,
+            vm.recoveryVerdict.value
+        )
+        assertTrue(vm.recoveryDispositions.value.isEmpty())
+        assertNull("解除死锁后必须允许新的装入提交", repo.checkSubmitAllowed())
+    }
+
     @Test fun finishedInstallJobsDoNotBlockPurgeAndBlockedPreviewPurgeDoesNotFakeZeroDeleteFailure() = runTest(dispatcher) {
         // 已完成的 job 不应阻塞备份/预览缓存清理
         jobs().value = listOf(job("selected"))

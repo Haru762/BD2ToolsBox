@@ -818,6 +818,22 @@ class InstalledModRepository(private val context: Context) {
         }
     }
 
+    /**
+     * 清除已确认未生效或用户显式选择忽略的未决操作日志，解除装入门禁锁死。
+     * 只清理 install_journal.json 并释放恢复租约，不改动现有的 installed_mods.json 账本。
+     */
+    fun discardPendingJournal(): OperationError? = withLock {
+        if (coordinator.ownerToken != null) {
+            return@withLock OperationError(
+                kind = OperationErrorKind.INVALID_INPUT,
+                message = "提交仍在进行中，不能清除操作日志。",
+                target = journalFile().path
+            )
+        }
+        coordinator.clearRecoveryLease()
+        journalStore.clear()
+    }
+
     fun clearJournal(): OperationError? = withLock {
         requireLease()?.let { return@withLock it }
         when (val verdict = checkRecovery()) {
