@@ -161,8 +161,36 @@ class GamekeeBattleV2RendererTest {
         assertTrue("600786-3 应按 costume id 升序映射到第3套『天守传人』", html.contains("天守传人"))
         assertTrue("一级角色应带跳转图鉴二级页链接", html.contains("https://www.gamekee.com/zsca2/tj/600786.html?style=3"))
         assertTrue("应包含二级详情折叠面板", html.contains("展开阵容详情与回合轴"))
-        assertTrue("应包含第 1 回合与第 3 回合切换标签", html.contains("第 1 回合（余 9 SP）") && html.contains("第 3 回合（余 0 SP）"))
+        assertTrue("应包含站位与攻击顺序及服装出手顺序双模式切换", html.contains("站位与攻击顺序") && html.contains("服装出手顺序"))
+        assertTrue("应包含第 1 回合与第 3 回合切换标签", html.contains("第 1 回合") && html.contains("（余 9 SP）") && html.contains("第 3 回合") && html.contains("（余 0 SP）"))
         assertTrue("第 3 回合切到 600786-1 应显示第1套服装『爱丽丝』与爆发 3", html.contains("爱丽丝") && html.contains("释放技能（爆发 3）"))
         assertTrue("应包含角色属性与装备面板（传说毒蛇之手）", html.contains("传说毒蛇之手") && html.contains("12695"))
+    }
+
+    @Test
+    fun `v3阵容优先按bd2roles字典精确匹配name_code避免被残缺panel错位`() {
+        val sampleWithMismatchPanelOrder = Json.parseToJsonElement(
+            """
+            {
+              "id": 721,
+              "title": "字典精确匹配测试",
+              "type": 2,
+              "team": [[
+                {"name_code": "670435-3", "avatar": "//cdnimg-v2.gamekee.com/a.png", "level": 5, "attr": "光", "damage": "魔法"}
+              ]],
+              "panel": {
+                "670435": "{\"charInfo\":{\"id\":364,\"level\":100,\"name\":\"奥利维耶\"},\"costumeList\":[{\"id\":3601,\"level\":5,\"nameCn\":\"信实之翼\"},{\"id\":3602,\"level\":5,\"nameCn\":\"使徒\"},{\"id\":3603,\"level\":5,\"nameCn\":\"堕落之翼\"}]}"
+              },
+              "content": "[{\"roundTotal\":2,\"memberRoundInfos\":[{\"spRemaining\":12,\"member\":[{\"uniqueKey\":\"u1\",\"content_id\":670435,\"currentLevel\":5,\"actionType\":\"skills\",\"currentPotential\":3,\"memberIndex\":0,\"memberPosition\":4,\"firstRoundEnabled\":true,\"currentSkin\":{\"name_code\":\"670435-3\"}}]},{\"spRemaining\":8,\"member\":[{\"uniqueKey\":\"u1\",\"content_id\":670435,\"currentLevel\":5,\"actionType\":\"skills\",\"currentPotential\":2,\"memberIndex\":1,\"memberPosition\":9,\"firstRoundEnabled\":false,\"currentSkin\":{\"name_code\":\"670435-4\"}}]}]}]"
+            }
+            """.trimIndent()
+        ) as JsonObject
+
+        val html = GamekeeBattleV3Renderer.render(721L, sampleWithMismatchPanelOrder)
+        assertTrue("670435-3 在字典中为『信实之翼』而非按 id 排序第3的『堕落之翼』", html.contains("信实之翼"))
+        assertTrue("第 3 回合切到 670435-4 应精确匹配字典中的『传奇退役』", html.contains("传奇退役"))
+        assertTrue("首回合开启 firstRoundEnabled 应显示『先发制人』标记", html.contains("先发制人"))
+        assertTrue("第 3 回合变更了站位与顺序应显示『调站位』『调顺序』标记", html.contains("调站位") && html.contains("调顺序"))
+        assertTrue("应渲染原版 view-battle-box 棋盘与模式2矩阵", html.contains("view-battle-box") && html.contains("grid type1") && html.contains("grid type2"))
     }
 }

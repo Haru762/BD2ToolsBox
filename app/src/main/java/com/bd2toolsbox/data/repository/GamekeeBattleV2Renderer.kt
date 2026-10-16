@@ -125,12 +125,14 @@ internal object GamekeeBattleV2Renderer {
             append("\" data-slot=\"").append(index + 1).append("\" title=\"第")
                 .append(index / columns + 1).append("行第").append(index % columns + 1).append("列\">")
             if (occupied && actor != null) {
+                val attr = actor.text("attr")
+                val bgClass = GamekeeBattleAssets.attrBgClass(attr)
                 val order = actions.indexOfFirst { sameActor(actor, it) }
                 if (order >= 0) {
                     append("<span class=\"b-v2-order\" aria-label=\"行动顺序 ")
                         .append(order + 1).append("\">").append(order + 1).append("</span>")
                 }
-                appendAvatar(actor, enemy)
+                appendAvatar(actor, enemy, bgClass)
                 append("<span class=\"b-v2-name\">").append(esc(actorName(actor, enemy))).append("</span>")
             } else {
                 append("<span aria-label=\"空位\">·</span>")
@@ -180,15 +182,27 @@ internal object GamekeeBattleV2Renderer {
         append("</div></div></li>")
     }
 
-    private fun StringBuilder.appendAvatar(actor: JsonObject, enemy: Boolean = false) {
+    private fun StringBuilder.appendAvatar(actor: JsonObject, enemy: Boolean = false, bgClass: String = "") {
+        val skinObj = actor.obj("currentSkin")
+        val catalogSkin = GamekeeBattleRoleCatalog.findSkinByNameCode(skinObj?.text("name_code"))
+            ?: GamekeeBattleRoleCatalog.findRoleByIdOrName(actor.number("id"), actor.text("name"))?.let { r ->
+                val sName = skinObj?.text("name").orEmpty()
+                val sk = r.skins.firstOrNull { it.name == sName } ?: r.skins.firstOrNull()
+                if (sk != null) GamekeeBattleRoleCatalog.ResolvedRoleSkin(r, sk) else null
+            }
         val url = listOf(
-            actor.obj("currentSkin")?.text("icon").orEmpty(), actor.text("cover_url"), actor.text("icon")
+            skinObj?.text("icon").orEmpty(),
+            actor.text("cover_url"),
+            actor.text("icon"),
+            catalogSkin?.skin?.icon.orEmpty(),
+            catalogSkin?.role?.icon1.orEmpty()
         ).asSequence().mapNotNull { imageUrl(it) }.firstOrNull()
+        val cls = if (bgClass.isNotBlank()) "b-v2-avatar $bgClass" else "b-v2-avatar"
         if (url != null) {
-            append("<img class=\"b-v2-avatar\" src=\"").append(esc(url))
+            append("<img class=\"").append(cls).append("\" src=\"").append(esc(url))
                 .append("\" alt=\"").append(esc(actorName(actor, enemy))).append("\" loading=\"lazy\">")
         } else {
-            append("<span class=\"b-v2-avatar b-v2-no-avatar\" aria-hidden=\"true\">?</span>")
+            append("<span class=\"").append(cls).append(" b-v2-no-avatar\" aria-hidden=\"true\">?</span>")
         }
     }
 

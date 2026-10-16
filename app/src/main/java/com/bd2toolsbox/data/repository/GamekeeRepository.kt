@@ -94,8 +94,9 @@ class GamekeeRepository @Inject constructor(
          *  v3：评论正文解析重做 —— 表情标记 `_(… […])` 换成表情图、发言上传的
          *  图片排到文字下方（v2 缓存里这两样都是转义后的代码文本，必须重渲染）。
          *  v4：接入 v2 阵容接口，淘汰旧版组件无法显示的错误占位。
-         *  v5：v3 阵容接入完整二级回合站位轴与角色装备面板，editor_type 3 接入多皮肤 styleData 选项卡。 */
-        private const val RENDERER_STAMP = "<!--renderer:v5"
+         *  v5：v3 阵容接入完整二级回合站位轴与角色装备面板，editor_type 3 接入多皮肤 styleData 选项卡。
+         *  v6：1:1 复刻 GameKee 原版阵容卡片与 LineupDetail 二级视图（接入 bd2roles 字典与原版组件样式）。 */
+        private const val RENDERER_STAMP = "<!--renderer:v6"
 
         /** 渲染器戳后面跟着的内容版本号（来自 content_cdn 的 ?v=），两者都对上
          *  才复用缓存 —— 官方改了文章版本号就变，缓存自动过期。 */
@@ -422,9 +423,13 @@ class GamekeeRepository @Inject constructor(
             val bodyHtml = when {
                 contentType == 1 || inner.trimStart().startsWith("[") -> {
                     val blocks = Json.parseToJsonElement(inner).asJsonArray
+                    val refs = collectBattleRefs(blocks)
+                    if (refs.isNotEmpty()) {
+                        GamekeeBattleRoleCatalog.ensureLoaded(appContext)
+                    }
                     // v2/v3 使用不同接口和 ID 空间，预取及渲染都用 (version, id) 查表。
                     val battleCards = HashMap<BattleRef, String>()
-                    collectBattleRefs(blocks).forEach { ref ->
+                    refs.forEach { ref ->
                         battleCardHtml(ref)?.let { battleCards[ref] = it }
                     }
                     renderSlateBlocks(blocks, ArticleRenderContext(
@@ -522,13 +527,18 @@ class GamekeeRepository @Inject constructor(
         var tabsGroupCounter: Int = 0
     )
 
-    private fun parseBattleRef(data: JsonObject?): BattleRef? {
-        if (data == null) return null
+    private fun parseBattleRefs(data: JsonObject?): List<BattleRef> {
+        if (data == null) return emptyList()
         val version = data.get("version")?.takeIf { it.isJsonPrimitive }?.asString?.toIntOrNull()
-            ?: return null
-        val id = data.get("tempId")?.takeIf { it.isJsonPrimitive }?.asString?.toLongOrNull()
-            ?: return null
-        return if ((version == 2 || version == 3) && id > 0) BattleRef(version, id) else null
+            ?: return emptyList()
+        if (version != 2 && version != 3) return emptyList()
+        val rawIds = data.get("tempId")?.takeIf { it.isJsonPrimitive }?.asString?.ifBlank { null }
+            ?: data.get("battleIds")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: return emptyList()
+        return rawIds.split(',')
+            .mapNotNull { it.trim().toLongOrNull() }
+            .filter { it > 0L }
+            .map { BattleRef(version, it) }
     }
 
     /** 递归收集 Slate 块树中受支持的阵容引用，包含 tabs / 折叠块中的组件。 */
@@ -541,7 +551,7 @@ class GamekeeRepository @Inject constructor(
                 val o = node.asJsonObject
                 if (o.get("type")?.takeIf { it.isJsonPrimitive }?.asString == "battle-array") {
                     val data = o.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-                    parseBattleRef(data)?.let { into.add(it) }
+                    into.addAll(parseBattleRefs(data))
                 }
                 o.entries.forEach { collectBattleRefs(it.value, into) }
             }
@@ -557,7 +567,7 @@ class GamekeeRepository @Inject constructor(
      */
     private suspend fun battleCardHtml(ref: BattleRef): String? = withContext(Dispatchers.IO) {
         battleHtmlMemory.get(ref)?.let { return@withContext it }
-        val key = "v5_" + ref.version + "_" + ref.id
+        val key = "v6_" + ref.version + "_" + ref.id
         val cached = cache.battleFile(key)
         if (cached.exists() && cached.length() > 0) {
             try {
@@ -964,11 +974,13 @@ class GamekeeRepository @Inject constructor(
             }
             "battle-array" -> {
                 val data = b.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-                val ref = parseBattleRef(data)
+                val refs = parseBattleRefs(data)
                 val tempId = data?.get("tempId")?.takeIf { it.isJsonPrimitive }?.asString?.toLongOrNull()
                 when {
-                    ref != null -> context.battleCards[ref] ?: (BATTLE_UNAVAILABLE_STAMP +
-                        fallbackBattleCard(ref.id, "阵容暂时无法加载，请刷新重试", context.articleUrl))
+                    refs.isNotEmpty() -> refs.joinToString("\n") { ref ->
+                        context.battleCards[ref] ?: (BATTLE_UNAVAILABLE_STAMP +
+                            fallbackBattleCard(ref.id, "阵容暂时无法加载，请刷新重试", context.articleUrl))
+                    }
                     tempId != null && tempId > 0 ->
                         fallbackBattleCard(tempId, "暂不支持此版本的阵容组件", context.articleUrl)
                     else -> "" // 无引用的空组件
@@ -1154,19 +1166,182 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
               padding:8px 12px; margin:.4em 0 .8em; }
   .tabs .tr:checked + .tl + .tp { display:block; }
   .tp-e { font-size:.82em; color:#b08540; }
-  /* 阵容组件卡 */
+  /* 阵容组件卡（原版 GameKee CSS 1:1 复刻 + 移动端自适应） */
+  .zs-red { background:linear-gradient(180deg,#773b3e,#552e33) !important; }
+  .zs-blue { background:linear-gradient(180deg,#4d6677,#292f36) !important; }
+  .zs-green { background:linear-gradient(180deg,#4f7658,#293f2f) !important; }
+  .zs-yellow { background:linear-gradient(180deg,#857a4c,#665f42) !important; }
+  .zs-purple { background:linear-gradient(180deg,#594d65,#33343d) !important; }
+  .empty-not { background:rgba(105,127,139,.14) !important; }
+
+  .user-lineup-card { background:rgba(105,127,139,.08); border:1px solid rgba(105,127,139,.18);
+                      border-radius:10px; box-sizing:border-box; max-width:100%; min-width:0;
+                      padding:12px 14px; margin:.8em 0; }
+  .card-header { display:flex; flex-direction:column; margin-bottom:10px; min-width:0; }
+  .card-header .line { display:flex; justify-content:space-between; align-items:center; width:100%; }
+  .card-header .line .left { display:flex; align-items:center; flex:1; gap:8px; overflow:hidden; }
+  .card-header .line .update-time { color:#919191; font-size:12px; font-weight:500; white-space:nowrap; }
+  .type-tag { display:flex; align-items:center; font-weight:600; font-size:14px; gap:6px; }
+  .type-tag .lineup-id-tag { color:#919191; font-size:12px; font-weight:400; }
+  .type-tag.is-main { color:#b06832; }
+  .type-tag.is-warcraft { color:#ca0101; }
+  .type-tag.is-guild { color:#7300ad; }
+
+  .group-row + .group-row { margin-top:8px; }
+  .group-title { color:#8f97a4; font-size:12px; font-weight:600; margin-bottom:4px; }
+  .avatar-list { display:grid; gap:6px; grid-template-columns:repeat(5,minmax(0,1fr)); max-width:100%; min-width:0; }
+  .avatar-list.is-btype-3 { grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+  .gk-role-cell { display:flex; flex-direction:column; align-items:center; text-decoration:none; color:inherit; min-width:0; }
+  .avatar-list .avatar-item { border-radius:6px; display:flex; width:100%; aspect-ratio:1/1;
+                              overflow:hidden; position:relative; align-items:center; justify-content:center;
+                              background:rgba(105,127,139,.18); }
+  .avatar-list .avatar { width:145% !important; height:145% !important; max-width:none !important;
+                         max-height:none !important; border-radius:4px; display:block; flex-shrink:0;
+                         object-fit:contain; }
+  .tag-box { display:flex; position:absolute; right:2px; top:2px; flex-direction:column; align-items:flex-end; gap:1px; z-index:2; }
+  .tag-box .skill-icon { width:18px !important; height:13px !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+  .tag-box .damage-type-icon-box, .tag-box .role-attr-icon-box {
+      background:rgba(0,0,0,.45); border-radius:2px; display:flex; width:13px; height:13px;
+      align-items:center; justify-content:center; }
+  .tag-box .damage-type-icon-box img, .tag-box .role-attr-icon-box img {
+      width:11px !important; height:11px !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+  .tag-box .filter { filter:brightness(2); }
+
+  .user-lineup-card .title { display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:8px; }
+  .user-lineup-card .title .text { flex:1; color:#222; font-size:16px; font-weight:700; line-height:24px; }
+  .user-lineup-card .title .right-btn { display:inline-flex; align-items:center; justify-content:center;
+      background:#e7f6ff; border:1px solid rgba(12,168,252,.4); border-radius:50px; color:#0ca8fc;
+      cursor:pointer; font-size:11px; font-weight:600; gap:2px; height:24px; padding:0 10px; flex-shrink:0; user-select:none; }
+
+  .user-lineup-card .desc { color:#333; font-size:13px; line-height:1.55; margin-top:7px;
+                            background:rgba(255,255,255,.55); border-radius:6px; padding:8px 10px; }
+  .boss-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+  .boss-row .card-item { display:flex; align-items:center; background:#fff; border-radius:4px;
+                         gap:5px; height:26px; padding:2px 6px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .boss-row .card-item .boss-name-icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; }
+  .boss-row .card-item .boss-name-icon.icon { width:15px; height:15px; }
+  .boss-row .card-item .boss-name-icon img { width:100% !important; height:100% !important; object-fit:contain; border-radius:3px !important; }
+  .boss-row .card-item .boss-name { color:#333; font-size:12px; font-weight:500; white-space:nowrap; }
+
+  .bottom-line { display:flex; margin-top:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  .bottom-line .left-bottom { display:flex; align-items:center; gap:6px; }
+  .bottom-line .left-bottom .avatar { width:20px !important; height:20px !important; border-radius:50% !important; object-fit:cover; }
+  .bottom-line .left-bottom .name { color:#444; font-size:13px; font-weight:500; }
+  .bottom-line .right-like { display:flex; gap:10px; color:#666; font-size:12px; }
+
+  /* 原版二级面板 LineupDetail + TestViewBattleBox */
+  .gk-detail-wrap { background:#fff; border-radius:8px; padding:10px; margin-top:6px; border:1px solid rgba(0,0,0,.06); }
+  .gk-member-row { display:flex; gap:8px; overflow-x:auto; padding:4px 0 8px; }
+  .gk-member-item { width:56px; height:56px; border-radius:5px; overflow:hidden; position:relative; flex-shrink:0; display:block; }
+  .gk-member-item .cover { width:145% !important; height:145% !important; max-width:none !important; max-height:none !important;
+                           position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); object-fit:contain; }
+  .gk-round-tab { display:inline-flex !important; flex-direction:column; align-items:center; line-height:1.25; padding:5px 10px !important; vertical-align:top; }
+  .gk-round-sub { display:flex; gap:4px; font-size:10px; opacity:.85; margin-top:2px; }
+
+  .view-battle-box { display:flex; gap:10px; align-items:flex-start; width:100%; overflow-x:auto; padding:6px 0; }
+  .view-battle-box .left-list { display:flex; flex-direction:column; gap:6px; flex-shrink:0; width:76px; }
+  .view-battle-box .left-list .left-item { width:76px; height:50px; border-radius:4px; overflow:hidden; position:relative; background:rgba(105,127,139,.14); }
+  .view-battle-box .left-list .left-item .order {
+      background:#3c4b5e; clip-path:polygon(0 70%,0 0,100% 0,100% 70%,50% 100%);
+      color:#fff; font-size:10px; font-weight:700; width:14px; height:17px; line-height:14px;
+      left:3px; top:0; position:absolute; text-align:center; z-index:2; }
+  .view-battle-box .left-list .left-item .skill {
+      background:linear-gradient(180deg,#525161,#9997af); border:1px solid #888; border-radius:50%;
+      width:22px; height:22px; position:absolute; right:2px; top:2px; z-index:2; overflow:hidden; }
+  .view-battle-box .left-list .left-item .skill img { width:100% !important; height:100% !important; max-width:none !important; border-radius:50% !important; object-fit:contain; }
+  .view-battle-box .left-list .left-item .burst-icon { width:18px; height:18px; position:absolute; right:1px; bottom:1px; z-index:2; }
+  .view-battle-box .left-list .left-item .burst-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; }
+  .view-battle-box .cover { width:120% !important; height:120% !important; max-width:none !important; max-height:none !important;
+                            left:50%; top:42%; position:absolute; transform:translate(-50%,-50%); object-fit:cover; border-radius:0 !important; }
+
+  .view-battle-box .right-wrap { flex:1; min-width:0; overflow-x:auto; }
+  .view-battle-box .right-wrap .grid.type1 {
+      display:grid; gap:6px; grid-template-columns:repeat(4,62px); grid-auto-rows:74px; width:fit-content; margin:0; }
+  .view-battle-box.is-btype-3 .right-wrap .grid.type1 {
+      gap:4px; grid-template-columns:repeat(5,52px); grid-auto-rows:62px; }
+  .view-battle-box .right-wrap .grid-item { background:rgba(105,127,139,.14); border-radius:4px; overflow:hidden; position:relative; width:62px; height:74px; }
+  .view-battle-box.is-btype-3 .right-wrap .grid.type1 .grid-item { width:52px; height:62px; }
+  .view-battle-box .right-wrap .grid-role-cell-wrap { width:100%; height:100%; position:relative; }
+  .view-battle-box .right-wrap .empty {
+      background:url(${GamekeeBattleAssets.EMPTY_SLOT_BG}) 50%/100% 100% no-repeat;
+      width:100%; height:100%; position:relative; }
+  .gk-slot-num { position:absolute; right:3px; bottom:2px; font-size:9px; color:rgba(0,0,0,.28); font-weight:600; line-height:1; }
+  .view-battle-box .right-wrap .skill-position {
+      bottom:12px; left:50%; transform:translateX(-50%); width:20px; height:20px; position:absolute; z-index:2; }
+  .view-battle-box .right-wrap .skill-position img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:2px !important; }
+  .view-battle-box .right-wrap .strenth-icon { left:0; top:0; width:22px; height:18px; position:absolute; z-index:2; }
+  .view-battle-box .right-wrap .strenth-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+  .view-battle-box .right-wrap .corner-icon { right:2px; top:3px; width:14px; height:14px; position:absolute; z-index:2; }
+  .view-battle-box .right-wrap .corner-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+  .view-battle-box .right-wrap .burst-icon { right:0; top:20px; width:22px; height:22px; position:absolute; z-index:2; }
+  .view-battle-box .right-wrap .burst-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+  .view-battle-box .right-wrap .sp-stars {
+      background:linear-gradient(180deg,rgba(39,19,54,0),rgba(6,9,20,.15) 43%,#1f1529);
+      bottom:0; left:0; width:100%; height:36px; position:absolute; display:flex;
+      column-gap:2px; justify-content:center; align-items:flex-end; padding-bottom:3px; box-sizing:border-box; z-index:1; }
+  .view-battle-box .right-wrap .sp-stars .star {
+      background:linear-gradient(180deg,#e88b00,#f3b40b);
+      clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); width:5px; height:5px; flex-shrink:0; }
+  .view-battle-box .right-wrap .sp-stars .star.default-star {
+      background:url(${GamekeeBattleAssets.STAR_DEFAULT}) 50%/100% 100% no-repeat;
+      clip-path:none; width:7px; height:7px; }
+  .view-battle-box .right-wrap .sp-stars .star.burst-star {
+      background:url(${GamekeeBattleAssets.STAR_BURST}) 50%/100% 100% no-repeat;
+      clip-path:none; width:7px; height:7px; }
+  .view-battle-box .right-wrap .sp-info {
+      color:#333; font-size:13px; font-weight:600; margin-top:6px; text-align:right; }
+  .view-battle-box .right-wrap .sp-info .sp-num { color:#ca0101; font-size:15px; margin:0 3px; }
+  .view-battle-box .right-wrap .boss-action-info {
+      background:rgba(105,127,139,.14); border-radius:4px; display:flex; align-items:center;
+      height:38px; margin-top:6px; overflow:hidden; }
+  .view-battle-box .right-wrap .boss-action-info .boss-icon { width:64px !important; height:38px !important; object-fit:cover; border-radius:0 !important; }
+  .view-battle-box .right-wrap .boss-action-info .action-content { padding:4px 8px; font-size:12px; font-weight:600; }
+
+  /* 原版模式 2：服装出手顺序矩阵 */
+  .gk-matrix-scroll { overflow-x:auto; }
+  .gk-matrix-header { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+  .gk-matrix-corner { width:76px; flex-shrink:0; font-size:11px; color:#888; text-align:center; }
+  .gk-matrix-round-col { width:56px; flex-shrink:0; font-size:11px; font-weight:600; color:#555; text-align:center; }
+  .view-battle-box .right-wrap .grid.type2 { display:flex; flex-direction:column; gap:6px; }
+  .view-battle-box .right-wrap .matrix-row { display:flex; column-gap:6px; }
+  .view-battle-box .right-wrap .grid-item.small { width:56px; height:50px; flex-shrink:0; }
+  .view-battle-box .right-wrap .matrix-row .skill {
+      width:14px; height:14px; position:absolute; right:2px; top:2px; z-index:2;
+      background:linear-gradient(180deg,#525161,#9997af); border-radius:50%; overflow:hidden; }
+  .view-battle-box .right-wrap .matrix-row .skill img { width:100% !important; height:100% !important; border-radius:50% !important; }
+  .view-battle-box .right-wrap .matrix-row .strenth-icon { width:18px; height:14px; }
+  .view-battle-box .right-wrap .matrix-row .corner-icon { left:2px; top:14px; right:auto; width:11px; height:11px; }
+  .view-battle-box .right-wrap .matrix-row .burst-icon { right:0; top:16px; width:18px; height:18px; }
+  .view-battle-box .right-wrap .matrix-row .sp-stars { height:20px; padding-bottom:2px; }
+  .view-battle-box .right-wrap .grid-item.small .normal-card {
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.78); gap:2px; width:100%; height:100%; }
+  .view-battle-box .right-wrap .grid-item.small .normal-card .text { color:#fff; font-size:11px; font-weight:600; line-height:13px; }
+  .view-battle-box .right-wrap .grid-item.small .normal-card .icon { width:18px !important; height:18px !important; object-fit:contain; }
+  .sp-line-info { color:#666; font-size:12px; margin-top:6px; text-align:center; }
+
+  .gk-round-actions-title { font-size:12px; font-weight:600; color:#666; margin:8px 0 4px; }
+  .gk-tippy-fold { margin-top:3px; font-size:12px; }
+  .gk-tippy-fold > summary { cursor:pointer; color:#0ca8fc; font-weight:500; }
+  .gk-tippy-body { display:flex; gap:8px; align-items:flex-start; background:rgba(105,127,139,.08);
+                   border-radius:6px; padding:6px 8px; margin-top:4px; }
+  .gk-tippy-range { width:44px !important; height:44px !important; object-fit:contain; flex-shrink:0; background:#2b313a; padding:3px; border-radius:4px !important; }
+  .gk-tippy-desc { font-size:12px; line-height:1.45; color:#444; }
+
   .battle { border:1px solid #d9c89a; background:#fdf9ef; border-radius:10px;
             padding:10px 12px; margin:.8em 0; }
+  .battle.user-lineup-card { background:rgba(105,127,139,.08); border-color:rgba(105,127,139,.2); }
   .b-head { display:flex; justify-content:space-between; align-items:baseline;
             gap:8px; margin-bottom:6px; }
   .b-title { font-weight:700; color:#5c4a1e; }
+  .user-lineup-card .b-title { color:#222; }
   .b-meta { font-size:.8em; color:#9a8a5e; white-space:nowrap; }
   .b-team-t { font-size:.85em; color:#9a8a5e; margin:4px 0 2px; }
   .b-team { display:flex; flex-wrap:wrap; gap:8px; margin:.3em 0; }
   .b-m { display:flex; flex-direction:column; align-items:center; width:72px; text-decoration:none; color:inherit; }
   .b-m-link { cursor:pointer; border-radius:8px; padding:2px; }
-  .b-v3-cname { font-size:.76em; font-weight:600; color:#4a3b18; margin-top:2px; max-width:70px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .b-v3-sname { font-size:.7em; color:#7a6a3a; max-width:70px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .b-v3-cname { font-size:11px; font-weight:600; color:#333; margin-top:3px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .b-v3-sname { font-size:10px; color:#666; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .b-v3-detail { border-top:1px dashed #d9c89a; margin-top:8px; padding-top:4px; }
   .b-v3-summary { cursor:pointer; font-weight:600; font-size:.9em; color:#3b5998; padding:6px 0; }
   .b-v3-tag { display:inline-block; font-size:.75em; background:#e67e22; color:#fff; border-radius:4px; padding:0 5px; }
