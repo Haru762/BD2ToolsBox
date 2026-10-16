@@ -44,9 +44,13 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
     companion object {
         private const val TAG = "UpdateRepository"
 
-        /** GitHub 的「最新 release」端点。 */
-        private const val ENDPOINT =
+        /** GitHub 的「最新正式版 release」端点（仅 GA）。 */
+        private const val ENDPOINT_LATEST =
             "https://api.github.com/repos/Haru762/BD2ToolsBox/releases/latest"
+
+        /** GitHub 的 release 列表端点（含 Pre-release 测试版与正式版）。 */
+        private const val ENDPOINT_LIST =
+            "https://api.github.com/repos/Haru762/BD2ToolsBox/releases?per_page=10"
 
         /** 拿不到 html_url 时的兜底 —— 地址总得有个能打开的。 */
         private const val RELEASES_PAGE = "https://github.com/Haru762/BD2ToolsBox/releases"
@@ -54,41 +58,60 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
         /** GitHub 要求带 UA，缺了会被拒；内容无所谓，报上自己是谁即可。 */
         private const val UA = "Mozilla/5.0 (Linux; Android) BD2ToolsBox"
 
-        /** 下载 id 与期望文件元信息的 prefs 键。 */
+        /** 下载 id、期望文件元信息及更新通道的 prefs 键。 */
         private const val KEY_DL_ID = "download_id"
         private const val KEY_DL_EXPECTED_BYTES = "download_expected_bytes"
         private const val KEY_DL_FILE_NAME = "download_file_name"
+        private const val KEY_BETA_CHANNEL = "beta_channel_enabled"
 
         /**
          * 版本号比较，a 比 b 新返回正数。
          *
-         * 分段按数值比，不按字符串 —— "0.2.10" 要比 "0.2.9" 新，字符串比刚好反过来
-         * （'1' < '9'）。每段只取开头的数字（"4-rc1" 当 4），缺失的段当 0
-         * （"0.2" 与 "0.2.0" 同版）。预发布后缀不参与比较：0.2.4-rc1 与 0.2.4 视为
-         * 同一版，免得正式版发出来了还被 rc 挡在门外。
+         * 1. 先按主版本分段数值比较（"0.3.10" > "0.3.9"）；
+         * 2. 主版本相同时：
+         *    - 正式版（无 `-` 预发布后缀）高于预发布版（"0.3.5" > "0.3.5-beta.2"）；
+         *    - 两个预发布版之间按后缀中的数字序列依次比较（"0.3.5-beta.2" > "0.3.5-beta.1"）。
          */
         fun compare(a: String, b: String): Int {
-            val pa = a.trim().removePrefix("v").split('.')
-            val pb = b.trim().removePrefix("v").split('.')
+            val cleanA = a.trim().removePrefix("v").removePrefix("V").trim()
+            val cleanB = b.trim().removePrefix("v").removePrefix("V").trim()
+            val mainA = cleanA.substringBefore('-')
+            val mainB = cleanB.substringBefore('-')
+            val pa = mainA.split('.')
+            val pb = mainB.split('.')
             for (i in 0 until maxOf(pa.size, pb.size)) {
                 val x = pa.getOrNull(i).orEmpty().takeWhile { it.isDigit() }.toIntOrNull() ?: 0
                 val y = pb.getOrNull(i).orEmpty().takeWhile { it.isDigit() }.toIntOrNull() ?: 0
                 if (x != y) return x.compareTo(y)
             }
-            return 0
+            val preA = cleanA.substringAfter('-', "")
+            val preB = cleanB.substringAfter('-', "")
+            if (preA.isEmpty() && preB.isEmpty()) return 0
+            if (preA.isEmpty()) return 1 // 正式版 > 同主版本预发布版
+            if (preB.isEmpty()) return -1
+            val numsA = Regex("\\d+").findAll(preA).mapNotNull { it.value.toIntOrNull() }.toList()
+            val numsB = Regex("\\d+").findAll(preB).mapNotNull { it.value.toIntOrNull() }.toList()
+            for (i in 0 until maxOf(numsA.size, numsB.size)) {
+                val x = numsA.getOrNull(i) ?: 0
+                val y = numsB.getOrNull(i) ?: 0
+                if (x != y) return x.compareTo(y)
+            }
+            return preA.compareTo(preB, ignoreCase = true)
         }
     }
 
     /** 一个 release 里 App 用得到的那点东西。 */
     data class Release(
-        /** 去掉 v 前缀的版本号，如 "0.2.4"。 */
+        /** 去掉 v 前缀的版本号，如 "0.3.5" 或 "0.3.5-beta.1"。 */
         val version: String,
         /** release 正文，markdown 原文（展示前的轻量去语法在 UI 层做）。 */
         val notes: String,
         /** release 页地址，应用内下载失败时仍可人工兜底。 */
         val htmlUrl: String,
         /** 这个 release 附带的全部 APK 资产。 */
-        val apkAssets: List<ApkAsset> = emptyList()
+        val apkAssets: List<ApkAsset> = emptyList(),
+        /** 是否为 Beta 预发布版本。 */
+        val isPrerelease: Boolean = false
     )
 
     /** release 里的一个 APK 资产。 */
@@ -114,36 +137,67 @@ class UpdateRepository @Inject constructor(@ApplicationContext private val appCo
     /** [version] 是否比手机上装的这版更新。 */
     fun isNewerThanInstalled(version: String): Boolean = compare(version, installedVersion()) > 0
 
+    /** 是否启用了 Beta 测试版更新通道（默认关闭，仅接收 GA 稳定版）。 */
+    fun isBetaChannelEnabled(): Boolean =
+        dlPrefs().getBoolean(KEY_BETA_CHANNEL, installedVersion().contains("-beta", ignoreCase = true) || installedVersion().contains("-preview", ignoreCase = true))
+
+    fun setBetaChannelEnabled(enabled: Boolean) {
+        dlPrefs().edit().putBoolean(KEY_BETA_CHANNEL, enabled).apply()
+    }
+
     /**
-     * 拉最新 release。网络、HTTP、格式任何一步出问题都返回 null —— 调用方只需要
-     * 知道「没拿到」（提示文案是统一的「连不上 GitHub」）。
+     * 拉最新 release。
+     * - GA 通道（默认）：请求 `/releases/latest`；
+     * - Beta 通道：请求 `/releases?per_page=10`，包含 `prerelease` 测试版与正式版，取版本号最高的一版。
      */
-    suspend fun fetchLatest(): Release? = withContext(Dispatchers.IO) {
-        val body = httpGet(ENDPOINT) ?: return@withContext null
+    suspend fun fetchLatest(includeBeta: Boolean = isBetaChannelEnabled()): Release? = withContext(Dispatchers.IO) {
+        if (includeBeta) {
+            val listBody = httpGet(ENDPOINT_LIST)
+            val newest = listBody?.let { parseReleaseList(it) }
+            if (newest != null) return@withContext newest
+        }
+        val body = httpGet(ENDPOINT_LATEST) ?: return@withContext null
         parseRelease(body)
+    }
+
+    internal fun parseReleaseList(body: String): Release? = try {
+        val arr = Json.parseToJsonElement(body) as? JsonArray
+        arr?.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val isDraft = (obj["draft"] as? JsonPrimitive)?.content == "true"
+            if (isDraft) null else parseReleaseObject(obj)
+        }?.maxWithOrNull { a, b -> compare(a.version, b.version) }
+    } catch (e: Exception) {
+        Log.w(TAG, "releases 列表解析失败", e)
+        null
     }
 
     private fun parseRelease(body: String): Release? = try {
         val root = Json.parseToJsonElement(body) as? JsonObject
-        val version = (root?.get("tag_name") as? JsonPrimitive)?.content
-            .orEmpty().trim().removePrefix("v").removePrefix("V").trim()
-        when {
-            root == null || version.isEmpty() -> {
-                Log.w(TAG, "release 响应里没有可用的 tag_name")
-                null
-            }
-            else -> Release(
-                version = version,
-                // body 可能是 JsonNull（release 没写说明），那也算空串
-                notes = (root["body"] as? JsonPrimitive)?.content.orEmpty(),
-                htmlUrl = (root["html_url"] as? JsonPrimitive)?.content
-                    ?.takeIf { it.isNotBlank() } ?: RELEASES_PAGE,
-                apkAssets = parseApkAssets(root)
-            )
-        }
+        if (root == null) null else parseReleaseObject(root)
     } catch (e: Exception) {
         Log.w(TAG, "release 响应解析失败", e)
         null
+    }
+
+    private fun parseReleaseObject(root: JsonObject): Release? {
+        val version = (root["tag_name"] as? JsonPrimitive)?.content
+            .orEmpty().trim().removePrefix("v").removePrefix("V").trim()
+        if (version.isEmpty()) {
+            Log.w(TAG, "release 响应里没有可用的 tag_name")
+            return null
+        }
+        val isPre = (root["prerelease"] as? JsonPrimitive)?.content == "true" ||
+            version.contains("-beta", ignoreCase = true) ||
+            version.contains("-rc", ignoreCase = true)
+        return Release(
+            version = version,
+            notes = (root["body"] as? JsonPrimitive)?.content.orEmpty(),
+            htmlUrl = (root["html_url"] as? JsonPrimitive)?.content
+                ?.takeIf { it.isNotBlank() } ?: RELEASES_PAGE,
+            apkAssets = parseApkAssets(root),
+            isPrerelease = isPre
+        )
     }
 
     /** 一次 GET。非 200 与网络异常都返回 null。 */

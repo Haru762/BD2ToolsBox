@@ -95,8 +95,9 @@ class GamekeeRepository @Inject constructor(
          *  图片排到文字下方（v2 缓存里这两样都是转义后的代码文本，必须重渲染）。
          *  v4：接入 v2 阵容接口，淘汰旧版组件无法显示的错误占位。
          *  v5：v3 阵容接入完整二级回合站位轴与角色装备面板，editor_type 3 接入多皮肤 styleData 选项卡。
-         *  v6：1:1 复刻 GameKee 原版阵容卡片与 LineupDetail 二级视图（接入 bd2roles 字典与原版组件样式）。 */
-        private const val RENDERER_STAMP = "<!--renderer:v6"
+         *  v6：1:1 复刻 GameKee 原版阵容卡片与 LineupDetail 二级视图（接入 bd2roles 字典与原版组件样式）。
+         *  v7：针对手机竖屏深度重构阵容卡片与二级详情 UI（上下流式棋盘+行动卡、Sticky 冻结矩阵、现代资料卡面板）。 */
+        private const val RENDERER_STAMP = "<!--renderer:v7"
 
         /** 渲染器戳后面跟着的内容版本号（来自 content_cdn 的 ?v=），两者都对上
          *  才复用缓存 —— 官方改了文章版本号就变，缓存自动过期。 */
@@ -567,7 +568,7 @@ class GamekeeRepository @Inject constructor(
      */
     private suspend fun battleCardHtml(ref: BattleRef): String? = withContext(Dispatchers.IO) {
         battleHtmlMemory.get(ref)?.let { return@withContext it }
-        val key = "v6_" + ref.version + "_" + ref.id
+        val key = "v7_" + ref.version + "_" + ref.id
         val cached = cache.battleFile(key)
         if (cached.exists() && cached.length() > 0) {
             try {
@@ -1166,187 +1167,255 @@ $RENDERER_STAMP$CONTENT_STAMP$contentVersion-->
               padding:8px 12px; margin:.4em 0 .8em; }
   .tabs .tr:checked + .tl + .tp { display:block; }
   .tp-e { font-size:.82em; color:#b08540; }
-  /* 阵容组件卡（原版 GameKee CSS 1:1 复刻 + 移动端自适应） */
-  .zs-red { background:linear-gradient(180deg,#773b3e,#552e33) !important; }
-  .zs-blue { background:linear-gradient(180deg,#4d6677,#292f36) !important; }
-  .zs-green { background:linear-gradient(180deg,#4f7658,#293f2f) !important; }
-  .zs-yellow { background:linear-gradient(180deg,#857a4c,#665f42) !important; }
-  .zs-purple { background:linear-gradient(180deg,#594d65,#33343d) !important; }
+  /* 阵容组件卡（移动端竖屏优先设计 + GameKee 官方视觉元素） */
+  .zs-red { background:linear-gradient(180deg,#884044,#55282c) !important; }
+  .zs-blue { background:linear-gradient(180deg,#486880,#263542) !important; }
+  .zs-green { background:linear-gradient(180deg,#497856,#26402d) !important; }
+  .zs-yellow { background:linear-gradient(180deg,#8f8048,#5c522e) !important; }
+  .zs-purple { background:linear-gradient(180deg,#624c75,#352940) !important; }
   .empty-not { background:rgba(105,127,139,.14) !important; }
 
-  .user-lineup-card { background:rgba(105,127,139,.08); border:1px solid rgba(105,127,139,.18);
-                      border-radius:10px; box-sizing:border-box; max-width:100%; min-width:0;
-                      padding:12px 14px; margin:.8em 0; }
-  .card-header { display:flex; flex-direction:column; margin-bottom:10px; min-width:0; }
-  .card-header .line { display:flex; justify-content:space-between; align-items:center; width:100%; }
-  .card-header .line .left { display:flex; align-items:center; flex:1; gap:8px; overflow:hidden; }
-  .card-header .line .update-time { color:#919191; font-size:12px; font-weight:500; white-space:nowrap; }
-  .type-tag { display:flex; align-items:center; font-weight:600; font-size:14px; gap:6px; }
-  .type-tag .lineup-id-tag { color:#919191; font-size:12px; font-weight:400; }
-  .type-tag.is-main { color:#b06832; }
-  .type-tag.is-warcraft { color:#ca0101; }
-  .type-tag.is-guild { color:#7300ad; }
+  .user-lineup-card { background:#f7f8fa; border:1px solid #e2e6ed;
+                      border-radius:14px; box-sizing:border-box; max-width:100%; min-width:0;
+                      padding:14px; margin:.9em 0; box-shadow:0 2px 8px rgba(15,23,42,.04); }
+  .card-header { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; min-width:0; }
+  .card-header .line { display:flex; justify-content:space-between; align-items:center; width:100%; gap:6px; }
+  .card-header .line .left { display:flex; align-items:center; flex-wrap:wrap; flex:1; gap:6px; min-width:0; }
+  .card-header .line .update-time { color:#8a94a6; font-size:11px; font-weight:500; white-space:nowrap; }
+  .type-tag { display:inline-flex; align-items:center; font-weight:700; font-size:11px;
+              padding:2px 8px; border-radius:6px; line-height:1.4; }
+  .type-tag.is-main { background:#fff3e6; color:#b85d19; }
+  .type-tag.is-warcraft { background:#ffeaea; color:#c92a2a; }
+  .type-tag.is-guild { background:#f3e8ff; color:#6b21a8; }
+  .gk-boss-chip { display:inline-flex; align-items:center; gap:4px; background:#fff; border:1px solid #e5e7eb;
+                  border-radius:6px; padding:1px 7px; font-size:11px; font-weight:600; color:#374151; }
+  .gk-boss-chip img { width:15px !important; height:15px !important; border-radius:3px !important; object-fit:contain; }
+  .gk-dmg-chip { display:inline-flex; align-items:center; background:#fff7ed; border:1px solid #fed7aa;
+                 color:#c2410c; border-radius:6px; padding:1px 7px; font-size:11px; font-weight:700; }
+  .gk-card-title-row { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:2px; }
+  .gk-card-title-row .b-title { font-size:16px; font-weight:800; color:#111827; line-height:1.35; flex:1; }
+  .gk-arrange-badge { font-size:11px; font-weight:600; padding:2px 8px; border-radius:99px;
+                      background:#eef2f6; color:#64748b; flex-shrink:0; }
+  .gk-arrange-badge.is-arranged { background:#e0f2fe; color:#0284c7; }
 
-  .group-row + .group-row { margin-top:8px; }
-  .group-title { color:#8f97a4; font-size:12px; font-weight:600; margin-bottom:4px; }
-  .avatar-list { display:grid; gap:6px; grid-template-columns:repeat(5,minmax(0,1fr)); max-width:100%; min-width:0; }
+  .group-row + .group-row { margin-top:10px; }
+  .group-title { color:#64748b; font-size:12px; font-weight:700; margin-bottom:6px; }
+  .avatar-list { display:grid; gap:8px; grid-template-columns:repeat(5,minmax(0,1fr)); max-width:100%; min-width:0; }
   .avatar-list.is-btype-3 { grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
   .gk-role-cell { display:flex; flex-direction:column; align-items:center; text-decoration:none; color:inherit; min-width:0; }
-  .avatar-list .avatar-item { border-radius:6px; display:flex; width:100%; aspect-ratio:1/1;
+  .avatar-list .avatar-item { border-radius:10px; display:flex; width:100%; aspect-ratio:1/1;
                               overflow:hidden; position:relative; align-items:center; justify-content:center;
-                              background:rgba(105,127,139,.18); }
-  .avatar-list .avatar { width:145% !important; height:145% !important; max-width:none !important;
-                         max-height:none !important; border-radius:4px; display:block; flex-shrink:0;
-                         object-fit:contain; }
-  .tag-box { display:flex; position:absolute; right:2px; top:2px; flex-direction:column; align-items:flex-end; gap:1px; z-index:2; }
-  .tag-box .skill-icon { width:18px !important; height:13px !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+                              box-shadow:0 2px 5px rgba(0,0,0,.12); }
+  .avatar-list .avatar { width:100% !important; height:100% !important; max-width:none !important;
+                         max-height:none !important; border-radius:0 !important; display:block;
+                         object-fit:cover; }
+  .gk-cell-strenth { position:absolute; left:0; top:0; width:24px !important; height:19px !important;
+                     max-width:none !important; object-fit:contain; z-index:2; border-radius:0 !important; }
+  .tag-box { display:flex; position:absolute; right:3px; top:3px; flex-direction:column; align-items:flex-end; gap:2px; z-index:2; }
   .tag-box .damage-type-icon-box, .tag-box .role-attr-icon-box {
-      background:rgba(0,0,0,.45); border-radius:2px; display:flex; width:13px; height:13px;
+      background:rgba(0,0,0,.55); border-radius:4px; display:flex; width:15px; height:15px;
       align-items:center; justify-content:center; }
   .tag-box .damage-type-icon-box img, .tag-box .role-attr-icon-box img {
-      width:11px !important; height:11px !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+      width:12px !important; height:12px !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
   .tag-box .filter { filter:brightness(2); }
 
-  .user-lineup-card .title { display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:8px; }
-  .user-lineup-card .title .text { flex:1; color:#222; font-size:16px; font-weight:700; line-height:24px; }
-  .user-lineup-card .title .right-btn { display:inline-flex; align-items:center; justify-content:center;
-      background:#e7f6ff; border:1px solid rgba(12,168,252,.4); border-radius:50px; color:#0ca8fc;
-      cursor:pointer; font-size:11px; font-weight:600; gap:2px; height:24px; padding:0 10px; flex-shrink:0; user-select:none; }
-
-  .user-lineup-card .desc { color:#333; font-size:13px; line-height:1.55; margin-top:7px;
-                            background:rgba(255,255,255,.55); border-radius:6px; padding:8px 10px; }
-  .boss-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
-  .boss-row .card-item { display:flex; align-items:center; background:#fff; border-radius:4px;
-                         gap:5px; height:26px; padding:2px 6px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-  .boss-row .card-item .boss-name-icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; }
-  .boss-row .card-item .boss-name-icon.icon { width:15px; height:15px; }
-  .boss-row .card-item .boss-name-icon img { width:100% !important; height:100% !important; object-fit:contain; border-radius:3px !important; }
-  .boss-row .card-item .boss-name { color:#333; font-size:12px; font-weight:500; white-space:nowrap; }
+  .user-lineup-card .desc { color:#334155; font-size:13px; line-height:1.6; margin-top:12px;
+                            background:#fff; border-left:3px solid #3b82f6; border-radius:6px; padding:8px 10px; }
 
   .bottom-line { display:flex; margin-top:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
   .bottom-line .left-bottom { display:flex; align-items:center; gap:6px; }
   .bottom-line .left-bottom .avatar { width:20px !important; height:20px !important; border-radius:50% !important; object-fit:cover; }
-  .bottom-line .left-bottom .name { color:#444; font-size:13px; font-weight:500; }
-  .bottom-line .right-like { display:flex; gap:10px; color:#666; font-size:12px; }
+  .bottom-line .left-bottom .name { color:#475569; font-size:12px; font-weight:600; }
+  .bottom-line .right-like { display:flex; gap:10px; color:#64748b; font-size:12px; }
 
-  /* 原版二级面板 LineupDetail + TestViewBattleBox */
-  .gk-detail-wrap { background:#fff; border-radius:8px; padding:10px; margin-top:6px; border:1px solid rgba(0,0,0,.06); }
-  .gk-member-row { display:flex; gap:8px; overflow-x:auto; padding:4px 0 8px; }
-  .gk-member-item { width:56px; height:56px; border-radius:5px; overflow:hidden; position:relative; flex-shrink:0; display:block; }
-  .gk-member-item .cover { width:145% !important; height:145% !important; max-width:none !important; max-height:none !important;
-                           position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); object-fit:contain; }
-  .gk-round-tab { display:inline-flex !important; flex-direction:column; align-items:center; line-height:1.25; padding:5px 10px !important; vertical-align:top; }
-  .gk-round-sub { display:flex; gap:4px; font-size:10px; opacity:.85; margin-top:2px; }
+  /* 二级展开按钮与面板容器 */
+  .b-v3-detail { margin-top:12px; border:0; padding:0; }
+  .b-v3-summary { list-style:none; display:flex; justify-content:space-between; align-items:center;
+                  background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; border-radius:10px;
+                  padding:9px 12px; font-size:13px; font-weight:700; cursor:pointer; user-select:none; }
+  .b-v3-summary::-webkit-details-marker { display:none; }
+  .b-v3-detail[open] > .b-v3-summary .gk-summary-arrow { transform:rotate(180deg); }
+  .gk-summary-arrow { transition:transform .2s; font-size:14px; }
+  .gk-detail-wrap { background:#fff; border-radius:12px; padding:12px 10px; margin-top:8px;
+                    border:1px solid #e2e8f0; }
+  .gk-collapse-bottom { margin-top:12px; padding:8px; text-align:center; background:#f1f5f9;
+                        border-radius:8px; color:#475569; font-size:12px; font-weight:700; cursor:pointer; }
 
-  .view-battle-box { display:flex; gap:10px; align-items:flex-start; width:100%; overflow-x:auto; padding:6px 0; }
-  .view-battle-box .left-list { display:flex; flex-direction:column; gap:6px; flex-shrink:0; width:76px; }
-  .view-battle-box .left-list .left-item { width:76px; height:50px; border-radius:4px; overflow:hidden; position:relative; background:rgba(105,127,139,.14); }
-  .view-battle-box .left-list .left-item .order {
-      background:#3c4b5e; clip-path:polygon(0 70%,0 0,100% 0,100% 70%,50% 100%);
-      color:#fff; font-size:10px; font-weight:700; width:14px; height:17px; line-height:14px;
-      left:3px; top:0; position:absolute; text-align:center; z-index:2; }
-  .view-battle-box .left-list .left-item .skill {
-      background:linear-gradient(180deg,#525161,#9997af); border:1px solid #888; border-radius:50%;
-      width:22px; height:22px; position:absolute; right:2px; top:2px; z-index:2; overflow:hidden; }
-  .view-battle-box .left-list .left-item .skill img { width:100% !important; height:100% !important; max-width:none !important; border-radius:50% !important; object-fit:contain; }
-  .view-battle-box .left-list .left-item .burst-icon { width:18px; height:18px; position:absolute; right:1px; bottom:1px; z-index:2; }
-  .view-battle-box .left-list .left-item .burst-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; }
-  .view-battle-box .cover { width:120% !important; height:120% !important; max-width:none !important; max-height:none !important;
-                            left:50%; top:42%; position:absolute; transform:translate(-50%,-50%); object-fit:cover; border-radius:0 !important; }
+  /* 二级面板：清晰的层级化分段 Tab */
+  .gk-team-tabs > .tl { padding:5px 14px; border-radius:8px; font-size:13px; font-weight:700; margin-right:6px; }
+  .gk-team-tabs > .tp { border:0; padding:6px 0 0; margin:0; }
+  .gk-mode-tabs > .tl { padding:5px 11px; border-radius:8px; font-size:12px; font-weight:600; margin:0 4px 6px 0; }
+  .gk-mode-tabs > .tr:checked + .tl { background:#1e293b; color:#fff; }
+  .gk-mode-tabs > .tp { border:0; padding:4px 0 0; margin:0; }
 
-  .view-battle-box .right-wrap { flex:1; min-width:0; overflow-x:auto; }
+  .gk-round-tabs > .tl.gk-round-tab {
+      display:inline-flex !important; flex-direction:column; align-items:flex-start;
+      padding:6px 10px !important; margin:0 6px 6px 0; border-radius:8px;
+      background:#f8fafc; border:1px solid #e2e8f0; color:#334155; line-height:1.25; vertical-align:top; }
+  .gk-round-tabs > .tr:checked + .tl.gk-round-tab {
+      background:#eff6ff; border-color:#3b82f6; color:#1d4ed8; }
+  .gk-round-main { font-size:12px; font-weight:700; }
+  .gk-round-meta { display:flex; flex-wrap:wrap; gap:3px; font-size:10px; opacity:.9; margin-top:2px; align-items:center; }
+  .gk-round-badge { background:#f59e0b; color:#fff; border-radius:4px; padding:0 4px; font-weight:600; }
+  .gk-round-tabs > .tp.gk-round-tp { border:0; padding:6px 0 0; margin:0; }
+
+  /* 手机竖屏居中大尺寸 3x4 / 5x5 战术棋盘 */
+  .view-battle-box { display:flex; flex-direction:column; gap:8px; width:100%; padding:4px 0; }
+  .gk-board-head { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#64748b; }
+  .gk-board-head .sp-info { color:#1e293b; font-weight:700; font-size:12px; }
+  .gk-board-head .sp-num { color:#dc2626; font-size:14px; font-weight:800; }
+  .view-battle-box .right-wrap { width:100%; }
   .view-battle-box .right-wrap .grid.type1 {
-      display:grid; gap:6px; grid-template-columns:repeat(4,62px); grid-auto-rows:74px; width:fit-content; margin:0; }
+      display:grid; gap:8px; grid-template-columns:repeat(4,minmax(0,1fr));
+      max-width:320px; margin:0 auto; }
   .view-battle-box.is-btype-3 .right-wrap .grid.type1 {
-      gap:4px; grid-template-columns:repeat(5,52px); grid-auto-rows:62px; }
-  .view-battle-box .right-wrap .grid-item { background:rgba(105,127,139,.14); border-radius:4px; overflow:hidden; position:relative; width:62px; height:74px; }
-  .view-battle-box.is-btype-3 .right-wrap .grid.type1 .grid-item { width:52px; height:62px; }
-  .view-battle-box .right-wrap .grid-role-cell-wrap { width:100%; height:100%; position:relative; }
+      gap:5px; grid-template-columns:repeat(5,minmax(0,1fr)); max-width:340px; }
+  .view-battle-box .right-wrap .grid-item {
+      background:#f1f5f9; border:1px solid #cbd5e1; border-radius:8px;
+      overflow:hidden; position:relative; width:100%; aspect-ratio:5/6; }
+  .view-battle-box .right-wrap .grid-role-cell-wrap {
+      width:100%; height:100%; position:relative; overflow:hidden; }
+  .view-battle-box .cover {
+      width:100% !important; height:100% !important; max-width:none !important; max-height:none !important;
+      object-fit:cover; display:block; border-radius:0 !important; }
   .view-battle-box .right-wrap .empty {
-      background:url(${GamekeeBattleAssets.EMPTY_SLOT_BG}) 50%/100% 100% no-repeat;
-      width:100%; height:100%; position:relative; }
-  .gk-slot-num { position:absolute; right:3px; bottom:2px; font-size:9px; color:rgba(0,0,0,.28); font-weight:600; line-height:1; }
+      width:100%; height:100%; position:relative;
+      background:repeating-linear-gradient(-45deg,rgba(148,163,184,.08),rgba(148,163,184,.08) 6px,transparent 6px,transparent 12px); }
+  .gk-slot-num { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+                 font-size:12px; color:#94a3b8; font-weight:700; }
+  .view-battle-box .right-wrap .strenth-icon { left:0; top:0; width:24px; height:19px; position:absolute; z-index:2; }
+  .view-battle-box .right-wrap .strenth-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; }
+  .gk-board-order { position:absolute; right:3px; top:3px; min-width:18px; height:18px; line-height:18px;
+                    border-radius:5px; background:rgba(15,23,42,.85); border:1px solid rgba(255,255,255,.4);
+                    color:#fff; font-size:11px; font-weight:800; text-align:center; z-index:3; }
+  .view-battle-box .right-wrap .burst-icon { right:2px; top:23px; width:20px; height:20px; position:absolute; z-index:2; }
+  .view-battle-box .right-wrap .burst-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; }
   .view-battle-box .right-wrap .skill-position {
-      bottom:12px; left:50%; transform:translateX(-50%); width:20px; height:20px; position:absolute; z-index:2; }
-  .view-battle-box .right-wrap .skill-position img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:2px !important; }
-  .view-battle-box .right-wrap .strenth-icon { left:0; top:0; width:22px; height:18px; position:absolute; z-index:2; }
-  .view-battle-box .right-wrap .strenth-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
-  .view-battle-box .right-wrap .corner-icon { right:2px; top:3px; width:14px; height:14px; position:absolute; z-index:2; }
-  .view-battle-box .right-wrap .corner-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
-  .view-battle-box .right-wrap .burst-icon { right:0; top:20px; width:22px; height:22px; position:absolute; z-index:2; }
-  .view-battle-box .right-wrap .burst-icon img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; border-radius:0 !important; }
+      bottom:18px; right:3px; width:24px; height:24px; position:absolute; z-index:3;
+      background:rgba(15,23,42,.75); border-radius:4px; padding:2px; box-sizing:border-box; }
+  .view-battle-box .right-wrap .skill-position img { width:100% !important; height:100% !important; max-width:none !important; object-fit:contain; }
   .view-battle-box .right-wrap .sp-stars {
-      background:linear-gradient(180deg,rgba(39,19,54,0),rgba(6,9,20,.15) 43%,#1f1529);
-      bottom:0; left:0; width:100%; height:36px; position:absolute; display:flex;
-      column-gap:2px; justify-content:center; align-items:flex-end; padding-bottom:3px; box-sizing:border-box; z-index:1; }
+      background:linear-gradient(180deg,transparent,rgba(15,23,42,.82) 45%,#0f172a);
+      bottom:0; left:0; width:100%; padding:10px 3px 3px; position:absolute;
+      display:flex; flex-direction:column; align-items:center; gap:2px; box-sizing:border-box; z-index:2; }
+  .gk-board-name { color:#fff; font-size:10px; font-weight:700; line-height:1.1;
+                   max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gk-stars-row { display:flex; gap:2px; justify-content:center; align-items:center; min-height:6px; }
   .view-battle-box .right-wrap .sp-stars .star {
-      background:linear-gradient(180deg,#e88b00,#f3b40b);
-      clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); width:5px; height:5px; flex-shrink:0; }
+      background:linear-gradient(180deg,#f59e0b,#fbbf24);
+      clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); width:6px; height:6px; flex-shrink:0; }
   .view-battle-box .right-wrap .sp-stars .star.default-star {
       background:url(${GamekeeBattleAssets.STAR_DEFAULT}) 50%/100% 100% no-repeat;
       clip-path:none; width:7px; height:7px; }
   .view-battle-box .right-wrap .sp-stars .star.burst-star {
       background:url(${GamekeeBattleAssets.STAR_BURST}) 50%/100% 100% no-repeat;
       clip-path:none; width:7px; height:7px; }
-  .view-battle-box .right-wrap .sp-info {
-      color:#333; font-size:13px; font-weight:600; margin-top:6px; text-align:right; }
-  .view-battle-box .right-wrap .sp-info .sp-num { color:#ca0101; font-size:15px; margin:0 3px; }
   .view-battle-box .right-wrap .boss-action-info {
-      background:rgba(105,127,139,.14); border-radius:4px; display:flex; align-items:center;
-      height:38px; margin-top:6px; overflow:hidden; }
-  .view-battle-box .right-wrap .boss-action-info .boss-icon { width:64px !important; height:38px !important; object-fit:cover; border-radius:0 !important; }
-  .view-battle-box .right-wrap .boss-action-info .action-content { padding:4px 8px; font-size:12px; font-weight:600; }
+      background:#f1f5f9; border-radius:8px; display:flex; align-items:center;
+      height:38px; margin-top:8px; overflow:hidden; }
+  .view-battle-box .right-wrap .boss-action-info .boss-icon { width:60px !important; height:38px !important; object-fit:cover; }
+  .view-battle-box .right-wrap .boss-action-info .action-content { padding:4px 10px; font-size:12px; font-weight:700; }
 
-  /* 原版模式 2：服装出手顺序矩阵 */
-  .gk-matrix-scroll { overflow-x:auto; }
-  .gk-matrix-header { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
-  .gk-matrix-corner { width:76px; flex-shrink:0; font-size:11px; color:#888; text-align:center; }
-  .gk-matrix-round-col { width:56px; flex-shrink:0; font-size:11px; font-weight:600; color:#555; text-align:center; }
-  .view-battle-box .right-wrap .grid.type2 { display:flex; flex-direction:column; gap:6px; }
-  .view-battle-box .right-wrap .matrix-row { display:flex; column-gap:6px; }
-  .view-battle-box .right-wrap .grid-item.small { width:56px; height:50px; flex-shrink:0; }
-  .view-battle-box .right-wrap .matrix-row .skill {
-      width:14px; height:14px; position:absolute; right:2px; top:2px; z-index:2;
-      background:linear-gradient(180deg,#525161,#9997af); border-radius:50%; overflow:hidden; }
-  .view-battle-box .right-wrap .matrix-row .skill img { width:100% !important; height:100% !important; border-radius:50% !important; }
-  .view-battle-box .right-wrap .matrix-row .strenth-icon { width:18px; height:14px; }
-  .view-battle-box .right-wrap .matrix-row .corner-icon { left:2px; top:14px; right:auto; width:11px; height:11px; }
-  .view-battle-box .right-wrap .matrix-row .burst-icon { right:0; top:16px; width:18px; height:18px; }
-  .view-battle-box .right-wrap .matrix-row .sp-stars { height:20px; padding-bottom:2px; }
-  .view-battle-box .right-wrap .grid-item.small .normal-card {
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      background:rgba(0,0,0,.78); gap:2px; width:100%; height:100%; }
-  .view-battle-box .right-wrap .grid-item.small .normal-card .text { color:#fff; font-size:11px; font-weight:600; line-height:13px; }
-  .view-battle-box .right-wrap .grid-item.small .normal-card .icon { width:18px !important; height:18px !important; object-fit:contain; }
-  .sp-line-info { color:#666; font-size:12px; margin-top:6px; text-align:center; }
+  /* 下方：按顺位 1->5 排列的清晰行动流卡片 */
+  .gk-round-actions-title { font-size:12px; font-weight:700; color:#475569; margin:12px 0 6px; }
+  .gk-action-list { list-style:none !important; padding:0 !important; margin:0 !important; display:flex; flex-direction:column; gap:6px; }
+  .gk-action-card { margin:0 !important; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:8px 10px; }
+  .gk-action-card .b-v2-action { display:flex; align-items:center; gap:8px; }
+  .gk-act-order { width:20px; height:20px; border-radius:6px; background:#1e293b; color:#fff;
+                  font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .gk-action-card .b-v2-avatar { width:42px !important; height:42px !important; border-radius:8px !important; object-fit:cover; flex-shrink:0; }
+  .gk-act-top { display:flex; align-items:baseline; flex-wrap:wrap; gap:2px; line-height:1.3; }
+  .gk-act-name { font-size:13px; color:#0f172a; text-decoration:none; }
+  .gk-act-badges { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:3px; }
+  .gk-act-tag { font-size:11px; font-weight:700; padding:1px 6px; border-radius:4px; }
+  .gk-act-tag.is-skill { background:#dbeafe; color:#1d4ed8; }
+  .gk-act-tag.is-burst { background:#fef3c7; color:#b45309; }
+  .gk-act-tag.is-repel { background:#dcfce7; color:#15803d; }
+  .gk-act-tag.is-normal { background:#e2e8f0; color:#475569; }
+  .gk-act-meta { font-size:11px; color:#64748b; }
+  .gk-act-right { flex-shrink:0; margin-left:auto; }
+  .gk-act-range { width:34px !important; height:34px !important; object-fit:contain;
+                  background:#1e293b; padding:3px; border-radius:6px !important; display:block; }
+  .gk-tippy-fold { margin-top:4px; font-size:11px; }
+  .gk-tippy-fold > summary { cursor:pointer; color:#2563eb; font-weight:600; }
+  .gk-tippy-desc { font-size:12px; line-height:1.5; color:#334155; background:#fff;
+                   border-radius:6px; padding:6px 8px; margin-top:4px; border:1px solid #e2e8f0; }
 
-  .gk-round-actions-title { font-size:12px; font-weight:600; color:#666; margin:8px 0 4px; }
-  .gk-tippy-fold { margin-top:3px; font-size:12px; }
-  .gk-tippy-fold > summary { cursor:pointer; color:#0ca8fc; font-weight:500; }
-  .gk-tippy-body { display:flex; gap:8px; align-items:flex-start; background:rgba(105,127,139,.08);
-                   border-radius:6px; padding:6px 8px; margin-top:4px; }
-  .gk-tippy-range { width:44px !important; height:44px !important; object-fit:contain; flex-shrink:0; background:#2b313a; padding:3px; border-radius:4px !important; }
-  .gk-tippy-desc { font-size:12px; line-height:1.45; color:#444; }
+  /* 模式 2：首列 Sticky 冻结的全回合技能矩阵 */
+  .gk-matrix-table-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:10px; background:#fff; }
+  .gk-matrix-table { display:table; width:max-content; min-width:100%; border-collapse:collapse; }
+  .gk-matrix-tr { display:flex; border-bottom:1px solid #f1f5f9; }
+  .gk-matrix-tr:last-child { border-bottom:0; }
+  .gk-matrix-thead { background:#f8fafc; font-weight:700; }
+  .gk-matrix-sticky-col { position:sticky; left:0; z-index:3; width:82px; flex-shrink:0;
+                          background:#f8fafc; border-right:1px solid #e2e8f0; padding:6px;
+                          display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; }
+  .gk-matrix-role-av { width:36px !important; height:36px !important; border-radius:6px !important; object-fit:cover; }
+  .gk-matrix-role-name { font-size:11px; font-weight:700; color:#1e293b; max-width:74px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gk-matrix-td { width:64px; flex-shrink:0; padding:4px; display:flex; flex-direction:column;
+                  align-items:center; justify-content:center; border-right:1px solid #f1f5f9; box-sizing:border-box; }
+  .gk-matrix-th { font-size:11px; color:#475569; padding:6px 4px; text-align:center; line-height:1.25; }
+  .gk-matrix-sp { font-size:10px; color:#dc2626; font-weight:600; }
+  .gk-matrix-skill-cell { width:54px; height:54px; border-radius:8px; position:relative; overflow:hidden; }
+  .gk-matrix-skill-cell .cover { width:100% !important; height:100% !important; object-fit:cover; }
+  .gk-matrix-skill-cell .skill { position:absolute; right:2px; top:2px; width:15px; height:15px;
+                                 border-radius:50%; background:rgba(0,0,0,.6); overflow:hidden; }
+  .gk-matrix-skill-cell .skill img { width:100% !important; height:100% !important; object-fit:contain; }
+  .gk-matrix-cost { position:absolute; left:2px; top:2px; background:rgba(15,23,42,.8); color:#fbbf24;
+                    font-size:9px; font-weight:700; padding:0 3px; border-radius:3px; line-height:1.3; }
+  .gk-matrix-sname { position:absolute; bottom:0; left:0; width:100%; background:rgba(15,23,42,.78);
+                     color:#fff; font-size:9px; text-align:center; line-height:1.3;
+                     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 2px; box-sizing:border-box; }
+  .gk-matrix-td .normal-card { width:54px; height:54px; border-radius:8px; background:#334155;
+                               display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+  .gk-matrix-td .normal-card .icon { width:16px !important; height:16px !important; object-fit:contain; }
+  .gk-matrix-td .normal-card .text { color:#e2e8f0; font-size:10px; font-weight:600; }
+
+  /* 模式 3：角色练度与装备资料卡 */
+  .gk-panel-tabs > .tp.gk-panel-tp { border:0; padding:8px 0 0; margin:0; }
+  .gk-pcard-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;
+                     gap:6px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:8px 10px; margin-bottom:8px; }
+  .gk-pcard-name { font-size:15px; color:#0f172a; margin-right:6px; }
+  .gk-pcard-sub { font-size:11px; color:#64748b; }
+  .gk-pcard-link { font-size:11px; font-weight:700; color:#2563eb; text-decoration:none; }
+  .gk-stats-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin-bottom:10px; }
+  .gk-stat-box { display:flex; justify-content:space-between; align-items:center; background:#f8fafc;
+                 border:1px solid #e2e8f0; border-radius:8px; padding:6px 10px; font-size:12px; }
+  .gk-stat-box.is-hl { background:#fffbeb; border-color:#fde68a; }
+  .gk-stat-label { color:#64748b; }
+  .gk-stat-val { font-weight:800; color:#0f172a; }
+  .gk-stat-box.is-hl .gk-stat-val { color:#b45309; }
+  .gk-sub-title { font-size:12px; font-weight:700; color:#475569; margin:10px 0 6px; }
+  .gk-costume-strip { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .gk-costume-chip { display:flex; align-items:center; gap:6px; background:#f8fafc; border:1px solid #e2e8f0;
+                     border-radius:8px; padding:4px 8px 4px 4px; text-decoration:none; color:inherit; }
+  .gk-costume-chip img { width:34px !important; height:34px !important; border-radius:6px !important; object-fit:cover; }
+  .gk-costume-meta { display:flex; flex-direction:column; line-height:1.25; }
+  .gk-equip-list { display:flex; flex-direction:column; gap:6px; }
+  .gk-equip-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:7px 10px; }
+  .gk-equip-name { font-size:12px; color:#0f172a; margin-bottom:4px; }
+  .gk-equip-lv { color:#d97706; font-weight:800; }
+  .gk-equip-opts { display:flex; flex-wrap:wrap; gap:4px; }
+  .gk-opt-chip { font-size:11px; padding:1px 6px; border-radius:4px; line-height:1.4; }
+  .gk-opt-chip.is-priv { background:#fef3c7; color:#92400e; font-weight:600; }
+  .gk-opt-chip.is-main { background:#e0f2fe; color:#075985; font-weight:600; }
+  .gk-opt-chip.is-sub { background:#f1f5f9; color:#475569; }
 
   .battle { border:1px solid #d9c89a; background:#fdf9ef; border-radius:10px;
             padding:10px 12px; margin:.8em 0; }
-  .battle.user-lineup-card { background:rgba(105,127,139,.08); border-color:rgba(105,127,139,.2); }
+  .battle.user-lineup-card { background:#f7f8fa; border-color:#e2e6ed; }
   .b-head { display:flex; justify-content:space-between; align-items:baseline;
             gap:8px; margin-bottom:6px; }
   .b-title { font-weight:700; color:#5c4a1e; }
-  .user-lineup-card .b-title { color:#222; }
+  .user-lineup-card .b-title { color:#111827; }
   .b-meta { font-size:.8em; color:#9a8a5e; white-space:nowrap; }
   .b-team-t { font-size:.85em; color:#9a8a5e; margin:4px 0 2px; }
   .b-team { display:flex; flex-wrap:wrap; gap:8px; margin:.3em 0; }
   .b-m { display:flex; flex-direction:column; align-items:center; width:72px; text-decoration:none; color:inherit; }
   .b-m-link { cursor:pointer; border-radius:8px; padding:2px; }
-  .b-v3-cname { font-size:11px; font-weight:600; color:#333; margin-top:3px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .b-v3-sname { font-size:10px; color:#666; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .b-v3-detail { border-top:1px dashed #d9c89a; margin-top:8px; padding-top:4px; }
-  .b-v3-summary { cursor:pointer; font-weight:600; font-size:.9em; color:#3b5998; padding:6px 0; }
-  .b-v3-tag { display:inline-block; font-size:.75em; background:#e67e22; color:#fff; border-radius:4px; padding:0 5px; }
-  .b-v3-phead { font-size:.92em; margin:4px 0 6px; }
-  .b-v3-ptable { width:100%; margin:4px 0 8px; }
+  .b-v3-cname { font-size:11px; font-weight:700; color:#1e293b; margin-top:4px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .b-v3-sname { font-size:10px; color:#64748b; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .b-v3-tag { display:inline-block; font-size:10px; font-weight:700; background:#f59e0b; color:#fff; border-radius:4px; padding:1px 5px; }
   /* 组件图的尺寸要用 !important 压过全局的 height:auto，否则头像会被拉成椭圆 */
   .b-av { width:56px !important; height:56px !important; border-radius:8px;
           border:1px solid #e0d6b8; object-fit:cover; background:#fff; }

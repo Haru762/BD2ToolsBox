@@ -32,18 +32,33 @@ object GuideHtmlRenderer {
         .array-card { background:#2B2930 !important; border-color:#8E7B4F !important;
                       color:#E8C88A !important; }
         .battle { background:#1D1B20 !important; border-color:#6B5F3E !important; }
-        .battle.user-lineup-card { background:#1F1E25 !important; border-color:#3D3B46 !important; }
-        .user-lineup-card .title .text, .user-lineup-card .b-title { color:#E6E1E5 !important; }
-        .user-lineup-card .title .right-btn { background:#1D3347 !important; border-color:#3898EC !important; color:#7CC4FA !important; }
-        .user-lineup-card .desc { background:#292731 !important; color:#CAC4D0 !important; }
-        .boss-row .card-item { background:#2B2933 !important; }
-        .boss-row .card-item .boss-name, .bottom-line .left-bottom .name { color:#E6E1E5 !important; }
-        .bottom-line .right-like { color:#AEAAb4 !important; }
-        .gk-detail-wrap { background:#18171D !important; border-color:#3A3842 !important; }
-        .view-battle-box .right-wrap .sp-info { color:#E6E1E5 !important; }
-        .view-battle-box .right-wrap .sp-info .sp-num { color:#FF897D !important; }
-        .gk-matrix-round-col, .gk-round-actions-title, .gk-tippy-desc, .sp-line-info { color:#CAC4D0 !important; }
-        .gk-slot-num { color:rgba(255,255,255,.32) !important; }
+        .battle.user-lineup-card { background:#1E1D24 !important; border-color:#383642 !important; }
+        .gk-card-title-row .b-title, .user-lineup-card .b-title { color:#F1F5F9 !important; }
+        .gk-boss-chip { background:#2A2833 !important; border-color:#444152 !important; color:#E2E8F0 !important; }
+        .gk-dmg-chip { background:#3B2316 !important; border-color:#7C2D12 !important; color:#FDBA74 !important; }
+        .gk-arrange-badge { background:#2A2833 !important; color:#94A3B8 !important; }
+        .gk-arrange-badge.is-arranged { background:#172E46 !important; color:#7DD3FC !important; }
+        .user-lineup-card .desc { background:#26242E !important; color:#E2E8F0 !important; border-left-color:#60A5FA !important; }
+        .bottom-line .left-bottom .name { color:#E2E8F0 !important; }
+        .bottom-line .right-like { color:#94A3B8 !important; }
+        .b-v3-summary { background:#1D2D44 !important; border-color:#2E4A70 !important; color:#93C5FD !important; }
+        .gk-detail-wrap { background:#16151B !important; border-color:#33313D !important; }
+        .gk-collapse-bottom { background:#26242E !important; color:#CBD5E1 !important; }
+        .gk-round-tabs > .tl.gk-round-tab { background:#23212B !important; border-color:#383642 !important; color:#CBD5E1 !important; }
+        .gk-round-tabs > .tr:checked + .tl.gk-round-tab { background:#1D2D44 !important; border-color:#60A5FA !important; color:#93C5FD !important; }
+        .gk-board-head .sp-info { color:#E2E8F0 !important; }
+        .gk-board-head .sp-num { color:#F87171 !important; }
+        .view-battle-box .right-wrap .grid-item { background:#23212B !important; border-color:#3D3A4A !important; }
+        .view-battle-box .right-wrap .boss-action-info { background:#23212B !important; color:#E2E8F0 !important; }
+        .gk-action-card, .gk-pcard-header, .gk-stat-box, .gk-costume-chip, .gk-equip-card, .gk-tippy-desc {
+            background:#23212B !important; border-color:#383642 !important; color:#E2E8F0 !important; }
+        .gk-stat-box.is-hl { background:#2E2618 !important; border-color:#78531A !important; }
+        .gk-stat-box.is-hl .gk-stat-val { color:#FBBF24 !important; }
+        .gk-act-name, .gk-pcard-name, .gk-stat-val, .gk-equip-name, .gk-matrix-role-name { color:#F1F5F9 !important; }
+        .gk-matrix-table-wrap { background:#1A1920 !important; border-color:#383642 !important; }
+        .gk-matrix-thead, .gk-matrix-sticky-col { background:#23212B !important; border-color:#383642 !important; }
+        .gk-matrix-tr, .gk-matrix-td { border-color:#2D2B36 !important; }
+        .gk-matrix-th, .gk-round-actions-title, .gk-sub-title { color:#CBD5E1 !important; }
         .b-desc { background:#2B2930 !important; color:#CAC4D0 !important; }
         .b-v2-cell { background:#2B2930 !important; border-color:#49454F !important; color:#E6E1E5 !important; }
         .b-v2-empty { background:transparent !important; color:#938F99 !important; }

@@ -253,4 +253,25 @@ class UpdateViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
         assertEquals("update.apk", vm.updateApkReady.value)
     }
+
+    @Test
+    fun betaAndGaVersionComparisonAndListParsing() {
+        assertTrue("beta.2 应比 beta.1 新", UpdateRepository.compare("0.3.5-beta.2", "0.3.5-beta.1") > 0)
+        assertTrue("同主版本的正式版 GA 应比 beta 新", UpdateRepository.compare("0.3.5", "0.3.5-beta.9") > 0)
+        assertTrue("高主版本的 beta 应比低主版本的正式版新", UpdateRepository.compare("0.3.5-beta.1", "0.3.4") > 0)
+
+        val realRepo = UpdateRepository(context)
+        val parsed = realRepo.parseReleaseList(
+            """
+            [
+              {"tag_name":"v0.3.5-beta.2","prerelease":true,"draft":false,"body":"beta2","html_url":"https://example.invalid/b2","assets":[]},
+              {"tag_name":"v0.3.5-beta.3","prerelease":true,"draft":true,"body":"draft","html_url":"https://example.invalid/d","assets":[]},
+              {"tag_name":"v0.3.4","prerelease":false,"draft":false,"body":"ga","html_url":"https://example.invalid/ga","assets":[]}
+            ]
+            """.trimIndent()
+        )
+        assertNotNull(parsed)
+        assertEquals("应跳过 draft 并选中最新的 0.3.5-beta.2", "0.3.5-beta.2", parsed!!.version)
+        assertTrue(parsed.isPrerelease)
+    }
 }

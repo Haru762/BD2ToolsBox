@@ -10,16 +10,23 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * GameKee v3 阵容模拟器组件（`/v1/bd2Battle/detail`）的原版 1:1 渲染器。
+ * GameKee v3 阵容模拟器组件（`/v1/bd2Battle/detail`）的移动端优先（Mobile-First）渲染器。
  *
- * 严格对齐 GameKee 官方前端模块：
- * - `BattleEditorUserLineupCard` (Module `14705`, scope `48279985`)：外层阵容概览卡片
- * - `LineupDetail` (Module `49968`, scope `59c527eb`)：二级详情面板
- * - `TestViewTeamList` (Module `6511`, scope `7d2d3089`)：多队伍切换与首发成员栏
- * - `TestViewTypeSwitch` (Module `7617`, scope `5d8dc463`)：「站位与攻击顺序」/「服装出手顺序」视图切换
- * - `TestViewRound` (Module `10750`, scope `667ccff2`)：奇数回合轴与「先发制人 / 调站位 / 调顺序 / 召唤物」提示
- * - `TestViewBattleBox` (Module `40012`, scope `52de4d64`)：左行动列 + 右 3×4/5×5 站位棋盘（含攻击范围图、突破、潜能、爆裂、SP 星标）与全回合服装出手矩阵
- * - `RoleSkinDetail` / `BattleRoleTippy`：角色练度装备面板与服装技能详情
+ * 数据层：严格通过 [GamekeeBattleRoleCatalog]（官方 `bd2roles/data.json`）按 `name_code` 精确还原
+ * 角色、服装、九宫格攻击范围图、技能图标、击退图标、SP/CD 与技能说明。
+ *
+ * 视觉与交互层（针对手机竖屏 360dp~412dp 深度重构）：
+ * 1. **外层阵容卡（`.user-lineup-card`）**：
+ *    - 顶栏显示阵容类型徽章、Boss 标签、最高伤害与排轴状态；
+ *    - 5 列（公会战 7 列）完整 1:1 圆角头像卡（带五属性渐变底色、左上突破徽章、右上属性/物魔图标、底部角色名与服装名）；
+ *    - 底部全宽展开条一键展开/收起二级详情面板（面板底部同步提供一键收起按钮）。
+ * 2. **二级详情面板（上下流式布局，告别 PC 左右硬挤）**：
+ *    - 顶部分段控制器：`[站位与攻击顺序 | 服装出手顺序 | 角色属性与装备]`；
+ *    - **站位与攻击顺序**：横向回合轴（`第 1 回合` / `第 3 回合`… + `余 X SP` + `先发制人/调站位/调顺序`）→
+ *      上方居中大尺寸 3×4（或 5×5）战术棋盘（格内直接展示出手顺位 `①~⑤`、突破等级、潜能角标、右下九宫格攻击范围缩略图与底部 SP 菱形星标）→
+ *      下方按出手顺序 `1 → 5` 排列的横向行动流卡片（含头像、角色·服装名、动作/爆发徽章、右侧九宫格攻击范围图与可展开技能说明）；
+ *    - **服装出手顺序**：首列冻结（Sticky）角色头像与名称 + 右侧可横滑的全回合技能矩阵；
+ *    - **角色属性与装备**：现代资料卡片化展示 8 项核心面板、持有服装与 5 件装备词条。
  */
 internal object GamekeeBattleV3Renderer {
 
@@ -131,10 +138,8 @@ internal object GamekeeBattleV3Renderer {
         val userName = userObj?.str("username").orEmpty()
         val userAvatar = absolutize(userObj?.str("avatar"))
 
-        // 解析角色练度面板字典 panel[contentId]
         val panels = parsePanels(data.obj("panel"))
 
-        // 从 team 采集每个 name_code 的兜底头像、属性、伤害类型
         val teamFallbackAvatar = HashMap<String, String>()
         val charFallbackAttr = HashMap<String, String>()
         val charFallbackDamage = HashMap<String, String>()
@@ -153,7 +158,6 @@ internal object GamekeeBattleV3Renderer {
             }
         }
 
-        // 原版 restoreBattleTeamInfosFromContent：通过 bd2roles 字典 + panel 还原完整队伍与回合数据
         val restoredTeams = restoreTeams(
             rawContent = data["content"],
             panels = panels,
@@ -165,27 +169,42 @@ internal object GamekeeBattleV3Renderer {
         val sb = StringBuilder()
         sb.append("<div class=\"gk-lineup-card user-lineup-card view battle battle-v3\">")
 
-        // ---- 1. 原版顶栏 (.card-header) ----
+        // ---- 1. 顶部元信息与标题区 ----
         val (typeTagText, typeTagClass) = when (lineupType) {
             1 -> "通用阵容" to "is-main"
             2 -> "魔兽阵容" to "is-warcraft"
             3 -> "公会战阵容" to "is-guild"
-            else -> "#阵容" to ""
+            else -> "推荐阵容" to ""
         }
         sb.append("<div class=\"card-header\"><div class=\"line\"><div class=\"left\">")
-        sb.append("<div class=\"type-tag ").append(typeTagClass).append("\">")
-            .append(esc(typeTagText))
-            .append(" <span class=\"lineup-id-tag\">#").append(battleId).append("</span></div>")
+        sb.append("<span class=\"type-tag ").append(typeTagClass).append("\">")
+            .append(esc(typeTagText)).append("</span>")
+        if ((lineupType == 2 || lineupType == 3) && bossName.isNotBlank()) {
+            sb.append("<span class=\"gk-boss-chip\">")
+            if (bossIcon != null) {
+                sb.append("<img src=\"").append(esc(bossIcon)).append("\" alt=\"\" loading=\"lazy\">")
+            }
+            sb.append(esc(bossName))
+            if (bossAttr.isNotBlank()) sb.append("·").append(esc(bossAttr))
+            sb.append("</span>")
+        }
+        if (maxDamageText.isNotBlank() && maxDamageText != "0") {
+            sb.append("<span class=\"gk-dmg-chip\">🔥 ").append(esc(maxDamageText)).append("</span>")
+        }
         sb.append("</div><span class=\"update-time\">")
         if (updatedAt > 0L) {
-            sb.append(esc(formatDate(updatedAt))).append("更新")
-        } else {
-            if (likes > 0) sb.append("👍").append(likes).append(' ')
-            if (views > 0) sb.append("👁").append(views)
+            sb.append(esc(formatDate(updatedAt)))
+        } else if (likes > 0) {
+            sb.append("👍 ").append(likes)
         }
-        sb.append("</span></div></div>")
+        sb.append("</span></div>")
+        sb.append("<div class=\"gk-card-title-row\"><span class=\"b-title\">")
+            .append(esc(title)).append("</span>")
+        sb.append("<span class=\"gk-arrange-badge").append(if (isRow) " is-arranged" else "")
+            .append("\">").append(if (isRow) "已排轴" else "阵容推荐").append("</span>")
+        sb.append("</div></div>")
 
-        // ---- 2. 原版队伍头像网格 (.group-row > .avatar-list) ----
+        // ---- 2. 队伍成员网格（完整 1:1 高清圆角头像 + 底部双行名称） ----
         val isBtype3 = lineupType == 3
         teams.forEachIndexed { ti, teamEl ->
             val members = teamEl.arrOrNull()?.mapNotNull { it.objOrNull() }
@@ -216,7 +235,7 @@ internal object GamekeeBattleV3Renderer {
                 val dmg = m.str("damage").ifBlank { resolved.damage }
                 val lv = m.int("level") ?: resolved.level
                 val bgClass = GamekeeBattleAssets.attrBgClass(attr)
-                val lvBadge = GamekeeBattleAssets.skillLvBadge(lv)
+                val strenthBadge = GamekeeBattleAssets.strenthBadge(lv)
                 val attrBadge = GamekeeBattleAssets.attrIcon(attr)
                 val dmgBadge = GamekeeBattleAssets.damageIcon(dmg)
                 val href = if (cid.all { it.isDigit() } && cid.isNotBlank()) {
@@ -228,18 +247,17 @@ internal object GamekeeBattleV3Renderer {
                 } else {
                     sb.append("<div class=\"gk-role-cell\">")
                 }
-                sb.append("<div class=\"avatar-item\">")
+                sb.append("<div class=\"avatar-item ").append(bgClass).append("\">")
                 if (avatar != null) {
-                    sb.append("<img class=\"avatar ").append(bgClass).append("\" src=\"")
-                        .append(esc(avatar)).append("\" alt=\"").append(esc(resolved.charName))
-                        .append("\" loading=\"lazy\">")
+                    sb.append("<img class=\"avatar\" src=\"").append(esc(avatar))
+                        .append("\" alt=\"").append(esc(resolved.charName)).append("\" loading=\"lazy\">")
                 } else {
-                    sb.append("<div class=\"avatar ").append(bgClass).append(" b-av-e\">?</div>")
+                    sb.append("<div class=\"avatar b-av-e\">?</div>")
+                }
+                if (strenthBadge.isNotEmpty()) {
+                    sb.append("<img class=\"gk-cell-strenth\" src=\"").append(strenthBadge).append("\" alt=\"+$lv\">")
                 }
                 sb.append("<div class=\"tag-box\">")
-                if (lvBadge.isNotEmpty()) {
-                    sb.append("<img class=\"skill-icon\" src=\"").append(lvBadge).append("\" alt=\"+$lv\">")
-                }
                 if (attrBadge.isNotEmpty()) {
                     sb.append("<div class=\"role-attr-icon-box\"><img src=\"").append(attrBadge)
                         .append("\" alt=\"").append(esc(attr)).append("\"></div>")
@@ -260,49 +278,12 @@ internal object GamekeeBattleV3Renderer {
             sb.append("</div></div>")
         }
 
-        // ---- 3. 原版标题栏 (.title) ----
-        sb.append("<div class=\"title\"><span class=\"text b-title\">").append(esc(title)).append("</span>")
-        if (restoredTeams.isNotEmpty() || panels.isNotEmpty()) {
-            sb.append("<span class=\"right-btn\" onclick=\"var d=this.closest('.gk-lineup-card').querySelector('.b-v3-detail');if(d)d.open=!d.open;\">")
-                .append("<span>攻击顺序</span> ›</span>")
-        }
-        sb.append("</div>")
-
-        // ---- 4. 原版描述文本 (.desc) ----
+        // ---- 3. 打法与轴说明 (.desc) ----
         if (desc.isNotBlank()) {
             sb.append("<div class=\"desc b-desc\">").append(esc(desc).replace("\n", "<br>")).append("</div>")
         }
 
-        // ---- 5. 原版 Boss 与排轴信息栏 (.boss-row) ----
-        sb.append("<div class=\"boss-row\">")
-        if ((lineupType == 2 || lineupType == 3) && bossName.isNotBlank()) {
-            sb.append("<div class=\"card-item\">")
-            if (bossIcon != null) {
-                sb.append("<div class=\"boss-name-icon\"><img src=\"").append(esc(bossIcon))
-                    .append("\" alt=\"\" loading=\"lazy\"></div>")
-            }
-            sb.append("<div class=\"boss-name\">").append(esc(bossName))
-            if (bossAttr.isNotBlank()) sb.append("（").append(esc(bossAttr)).append("）")
-            sb.append("</div></div>")
-        } else if (lineupType == 1) {
-            sb.append("<div class=\"card-item\"><div class=\"boss-name-icon icon\"><img src=\"")
-                .append(GamekeeBattleAssets.BOSS_GENERAL)
-                .append("\" alt=\"\"></div><div class=\"boss-name\">通用模式</div></div>")
-        }
-        if (maxDamageText.isNotBlank() && maxDamageText != "0") {
-            sb.append("<div class=\"card-item\"><div class=\"boss-name-icon icon\"><img src=\"")
-                .append(GamekeeBattleAssets.BOSS_MAX_DMG)
-                .append("\" alt=\"\"></div><div class=\"boss-name\">最高伤害 ").append(esc(maxDamageText))
-                .append("</div></div>")
-        }
-        sb.append("<div class=\"card-item\"><div class=\"boss-name-icon icon\"><img src=\"")
-            .append(if (isRow) GamekeeBattleAssets.BOSS_ARRANGED else GamekeeBattleAssets.BOSS_UNARRANGED)
-            .append("\" alt=\"\"></div><div class=\"boss-name\">")
-            .append(if (isRow) "已排轴" else "未排轴")
-            .append("</div></div>")
-        sb.append("</div>")
-
-        // ---- 6. 原版底栏 (.bottom-line) ----
+        // ---- 4. 作者与互动底栏 ----
         if (userName.isNotBlank() || likes > 0 || views > 0) {
             sb.append("<div class=\"bottom-line\"><div class=\"left-bottom\">")
             if (userAvatar != null) {
@@ -317,15 +298,15 @@ internal object GamekeeBattleV3Renderer {
             sb.append("</div></div>")
         }
 
-        // ---- 7. 原版二级详情面板 (LineupDetail：ViewTeamList + ViewTypeSwitch + ViewRound + ViewBattleBox + RoleSkinDetail) ----
+        // ---- 5. 二级详情面板（移动端上下流式交互） ----
         if (restoredTeams.isNotEmpty() || panels.isNotEmpty()) {
             val totalRounds = restoredTeams.sumOf { it.rounds.size }
             sb.append("<details class=\"b-v3-detail\"><summary class=\"b-v3-summary\">")
-            sb.append("⚔️ 展开阵容详情与回合轴（")
-            if (restoredTeams.size > 1) sb.append(restoredTeams.size).append(" 支队伍 · ")
-            if (totalRounds > 0) sb.append("共 ").append(totalRounds).append(" 个我方回合")
-            if (panels.isNotEmpty()) sb.append(" · 含 ").append(panels.size).append(" 名角色练度与装备")
-            sb.append("）</summary>")
+            sb.append("<span>⚔️ 展开阵容详情与回合轴（")
+            if (restoredTeams.size > 1) sb.append(restoredTeams.size).append(" 队 · ")
+            if (totalRounds > 0) sb.append(totalRounds).append(" 回合")
+            if (panels.isNotEmpty()) sb.append(" · ").append(panels.size).append(" 人练度面板")
+            sb.append("）</span><span class=\"gk-summary-arrow\">▾</span></summary>")
 
             sb.append("<div class=\"gk-detail-wrap\">")
             if (restoredTeams.isNotEmpty()) {
@@ -333,6 +314,8 @@ internal object GamekeeBattleV3Renderer {
             } else if (panels.isNotEmpty()) {
                 appendCharacterPanels(sb, battleId, panels, teams)
             }
+            sb.append("<div class=\"gk-collapse-bottom\" onclick=\"var d=this.closest('.b-v3-detail');if(d){d.open=false;d.scrollIntoView({behavior:'smooth',block:'nearest'});}\">")
+                .append("▴ 收起阵容详情</div>")
             sb.append("</div></details>")
         }
 
@@ -397,49 +380,6 @@ internal object GamekeeBattleV3Renderer {
         panels: Map<String, CharacterPanel>,
         rawTeams: JsonArray
     ) {
-        // 1. 顶部首发成员行 (TestViewTeamList .member-row)
-        val firstRoundRoleMembers = team.rounds.firstOrNull()?.members
-            ?.filter { it.type != "pet" }
-            ?.take(if (lineupType == 3) 7 else 5)
-            .orEmpty()
-        if (firstRoundRoleMembers.isNotEmpty()) {
-            sb.append("<div class=\"gk-member-row\">")
-            for (m in firstRoundRoleMembers) {
-                val bgClass = GamekeeBattleAssets.attrBgClass(m.attr)
-                val lvBadge = GamekeeBattleAssets.skillLvBadge(m.currentLevel)
-                val attrBadge = GamekeeBattleAssets.attrIcon(m.attr)
-                val dmgBadge = GamekeeBattleAssets.damageIcon(m.damage)
-                val href = if (m.contentId.all { it.isDigit() } && m.contentId.isNotBlank()) {
-                    "https://www.gamekee.com/zsca2/tj/${m.contentId}.html?style=${m.styleIdx}"
-                } else null
-                if (href != null) {
-                    sb.append("<a class=\"gk-member-item\" href=\"").append(esc(href)).append("\">")
-                } else {
-                    sb.append("<div class=\"gk-member-item\">")
-                }
-                if (m.coverUrl != null) {
-                    sb.append("<img class=\"cover ").append(bgClass).append("\" src=\"")
-                        .append(esc(m.coverUrl)).append("\" alt=\"\" loading=\"lazy\">")
-                } else {
-                    sb.append("<div class=\"cover ").append(bgClass).append(" b-av-e\">?</div>")
-                }
-                sb.append("<div class=\"tag-box\">")
-                if (lvBadge.isNotEmpty()) {
-                    sb.append("<img class=\"skill-icon\" src=\"").append(lvBadge).append("\" alt=\"\">")
-                }
-                if (attrBadge.isNotEmpty()) {
-                    sb.append("<div class=\"role-attr-icon-box\"><img src=\"").append(attrBadge).append("\" alt=\"\"></div>")
-                }
-                if (dmgBadge.isNotEmpty()) {
-                    sb.append("<div class=\"damage-type-icon-box\"><img class=\"filter\" src=\"").append(dmgBadge).append("\" alt=\"\"></div>")
-                }
-                sb.append("</div>")
-                if (href != null) sb.append("</a>") else sb.append("</div>")
-            }
-            sb.append("</div>")
-        }
-
-        // 2. 原版双视图切换栏 (TestViewTypeSwitch：站位与攻击顺序 | 服装出手顺序 | 角色属性与装备)
         val modeGroup = "b3mode_${battleId}_$teamIdx"
         val mode1Id = "${modeGroup}_1"
         val mode2Id = "${modeGroup}_2"
@@ -464,7 +404,7 @@ internal object GamekeeBattleV3Renderer {
             sb.append("<input class=\"tr\" type=\"radio\" name=\"").append(modeGroup)
                 .append("\" id=\"").append(mode3Id).append("\">")
             sb.append("<label class=\"tl gk-mode-tab\" for=\"").append(mode3Id)
-                .append("\">角色属性与装备（").append(panels.size).append("）</label>")
+                .append("\">角色练度（").append(panels.size).append("）</label>")
             sb.append("<div class=\"tp gk-mode-tp\">")
             appendCharacterPanels(sb, battleId * 10 + teamIdx, panels, rawTeams)
             sb.append("</div>")
@@ -472,9 +412,6 @@ internal object GamekeeBattleV3Renderer {
         sb.append("</div>")
     }
 
-    /**
-     * 原版模式 1：站位与攻击顺序（TestViewRound + TestViewBattleBox battleType=1）。
-     */
     private fun appendMode1RoundView(
         sb: StringBuilder,
         battleId: Long,
@@ -492,7 +429,6 @@ internal object GamekeeBattleV3Renderer {
         sb.append("<div class=\"tabs gk-round-tabs\">")
         rounds.forEachIndexed { rIdx, round ->
             val rid = "${roundGroup}_$rIdx"
-            // 同时计算小队内奇数回合 (1, 3, 5...) 与跨队累计回合，保证文案清晰且兼容单测
             val localTurn = rIdx * 2 + 1
             val globalTurn = (priorRounds + rIdx) * 2 + 1
             val spRem = round.spRemaining
@@ -502,19 +438,19 @@ internal object GamekeeBattleV3Renderer {
                 .append("\" id=\"").append(rid).append('"')
             if (rIdx == 0) sb.append(" checked")
             sb.append("><label class=\"tl gk-round-tab\" for=\"").append(rid).append("\">")
-            sb.append("<span class=\"gk-round-label\">第 ").append(localTurn).append(" 回合")
+            sb.append("<span class=\"gk-round-main\">第 ").append(localTurn).append(" 回合")
             if (globalTurn != localTurn) {
-                sb.append(" (总").append(globalTurn).append("T)")
-            }
-            if (spRem != null) {
-                sb.append("（余 ").append(spRem).append(" SP）")
+                sb.append(" · ").append(globalTurn).append("T")
             }
             sb.append("</span>")
-            if (badges.isNotEmpty()) {
-                sb.append("<span class=\"gk-round-sub\">")
-                badges.forEach { b -> sb.append("<span>").append(esc(b)).append("</span>") }
-                sb.append("</span>")
+            sb.append("<span class=\"gk-round-meta\">")
+            if (spRem != null) {
+                sb.append("<span>（余 ").append(spRem).append(" SP）</span>")
             }
+            badges.forEach { b ->
+                sb.append("<span class=\"gk-round-badge\">").append(esc(b)).append("</span>")
+            }
+            sb.append("</span>")
             sb.append("</label><div class=\"tp gk-round-tp\">")
             appendBattleBoxType1(sb, lineupType, round)
             sb.append("</div>")
@@ -522,9 +458,6 @@ internal object GamekeeBattleV3Renderer {
         sb.append("</div>")
     }
 
-    /**
-     * 原版 TestViewRound 的回合变化检测逻辑（hasFirstRoundSwitch / hasChangedPosition / hasChangedIndex / hasChangedPet）。
-     */
     private fun computeRoundChangeBadges(rounds: List<RestoredRound>, rIdx: Int): List<String> {
         val curr = rounds.getOrNull(rIdx)?.members.orEmpty()
         val badges = mutableListOf<String>()
@@ -551,8 +484,9 @@ internal object GamekeeBattleV3Renderer {
     }
 
     /**
-     * 原版 TestViewBattleBox (battleType = 1)：
-     * 左列行动条 (.left-list) + 右侧 3×4 / 5×5 站位棋盘 (.grid.type1) + 底部剩余 SP 与本回合技能详情。
+     * 手机竖屏黄金上下布局：
+     * 1. 上方：大尺寸居中 3×4（或 5×5）站位棋盘（格内直接标明本回合行动顺位 1~5、突破等级、攻击范围缩略图与 SP 星标）；
+     * 2. 下方：按本回合出手顺位 1 → 5 排列的清晰横向行动流卡片（含头像、服装名、动作/爆发、攻击范围图与可展开技能说明）。
      */
     private fun appendBattleBoxType1(
         sb: StringBuilder,
@@ -565,38 +499,22 @@ internal object GamekeeBattleV3Renderer {
             return
         }
         val sortedByAction = members.sortedBy { it.memberIndex }
+        val actionOrderByKey = HashMap<String, Int>()
+        sortedByAction.forEachIndexed { idx, m -> actionOrderByKey[m.uniqueKey] = idx + 1 }
+
         val isGuild = lineupType == 3
         val totalSlots = if (isGuild) 25 else 12
         val byPos = members.associateBy { it.memberPosition }
 
         sb.append("<div class=\"view-battle-box").append(if (isGuild) " is-btype-3" else "").append("\">")
-
-        // 1. 左列：按出手顺序排列的行动条 (.left-list)
-        sb.append("<div class=\"left-list\">")
-        sortedByAction.forEachIndexed { idx, m ->
-            val bgClass = if (m.actionType == "not") "empty-not" else GamekeeBattleAssets.attrBgClass(m.attr)
-            val skillCover = m.skillCastUrl ?: m.coverUrl
-            val burstIcon = GamekeeBattleAssets.burstBadge(m.chooseBurst)
-            sb.append("<div class=\"left-item\">")
-            sb.append("<div class=\"order\">").append(idx + 1).append("</div>")
-            if (skillCover != null) {
-                sb.append("<img class=\"cover ").append(bgClass).append("\" src=\"")
-                    .append(esc(skillCover)).append("\" alt=\"\" loading=\"lazy\">")
-            } else {
-                sb.append("<div class=\"cover ").append(bgClass).append("\"></div>")
-            }
-            if (!m.skillIconUrl.isNullOrBlank()) {
-                sb.append("<div class=\"skill\"><img src=\"").append(esc(m.skillIconUrl))
-                    .append("\" alt=\"\" loading=\"lazy\"></div>")
-            }
-            if (burstIcon.isNotEmpty()) {
-                sb.append("<div class=\"burst-icon\"><img src=\"").append(burstIcon).append("\" alt=\"\"></div>")
-            }
-            sb.append("</div>")
+        sb.append("<div class=\"gk-board-head\"><span>己方站位（面向右侧 · 右上角数字为本回合出手顺位）</span>")
+        if (round.spRemaining != null) {
+            sb.append("<span class=\"sp-info\">剩余 <span class=\"sp-num\">")
+                .append(round.spRemaining).append("</span> SP</span>")
         }
         sb.append("</div>")
 
-        // 2. 右侧：3×4 (12格) 或 5×5 (25格) 站位棋盘 (.right-wrap > .grid.type1)
+        // 1. 居中战术棋盘 (.grid.type1)
         sb.append("<div class=\"right-wrap\"><div class=\"grid type1\">")
         for (slot in 0 until totalSlots) {
             val m = byPos[slot]
@@ -604,34 +522,34 @@ internal object GamekeeBattleV3Renderer {
             if (m != null) {
                 val bgClass = if (m.actionType == "not") "empty-not" else GamekeeBattleAssets.attrBgClass(m.attr)
                 val strenthIcon = GamekeeBattleAssets.strenthBadge(m.currentLevel)
-                val cornerIcon = GamekeeBattleAssets.potentialCornerBadge(m.starInt, m.currentPotential)
                 val burstIcon = GamekeeBattleAssets.burstBadge(m.chooseBurst)
                 val burstCount = if (m.chooseBurst in 1..3) m.chooseBurst ?: 0 else 0
+                val orderNum = actionOrderByKey[m.uniqueKey] ?: (m.memberIndex + 1)
 
-                sb.append("<div class=\"grid-role-cell-wrap\">")
+                sb.append("<div class=\"grid-role-cell-wrap ").append(bgClass).append("\">")
                 if (m.coverUrl != null) {
-                    sb.append("<img class=\"cover ").append(bgClass).append("\" src=\"")
-                        .append(esc(m.coverUrl)).append("\" alt=\"").append(esc(m.charName))
-                        .append("\" loading=\"lazy\">")
-                } else {
-                    sb.append("<div class=\"cover ").append(bgClass).append("\"></div>")
+                    sb.append("<img class=\"cover\" src=\"").append(esc(m.coverUrl))
+                        .append("\" alt=\"").append(esc(m.charName)).append("\" loading=\"lazy\">")
                 }
+                // 左上角：突破等级 (+0 ~ +5)
+                if (m.type == "role" && strenthIcon.isNotEmpty()) {
+                    sb.append("<div class=\"strenth-icon\"><img src=\"").append(strenthIcon).append("\" alt=\"\"></div>")
+                }
+                // 右上角：醒目的本回合出手顺位徽章 (1 ~ 5)
+                sb.append("<div class=\"gk-board-order\">").append(orderNum).append("</div>")
+                // 右侧：爆裂图标
+                if (burstIcon.isNotEmpty()) {
+                    sb.append("<div class=\"burst-icon\"><img src=\"").append(burstIcon).append("\" alt=\"\"></div>")
+                }
+                // 右下角：九宫格攻击范围缩略图
                 if (!m.rangeIconUrl.isNullOrBlank()) {
                     sb.append("<div class=\"skill-position\"><img src=\"").append(esc(m.rangeIconUrl))
                         .append("\" alt=\"\" loading=\"lazy\"></div>")
                 }
-                if (m.type == "role") {
-                    if (strenthIcon.isNotEmpty()) {
-                        sb.append("<div class=\"strenth-icon\"><img src=\"").append(strenthIcon).append("\" alt=\"\"></div>")
-                    }
-                    if (cornerIcon.isNotEmpty()) {
-                        sb.append("<div class=\"corner-icon\"><img src=\"").append(cornerIcon).append("\" alt=\"\"></div>")
-                    }
-                    if (burstIcon.isNotEmpty()) {
-                        sb.append("<div class=\"burst-icon\"><img src=\"").append(burstIcon).append("\" alt=\"\"></div>")
-                    }
-                }
+                // 底部：角色名 + SP 消耗菱形星标
                 sb.append("<div class=\"sp-stars\">")
+                sb.append("<span class=\"gk-board-name\">").append(esc(m.charName)).append("</span>")
+                sb.append("<div class=\"gk-stars-row\">")
                 if (m.actionType != "skills") {
                     sb.append("<div class=\"star default-star\"></div>")
                 } else {
@@ -642,7 +560,7 @@ internal object GamekeeBattleV3Renderer {
                 repeat(burstCount) {
                     sb.append("<div class=\"star burst-star\"></div>")
                 }
-                sb.append("</div></div>")
+                sb.append("</div></div></div>")
             } else {
                 sb.append("<div class=\"empty\" aria-label=\"空位\"><span class=\"gk-slot-num\">")
                     .append(slot + 1).append("</span></div>")
@@ -651,7 +569,6 @@ internal object GamekeeBattleV3Renderer {
         }
         sb.append("</div>")
 
-        // 公会战兰斯洛特行动条或 Boss 行动条
         if (!round.bossAction.isNullOrBlank()) {
             val isStandby = round.bossAction == "待命"
             sb.append("<div class=\"boss-action-info\"><img class=\"boss-icon\" src=\"")
@@ -660,18 +577,12 @@ internal object GamekeeBattleV3Renderer {
                 .append(if (lineupType == 3) "兰斯洛特行动 - " else "BOSS行动 - ")
                 .append(esc(round.bossAction)).append("</div></div></div></div>")
         }
-
-        // 右下角本回合剩余 SP
-        if (round.spRemaining != null) {
-            sb.append("<div class=\"sp-info\">本回合剩余 <span class=\"sp-num\">")
-                .append(round.spRemaining).append("</span> SP</div>")
-        }
         sb.append("</div></div>")
 
-        // 3. 本回合出手动作与服装技能明细（含攻击范围预览、SP/CD 与技能效果说明，对应原版 BattleRoleTippy）
-        sb.append("<div class=\"gk-round-actions-title\">本回合出手顺序与技能详情</div>")
+        // 2. 下方：按出手顺位 1 -> 5 排列的清晰行动流卡片列表
+        sb.append("<div class=\"gk-round-actions-title\">本回合行动顺序（1 → ").append(sortedByAction.size).append("）</div>")
         sb.append("<ol class=\"b-v2-actions gk-action-list\">")
-        for (m in sortedByAction) {
+        sortedByAction.forEachIndexed { idx, m ->
             val actionLabel = when (m.actionType) {
                 "skills" -> if (m.chooseBurst != null && m.chooseBurst > 0) "释放技能（爆发 ${m.chooseBurst}）" else "释放技能"
                 "damage" -> "普通攻击"
@@ -679,59 +590,80 @@ internal object GamekeeBattleV3Renderer {
                 "dead" -> "待命 / 无法战斗"
                 else -> m.actionType.ifBlank { "行动" }
             }
+            val actionBadgeClass = when (m.actionType) {
+                "skills" -> if (m.chooseBurst != null && m.chooseBurst > 0) "is-burst" else "is-skill"
+                "repel" -> "is-repel"
+                else -> "is-normal"
+            }
             val href = if (m.contentId.all { it.isDigit() } && m.contentId.isNotBlank()) {
                 "https://www.gamekee.com/zsca2/tj/${m.contentId}.html?style=${m.styleIdx}"
             } else null
+            val bgClass = GamekeeBattleAssets.attrBgClass(m.attr)
 
-            sb.append("<li><div class=\"b-v2-action\">")
+            sb.append("<li class=\"gk-action-card\"><div class=\"b-v2-action\">")
+            sb.append("<div class=\"gk-act-order\">").append(idx + 1).append("</div>")
             if (m.coverUrl != null) {
-                val bgClass = GamekeeBattleAssets.attrBgClass(m.attr)
                 sb.append("<img class=\"b-v2-avatar ").append(bgClass).append("\" src=\"")
                     .append(esc(m.coverUrl)).append("\" alt=\"\" loading=\"lazy\">")
             } else {
                 sb.append("<span class=\"b-v2-avatar b-v2-no-avatar\">?</span>")
             }
             sb.append("<div class=\"b-v2-action-info\">")
+            sb.append("<div class=\"gk-act-top\">")
             if (href != null) {
-                sb.append("<a href=\"").append(esc(href)).append("\"><strong>")
+                sb.append("<a class=\"gk-act-name\" href=\"").append(esc(href)).append("\"><strong>")
                     .append(esc(m.charName.ifBlank { "角色 #${m.contentId}" })).append("</strong></a>")
             } else {
-                sb.append("<strong>").append(esc(m.charName.ifBlank { "角色 #${m.contentId}" })).append("</strong>")
+                sb.append("<strong class=\"gk-act-name\">").append(esc(m.charName.ifBlank { "角色 #${m.contentId}" })).append("</strong>")
             }
             if (m.skinName.isNotBlank()) {
                 sb.append("<span class=\"b-v2-skin\"> · ").append(esc(m.skinName)).append("</span>")
             }
-            sb.append("<div>").append(esc(actionLabel))
-            if (m.firstRoundEnabled) sb.append(" · <span class=\"b-v3-tag\">先发制人</span>")
+            sb.append("</div>")
+
+            sb.append("<div class=\"gk-act-badges\">")
+            sb.append("<span class=\"gk-act-tag ").append(actionBadgeClass).append("\">")
+                .append(esc(actionLabel)).append("</span>")
+            if (m.firstRoundEnabled) {
+                sb.append("<span class=\"b-v3-tag\">先发制人</span>")
+            }
             if (m.actionType == "skills" && m.spCost > 0) {
-                sb.append(" · <span class=\"b-v2-note\">SP ").append(m.spCost)
-                if (m.cdTurns > 0) sb.append(" / CD ").append(m.cdTurns).append("T")
+                sb.append("<span class=\"gk-act-meta\">SP ").append(m.spCost)
+                if (m.cdTurns > 0) sb.append(" · CD ").append(m.cdTurns).append("T")
+                sb.append("</span>")
+            }
+            if (m.currentLevel != null && m.currentLevel >= 0) {
+                sb.append("<span class=\"gk-act-meta\">突破 +").append(m.currentLevel)
+                if (m.currentPotential >= 0 && m.type == "role") {
+                    sb.append(" · 技能潜能 ").append(m.currentPotential)
+                }
                 sb.append("</span>")
             }
             sb.append("</div>")
-            val metaParts = mutableListOf<String>()
-            if (m.currentLevel != null && m.currentLevel >= 0) metaParts.add("突破 +${m.currentLevel}")
-            if (m.currentPotential >= 0 && m.type == "role") metaParts.add("技能潜能 ${m.currentPotential}")
-            if (metaParts.isNotEmpty()) {
-                sb.append("<div class=\"b-v2-note\">").append(esc(metaParts.joinToString(" · "))).append("</div>")
-            }
+
             if (m.actionType == "skills" && m.skillDesc.isNotBlank()) {
-                sb.append("<details class=\"gk-tippy-fold\"><summary>查看技能范围与效果说明</summary>")
-                sb.append("<div class=\"gk-tippy-body\">")
-                if (!m.rangeIconUrl.isNullOrBlank()) {
-                    sb.append("<img class=\"gk-tippy-range\" src=\"").append(esc(m.rangeIconUrl))
-                        .append("\" alt=\"技能范围\" loading=\"lazy\">")
-                }
+                sb.append("<details class=\"gk-tippy-fold\"><summary>查看技能说明 ▾</summary>")
                 sb.append("<div class=\"gk-tippy-desc\">").append(esc(m.skillDesc).replace("\n", "<br>"))
-                    .append("</div></div></details>")
+                    .append("</div></details>")
             }
-            sb.append("</div></div></li>")
+            sb.append("</div>")
+
+            // 右侧直接展示攻击范围九宫格缩略图与圆形技能图标
+            if (!m.rangeIconUrl.isNullOrBlank() || !m.skillIconUrl.isNullOrBlank()) {
+                sb.append("<div class=\"gk-act-right\">")
+                if (!m.rangeIconUrl.isNullOrBlank()) {
+                    sb.append("<img class=\"gk-act-range\" src=\"").append(esc(m.rangeIconUrl))
+                        .append("\" alt=\"攻击范围\" loading=\"lazy\">")
+                }
+                sb.append("</div>")
+            }
+            sb.append("</div></li>")
         }
         sb.append("</ol>")
     }
 
     /**
-     * 原版模式 2：服装出手顺序（TestViewBattleBox battleType=2 全回合技能轴矩阵）。
+     * 模式 2：服装出手顺序（首列 Sticky 冻结角色 + 右侧横滑全回合矩阵）。
      */
     private fun appendMode2MatrixView(
         sb: StringBuilder,
@@ -744,7 +676,6 @@ internal object GamekeeBattleV3Renderer {
             sb.append("<p class=\"b-v2-note\">暂无回合详情</p>")
             return
         }
-        // 收集该队伍所有参战角色（保持首次出场顺序）
         val matrixMembers = LinkedHashMap<String, RestoredMember>()
         for (r in rounds) {
             for (m in r.members) {
@@ -755,84 +686,65 @@ internal object GamekeeBattleV3Renderer {
         }
         val memberList = matrixMembers.values.toList()
 
-        sb.append("<div class=\"gk-matrix-scroll\"><div class=\"gk-matrix-header\">")
-        sb.append("<div class=\"gk-matrix-corner\">角色 \\ 回合</div>")
-        rounds.forEachIndexed { rIdx, _ ->
+        sb.append("<div class=\"gk-matrix-table-wrap\"><div class=\"grid type2 gk-matrix-table\">")
+        // 表头行
+        sb.append("<div class=\"gk-matrix-tr gk-matrix-thead\">")
+        sb.append("<div class=\"gk-matrix-sticky-col gk-matrix-th\">角色 \\ 回合</div>")
+        rounds.forEachIndexed { rIdx, r ->
             val turnNum = (priorRounds + rIdx) * 2 + 1
-            sb.append("<div class=\"gk-matrix-round-col\">第").append(turnNum).append("回合</div>")
-        }
-        sb.append("</div>")
-
-        sb.append("<div class=\"view-battle-box").append(if (lineupType == 3) " is-btype-3" else "").append("\">")
-        // 左列固定角色头像
-        sb.append("<div class=\"left-list\">")
-        for (m in memberList) {
-            val bgClass = GamekeeBattleAssets.attrBgClass(m.attr)
-            sb.append("<div class=\"left-item\">")
-            if (m.coverUrl != null) {
-                sb.append("<img class=\"cover ").append(bgClass).append("\" src=\"")
-                    .append(esc(m.coverUrl)).append("\" alt=\"\" loading=\"lazy\">")
-            } else {
-                sb.append("<div class=\"cover ").append(bgClass).append("\"></div>")
+            sb.append("<div class=\"gk-matrix-td gk-matrix-th\"><div>第").append(turnNum).append("回合</div>")
+            if (r.spRemaining != null) {
+                sb.append("<div class=\"gk-matrix-sp\">余").append(r.spRemaining).append("SP</div>")
             }
             sb.append("</div>")
         }
         sb.append("</div>")
 
-        // 右侧 N 回合技能矩阵 (.grid.type2)
-        sb.append("<div class=\"right-wrap\"><div class=\"grid type2\">")
+        // 每个角色一行
         for (m in memberList) {
-            sb.append("<div class=\"matrix-row\">")
+            val roleBg = GamekeeBattleAssets.attrBgClass(m.attr)
+            sb.append("<div class=\"gk-matrix-tr matrix-row\">")
+            sb.append("<div class=\"gk-matrix-sticky-col\">")
+            if (m.coverUrl != null) {
+                sb.append("<img class=\"gk-matrix-role-av ").append(roleBg).append("\" src=\"")
+                    .append(esc(m.coverUrl)).append("\" alt=\"\" loading=\"lazy\">")
+            }
+            sb.append("<span class=\"gk-matrix-role-name\">").append(esc(m.charName)).append("</span></div>")
+
             for (r in rounds) {
                 val rm = r.members.firstOrNull { it.uniqueKey == m.uniqueKey }
-                sb.append("<div class=\"grid-item small\">")
+                sb.append("<div class=\"gk-matrix-td grid-item small\">")
                 if (rm != null && rm.actionType != "not") {
                     if (rm.actionType == "skills") {
                         val bgClass = GamekeeBattleAssets.attrBgClass(rm.attr)
-                        val strenthIcon = GamekeeBattleAssets.strenthBadge(rm.currentLevel)
-                        val cornerIcon = GamekeeBattleAssets.potentialCornerBadge(rm.starInt, rm.currentPotential)
-                        val burstIcon = GamekeeBattleAssets.burstBadge(rm.chooseBurst)
-                        val burstCount = if (rm.chooseBurst in 1..3) rm.chooseBurst ?: 0 else 0
+                        sb.append("<div class=\"gk-matrix-skill-cell ").append(bgClass).append("\">")
                         if (rm.coverUrl != null) {
-                            sb.append("<img class=\"cover ").append(bgClass).append("\" src=\"")
-                                .append(esc(rm.coverUrl)).append("\" alt=\"\" loading=\"lazy\">")
+                            sb.append("<img class=\"cover\" src=\"").append(esc(rm.coverUrl))
+                                .append("\" alt=\"\" loading=\"lazy\">")
                         }
                         if (!rm.skillIconUrl.isNullOrBlank()) {
                             sb.append("<div class=\"skill\"><img src=\"").append(esc(rm.skillIconUrl))
                                 .append("\" alt=\"\" loading=\"lazy\"></div>")
                         }
-                        if (rm.type == "role") {
-                            if (strenthIcon.isNotEmpty()) {
-                                sb.append("<div class=\"strenth-icon\"><img src=\"").append(strenthIcon).append("\" alt=\"\"></div>")
-                            }
-                            if (cornerIcon.isNotEmpty()) {
-                                sb.append("<div class=\"corner-icon\"><img src=\"").append(cornerIcon).append("\" alt=\"\"></div>")
-                            }
-                            if (burstIcon.isNotEmpty()) {
-                                sb.append("<div class=\"burst-icon\"><img src=\"").append(burstIcon).append("\" alt=\"\"></div>")
-                            }
+                        if (rm.spCost > 0) {
+                            sb.append("<span class=\"gk-matrix-cost\">-").append(rm.spCost).append("SP</span>")
                         }
-                        sb.append("<div class=\"sp-stars\">")
-                        repeat(rm.spCost.coerceIn(0, 10)) {
-                            sb.append("<div class=\"star\"></div>")
-                        }
-                        repeat(burstCount) {
-                            sb.append("<div class=\"star burst-star\"></div>")
+                        if (rm.skinName.isNotBlank()) {
+                            sb.append("<span class=\"gk-matrix-sname\">").append(esc(rm.skinName)).append("</span>")
                         }
                         sb.append("</div>")
                     } else {
                         val actionText = when (rm.actionType) {
-                            "damage" -> "攻击"
+                            "damage" -> "普通攻击"
                             "repel" -> "击退"
                             else -> "待命"
                         }
-                        sb.append("<div class=\"normal-card\"><span class=\"text\">")
-                            .append(actionText).append("</span>")
+                        sb.append("<div class=\"normal-card\">")
                         if (!rm.skillIconUrl.isNullOrBlank()) {
                             sb.append("<img class=\"icon\" src=\"").append(esc(rm.skillIconUrl))
                                 .append("\" alt=\"\" loading=\"lazy\">")
                         }
-                        sb.append("</div>")
+                        sb.append("<span class=\"text\">").append(actionText).append("</span></div>")
                     }
                 } else {
                     sb.append("<div class=\"empty\"></div>")
@@ -841,10 +753,12 @@ internal object GamekeeBattleV3Renderer {
             }
             sb.append("</div>")
         }
-        sb.append("</div></div></div></div>")
-        sb.append("<div class=\"sp-line-info\">角色每回合出手顺序请在“站位与攻击顺序”里查看~</div>")
+        sb.append("</div></div>")
     }
 
+    /**
+     * 模式 3：角色练度与装备面板（现代游戏资料卡，告别简陋表格）。
+     */
     private fun appendCharacterPanels(
         sb: StringBuilder,
         groupKey: Long,
@@ -861,82 +775,97 @@ internal object GamekeeBattleV3Renderer {
         orderedIds.addAll(panels.keys)
 
         val charGroup = "b3p_$groupKey"
-        sb.append("<div class=\"tabs\">")
+        sb.append("<div class=\"tabs gk-panel-tabs\">")
         orderedIds.forEachIndexed { idx, cid ->
             val p = panels[cid] ?: return@forEachIndexed
             val pid = "${charGroup}_$cid"
             sb.append("<input class=\"tr\" type=\"radio\" name=\"").append(charGroup)
                 .append("\" id=\"").append(pid).append('"')
             if (idx == 0) sb.append(" checked")
-            sb.append("><label class=\"tl\" for=\"").append(pid).append("\">")
-                .append(esc(p.name.ifBlank { "#$cid" })).append("</label><div class=\"tp\">")
+            sb.append("><label class=\"tl gk-panel-tab\" for=\"").append(pid).append("\">")
+                .append(esc(p.name.ifBlank { "#$cid" })).append("</label><div class=\"tp gk-panel-tp\">")
 
             val href = "https://www.gamekee.com/zsca2/tj/$cid.html"
-            sb.append("<div class=\"b-v3-phead\"><strong>").append(esc(p.name))
-                .append("</strong>（Lv.").append(p.level)
+            sb.append("<div class=\"gk-pcard-header\"><div><strong class=\"gk-pcard-name\">")
+                .append(esc(p.name)).append("</strong><span class=\"gk-pcard-sub\">Lv.").append(p.level)
             if (p.awake) {
                 sb.append(" · 已觉醒 · 刻印 ").append(p.imprint1).append("/")
                     .append(p.imprint2).append("/").append(p.imprint3)
             }
-            sb.append("） · <a href=\"").append(esc(href)).append("\">查看角色图鉴 →</a></div>")
+            sb.append("</span></div><a class=\"gk-pcard-link\" href=\"").append(esc(href))
+                .append("\">查看角色图鉴 →</a></div>")
 
-            sb.append("<table class=\"gktable b-v3-ptable\">")
-            sb.append("<tr><td>生命力</td><td>").append(fmtNum(p.health))
-                .append("</td><td>攻击 / 魔法力</td><td>")
-                .append(fmtNum(p.physicalDamage)).append(" / ").append(fmtNum(p.magicDamage))
-                .append("</td></tr>")
-            sb.append("<tr><td>致命率 / 致命伤害</td><td>")
-                .append(fmtPct(p.criticalChance)).append(" / ").append(fmtPct(p.criticalDamage))
-                .append("</td><td>属性伤害 / 抵抗</td><td>")
-                .append(fmtPct(p.elementDamage)).append(" / ").append(fmtPct(p.elementResistance))
-                .append("</td></tr>")
-            sb.append("<tr><td>防御力 / 魔法抵抗</td><td colspan=\"3\">")
-                .append(fmtPct(p.physicalDefense)).append(" / ").append(fmtPct(p.magicDefense))
-                .append("</td></tr>")
-            sb.append("</table>")
+            // 8 项核心属性网格卡
+            sb.append("<div class=\"gk-stats-grid\">")
+            appendStatBox(sb, "生命力", fmtNum(p.health), highlight = false)
+            val isMagic = p.magicDamage > p.physicalDamage
+            appendStatBox(
+                sb,
+                if (isMagic) "魔法力" else "攻击力",
+                fmtNum(if (isMagic) p.magicDamage else p.physicalDamage),
+                highlight = true
+            )
+            appendStatBox(sb, "暴击率", fmtPct(p.criticalChance), highlight = false)
+            appendStatBox(sb, "暴击伤害", fmtPct(p.criticalDamage), highlight = true)
+            appendStatBox(sb, "属性伤害", fmtPct(p.elementDamage), highlight = true)
+            appendStatBox(sb, "属性抵抗", fmtPct(p.elementResistance), highlight = false)
+            appendStatBox(sb, "防御力", fmtPct(p.physicalDefense), highlight = false)
+            appendStatBox(sb, "魔法抵抗", fmtPct(p.magicDefense), highlight = false)
+            sb.append("</div>")
 
             if (p.costumesByOrder.isNotEmpty()) {
-                sb.append("<div class=\"b-team-t\">持有服装</div><div class=\"b-team\">")
+                sb.append("<div class=\"gk-sub-title\">持有服装</div><div class=\"gk-costume-strip\">")
                 p.costumesByOrder.forEachIndexed { cIdx, c ->
                     val styleHref = "https://www.gamekee.com/zsca2/tj/$cid.html?style=${cIdx + 1}"
-                    sb.append("<a class=\"b-m b-m-link\" href=\"").append(esc(styleHref)).append("\">")
+                    sb.append("<a class=\"gk-costume-chip\" href=\"").append(esc(styleHref)).append("\">")
                     if (c.icon != null) {
-                        sb.append("<img class=\"b-av\" src=\"").append(esc(c.icon)).append("\" loading=\"lazy\">")
-                    } else {
-                        sb.append("<div class=\"b-av b-av-e\">?</div>")
+                        sb.append("<img src=\"").append(esc(c.icon)).append("\" alt=\"\" loading=\"lazy\">")
                     }
-                    sb.append("<span class=\"b-v3-sname\">").append(esc(c.nameCn)).append("</span>")
-                    sb.append("<span class=\"b-lv\">+").append(c.level)
-                        .append(" · 潜").append(c.skillPotentialNum).append("</span></a>")
+                    sb.append("<div class=\"gk-costume-meta\"><span class=\"b-v3-sname\">")
+                        .append(esc(c.nameCn)).append("</span><span class=\"b-lv\">+")
+                        .append(c.level).append(" · 潜").append(c.skillPotentialNum)
+                        .append("</span></div></a>")
                 }
                 sb.append("</div>")
             }
 
             if (p.equipments.isNotEmpty()) {
-                sb.append("<div class=\"b-team-t\">穿戴装备（").append(p.equipments.size).append(" 件）</div>")
-                sb.append("<table class=\"gktable b-v3-ptable\">")
+                sb.append("<div class=\"gk-sub-title\">穿戴装备（").append(p.equipments.size).append(" 件）</div>")
+                sb.append("<div class=\"gk-equip-list\">")
                 for (eq in p.equipments) {
-                    sb.append("<tr><td><strong>").append(esc(eq.name)).append("</strong>")
-                    if (eq.level > 0) sb.append(" +").append(eq.level)
-                    sb.append("</td><td>")
-                    val opts = mutableListOf<String>()
+                    sb.append("<div class=\"gk-equip-card\"><div class=\"gk-equip-name\"><strong>")
+                        .append(esc(eq.name)).append("</strong>")
+                    if (eq.level > 0) sb.append(" <span class=\"gk-equip-lv\">+").append(eq.level).append("</span>")
+                    sb.append("</div><div class=\"gk-equip-opts\">")
                     if (eq.privateOptions.isNotEmpty()) {
-                        opts.add("专武：" + eq.privateOptions.joinToString("/") { formatEquipOpt(it) })
+                        sb.append("<span class=\"gk-opt-chip is-priv\">专武：")
+                            .append(esc(eq.privateOptions.joinToString("/") { formatEquipOpt(it) }))
+                            .append("</span>")
                     }
                     if (eq.mainOptions.isNotEmpty()) {
-                        opts.add("主：" + eq.mainOptions.joinToString("/") { formatEquipOpt(it) })
+                        sb.append("<span class=\"gk-opt-chip is-main\">主：")
+                            .append(esc(eq.mainOptions.joinToString("/") { formatEquipOpt(it) }))
+                            .append("</span>")
                     }
                     if (eq.subOptions.isNotEmpty()) {
-                        opts.add("副：" + eq.subOptions.joinToString("/") { formatEquipOpt(it) })
+                        sb.append("<span class=\"gk-opt-chip is-sub\">副：")
+                            .append(esc(eq.subOptions.joinToString("/") { formatEquipOpt(it) }))
+                            .append("</span>")
                     }
-                    sb.append(esc(opts.joinToString(" ｜ "))).append("</td></tr>")
+                    sb.append("</div></div>")
                 }
-                sb.append("</table>")
+                sb.append("</div>")
             }
 
             sb.append("</div>")
         }
         sb.append("</div>")
+    }
+
+    private fun appendStatBox(sb: StringBuilder, label: String, value: String, highlight: Boolean) {
+        sb.append("<div class=\"gk-stat-box").append(if (highlight) " is-hl" else "").append("\">")
+            .append("<span class=\"gk-stat-label\">").append(esc(label)).append("</span>")
+            .append("<span class=\"gk-stat-val\">").append(esc(value)).append("</span></div>")
     }
 
     private data class ResolvedSkinMeta(
@@ -957,10 +886,6 @@ internal object GamekeeBattleV3Renderer {
         val level: Int?
     )
 
-    /**
-     * 优先从官方 `bd2roles/data.json` 字典通过 `name_code` 精确还原角色与服装数据；
-     * 若遇到字典尚未收录的极新服装，再回退到 `panel` 与 `team` 兜底。
-     */
     private fun resolveSkinMeta(
         cid: String,
         nameCode: String,
@@ -1252,8 +1177,7 @@ internal object GamekeeBattleV3Renderer {
 
     private fun formatCompactUnit(v: Double): String {
         if (v >= 100.0) return Math.round(v).toString()
-        val s = String.format(Locale.US, "%.2f", v).trimEnd('0').trimEnd('.')
-        return s
+        return String.format(Locale.US, "%.2f", v).trimEnd('0').trimEnd('.')
     }
 
     private fun formatDate(epochSec: Long): String =

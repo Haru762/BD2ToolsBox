@@ -94,6 +94,7 @@ fun WorkbenchSheet(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val updateChecking by updateViewModel.updateChecking.collectAsStateWithLifecycle()
+    val betaChannel by updateViewModel.betaChannel.collectAsStateWithLifecycle()
     // 版本从 PackageManager 读，不写死在代码里 —— 发版只改 build.gradle 的
     // versionName/versionCode，这里跟着变（项目没开 BuildConfig，也不值得为
     // 一行字去开）。
@@ -472,8 +473,19 @@ fun WorkbenchSheet(
                     }
                 }
                 WorkbenchRow(
+                    title = "接收 Beta 测试版更新",
+                    subtitle = if (betaChannel) "当前：Beta 通道（优先获取高频小更新与正式版）" else "当前：GA 稳定通道（仅获取正式发布版）",
+                    onClick = { updateViewModel.setBetaChannel(!betaChannel) },
+                    trailing = {
+                        Switch(
+                            checked = betaChannel,
+                            onCheckedChange = { updateViewModel.setBetaChannel(it) }
+                        )
+                    }
+                )
+                WorkbenchRow(
                     title = "检查更新",
-                    subtitle = if (updateChecking) "正在检查…" else null,
+                    subtitle = if (updateChecking) "正在检查…" else if (betaChannel) "检查最新 Beta / 正式版" else "检查最新正式版 (GA)",
                     enabled = !updateChecking,
                     onClick = { updateViewModel.checkForUpdates() },
                     trailing = {

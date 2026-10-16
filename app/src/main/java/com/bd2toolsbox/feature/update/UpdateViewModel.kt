@@ -50,6 +50,14 @@ class UpdateViewModel @Inject constructor(
     private val _updateChecking = MutableStateFlow(false)
     val updateChecking: StateFlow<Boolean> = _updateChecking.asStateFlow()
 
+    private val _betaChannel = MutableStateFlow(repository.isBetaChannelEnabled())
+    val betaChannel: StateFlow<Boolean> = _betaChannel.asStateFlow()
+
+    fun setBetaChannel(enabled: Boolean) {
+        repository.setBetaChannelEnabled(enabled)
+        _betaChannel.value = enabled
+    }
+
     /**
      * 检查更新。
      *
